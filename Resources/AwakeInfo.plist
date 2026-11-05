@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key><string>Awake</string>
+    <key>CFBundleDisplayName</key><string>Awake</string>
+    <key>CFBundleIdentifier</key><string>com.seewow.awake</string>
+    <key>CFBundleExecutable</key><string>Awake</string>
+    <key>CFBundleIconFile</key><string>Awake</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSHumanReadableCopyright</key><string>© 2026 SeeWow. All rights reserved.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Awake 需要向 Apple Music / Spotify 发送播放控制指令，以同步播放与暂停状态。</string>
+</dict>
+</plist>

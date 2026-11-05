@@ -1,0 +1,5 @@
+.build/
+dist/
+DemoMusic/
+*.xcuserstate
+.DS_Store
