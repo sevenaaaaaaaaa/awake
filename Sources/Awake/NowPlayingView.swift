@@ -66,11 +66,8 @@ struct NowPlayingView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(model.queueTitle.isEmpty ? "正在播放" : model.queueTitle)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: AwakeType.metaSize, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.85))
-                Text("歌词舞台")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.4))
             }
 
             Spacer()
@@ -80,7 +77,7 @@ struct NowPlayingView: View {
                     Image(systemName: "waveform.badge.magnifyingglass")
                         .font(.system(size: 10))
                     Text(model.autoEQDecision?.headphone.name ?? "AutoEQ")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: AwakeType.metaSize, weight: .medium))
                 }
                 .foregroundStyle(model.palette.secondary)
                 .padding(.horizontal, 10)
@@ -121,28 +118,26 @@ struct NowPlayingView: View {
     private var leftColumn: some View {
         if let track = model.currentTrack {
             VStack(alignment: .leading, spacing: 22) {
-                ArtworkView(image: model.artwork, cornerRadius: 18, palette: model.palette)
+                ArtworkView(image: model.artwork, cornerRadius: 8, palette: model.palette)
                     .frame(width: 380, height: 380)
-                    .shadow(color: model.palette.primary.opacity(0.55), radius: 60, y: 26)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .strokeBorder(.white.opacity(0.10), lineWidth: 1)
                     )
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(track.title)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(.system(size: AwakeType.displaySize, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .lineLimit(2)
                     Text(track.artist)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: AwakeType.bodySize, weight: .medium))
                         .foregroundStyle(.white.opacity(0.6))
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         Text(track.album)
-                        Text("·")
                         Text(track.qualityLabel)
                     }
-                    .font(.system(size: 11))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(.white.opacity(0.38))
                     .lineLimit(1)
                 }
@@ -159,7 +154,7 @@ struct NowPlayingView: View {
                     .font(.system(size: 40, weight: .light))
                     .foregroundStyle(.white.opacity(0.35))
                 Text("还没有正在播放的歌")
-                    .font(.system(size: 13))
+                    .font(.system(size: AwakeType.bodySize))
                     .foregroundStyle(.white.opacity(0.5))
             }
         }
@@ -213,7 +208,7 @@ struct NowPlayingView: View {
                 Spacer()
                 Text("-" + model.engine.secondsRemaining.timecode)
             }
-            .font(.system(size: 9, design: .rounded))
+            .font(.system(size: AwakeType.metaSize, design: .rounded))
             .foregroundStyle(.white.opacity(0.35))
         }
     }
@@ -261,18 +256,17 @@ struct NowPlayingView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Text("歌词")
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(1.2)
+                    .font(.system(size: AwakeType.metaSize, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.5))
                 if let lyrics = model.lyrics {
                     Text(lyrics.isSynced ? "逐句同步" : "纯文本")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.system(size: AwakeType.metaSize, weight: .medium))
                         .foregroundStyle(model.palette.secondary.opacity(0.9))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Capsule().fill(model.palette.secondary.opacity(0.12)))
                     Text(lyrics.source)
-                        .font(.system(size: 9))
+                        .font(.system(size: AwakeType.metaSize))
                         .foregroundStyle(.white.opacity(0.3))
                 }
                 Spacer()
@@ -291,13 +285,13 @@ struct NowPlayingView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(height: 540)
-        .padding(22)
+        .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(.ultraThinMaterial.opacity(0.22))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(.white.opacity(0.07), lineWidth: 1)
         )
     }
@@ -344,13 +338,14 @@ struct NowPlayingView: View {
         let translated = translatedLine(index)
         return VStack(alignment: .leading, spacing: 4) {
             Text(line.text.isEmpty ? " " : line.text)
-                .font(.system(size: active ? 25 : 20, weight: active ? .bold : .medium, design: .rounded))
+                .font(.system(size: active ? AwakeType.displaySize : AwakeType.titleSize,
+                              weight: active ? .bold : .medium,
+                              design: .rounded))
                 .foregroundStyle(active ? Color.white : Color.white.opacity(past ? 0.24 : 0.42))
-                .shadow(color: active ? model.palette.secondary.opacity(0.55) : .clear, radius: 16)
                 .lineSpacing(2)
             if showTranslation, let translated, !translated.isEmpty {
                 Text(translated)
-                    .font(.system(size: active ? 13 : 11.5))
+                    .font(.system(size: active ? AwakeType.bodySize : AwakeType.metaSize))
                     .foregroundStyle(active ? model.palette.secondary.opacity(0.95) : Color.white.opacity(past ? 0.16 : 0.30))
                     .lineSpacing(1)
             }
@@ -387,14 +382,8 @@ struct NowPlayingView: View {
                 .font(.system(size: 30, weight: .light))
                 .foregroundStyle(model.palette.secondary.opacity(0.6))
             Text(model.isLoadingMetadata ? "正在为这首歌匹配歌词与翻译…" : "这首还没有歌词")
-                .font(.system(size: 12))
+                .font(.system(size: AwakeType.bodySize))
                 .foregroundStyle(.white.opacity(0.45))
-            if !model.isLoadingMetadata {
-                Text("Awake 会自动从 LRCLIB、音频内嵌标签与同目录 .lrc 中寻找。")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.28))
-                    .multilineTextAlignment(.center)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -406,14 +395,14 @@ struct NowPlayingView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(model.palette.secondary.opacity(0.85))
                 Text(decision.reason)
-                    .font(.system(size: 10))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(.white.opacity(0.4))
                     .lineLimit(1)
             }
             Spacer()
             if let upNext = model.upNext {
-                Text("接下来 · \(upNext.title) — \(upNext.artist)")
-                    .font(.system(size: 10))
+                Text("接下来：\(upNext.title) — \(upNext.artist)")
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(.white.opacity(0.35))
                     .lineLimit(1)
             }

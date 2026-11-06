@@ -47,10 +47,10 @@ struct UpdateSheet: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("软件更新")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.system(size: AwakeType.titleSize, weight: .semibold))
                     .foregroundStyle(.white)
                 Text("当前版本 \(model.appVersion)（\(model.buildNumber)）")
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: AwakeType.metaSize, design: .monospaced))
                     .foregroundStyle(AwakeTheme.tertiaryText)
             }
             Spacer()
@@ -67,13 +67,13 @@ struct UpdateSheet: View {
         case .idle, .checking:
             stateBlock(icon: "arrow.triangle.2.circlepath",
                        title: "正在检查更新…",
-                       detail: "向 GitHub Releases 查询最新版本。",
+                       detail: nil,
                        spinner: true)
 
         case .upToDate(let version):
             stateBlock(icon: "checkmark.seal.fill",
                        title: "已是最新版本",
-                       detail: "当前 \(model.appVersion)，GitHub 上最新为 \(version)。",
+                       detail: "GitHub 上最新为 \(version)。",
                        spinner: false)
 
         case .available(let info):
@@ -83,20 +83,20 @@ struct UpdateSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 stateBlock(icon: "arrow.down.circle",
                            title: "正在下载 \(version)…",
-                           detail: "下载完成后会自动替换应用并重启。",
+                           detail: nil,
                            spinner: true)
                 ProgressView(value: progress)
                     .progressViewStyle(.linear)
                     .tint(model.palette.secondary)
                 Text("\(Int(progress * 100))%")
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: AwakeType.metaSize, design: .monospaced))
                     .foregroundStyle(AwakeTheme.tertiaryText)
             }
 
         case .installing(let version):
             stateBlock(icon: "shippingbox.fill",
                        title: "正在安装 \(version)…",
-                       detail: "签名校验通过，正在替换应用。Awake 会重新打开。",
+                       detail: "完成后会自动重新打开。",
                        spinner: true)
 
         case .failed(let message):
@@ -106,7 +106,7 @@ struct UpdateSheet: View {
                            detail: message,
                            spinner: false)
                 Link("打开 GitHub Releases 手动下载", destination: UpdateChannel.releasePage)
-                    .font(.system(size: 11))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(model.palette.secondary)
             }
         }
@@ -116,17 +116,16 @@ struct UpdateSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
                 Text(info.currentVersion)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(.system(size: AwakeType.bodySize, design: .monospaced))
                     .foregroundStyle(AwakeTheme.tertiaryText)
                 Image(systemName: "arrow.right")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(AwakeTheme.tertiaryText)
                 Text(info.version)
-                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .font(.system(size: AwakeType.bodySize, weight: .bold, design: .monospaced))
                     .foregroundStyle(.white)
                 Text("新版本")
-                    .font(.system(size: 9, weight: .bold))
-                    .tracking(0.8)
+                    .font(.system(size: AwakeType.metaSize, weight: .semibold))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
                     .background(Capsule().fill(model.palette.primary.opacity(0.25)))
@@ -135,11 +134,10 @@ struct UpdateSheet: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("更新说明")
-                    .font(.system(size: 10, weight: .bold))
-                    .tracking(1.1)
+                    .font(.system(size: AwakeType.metaSize, weight: .semibold))
                     .foregroundStyle(AwakeTheme.tertiaryText)
                 Text(info.notes)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(.white.opacity(0.78))
                     .lineSpacing(4)
                     .textSelection(.enabled)
@@ -148,13 +146,13 @@ struct UpdateSheet: View {
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.035)))
 
-            Text("\(info.assetName) · \(byteText(info.assetSize))")
-                .font(.system(size: 10, design: .monospaced))
+            Text("\(info.assetName)（\(byteText(info.assetSize))）")
+                .font(.system(size: AwakeType.metaSize, design: .monospaced))
                 .foregroundStyle(AwakeTheme.tertiaryText)
         }
     }
 
-    private func stateBlock(icon: String, title: String, detail: String, spinner: Bool) -> some View {
+    private func stateBlock(icon: String, title: String, detail: String?, spinner: Bool) -> some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
                 .font(.system(size: 20, weight: .semibold))
@@ -162,12 +160,14 @@ struct UpdateSheet: View {
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: AwakeType.bodySize, weight: .semibold))
                     .foregroundStyle(.white)
-                Text(detail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(AwakeTheme.tertiaryText)
-                    .lineSpacing(3)
+                if let detail {
+                    Text(detail)
+                        .font(.system(size: AwakeType.metaSize))
+                        .foregroundStyle(AwakeTheme.tertiaryText)
+                        .lineSpacing(3)
+                }
             }
             Spacer()
             if spinner {
@@ -201,7 +201,7 @@ struct UpdateSheet: View {
 
             case .downloading, .installing:
                 Text("请保持 Awake 打开")
-                    .font(.system(size: 10))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(AwakeTheme.tertiaryText)
 
             default:

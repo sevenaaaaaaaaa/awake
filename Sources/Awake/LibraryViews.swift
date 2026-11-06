@@ -27,26 +27,24 @@ struct AlbumArt: View {
 
 struct SectionHeader: View {
     var title: String
-    var subtitle: String?
+    var trailing: String?
     var action: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 19, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(AwakeTheme.tertiaryText)
-                }
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(title)
+                .font(.system(size: AwakeType.titleSize, weight: .semibold))
+                .foregroundStyle(.white)
+            if let trailing {
+                Text(trailing)
+                    .font(.system(size: AwakeType.metaSize))
+                    .foregroundStyle(AwakeTheme.tertiaryText)
             }
             Spacer()
             if let action {
                 Button(action: action) {
                     Text("查看全部")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: AwakeType.metaSize, weight: .medium))
                         .foregroundStyle(AwakeTheme.secondaryText)
                 }
                 .buttonStyle(.plain)
@@ -61,14 +59,8 @@ struct QualityBadge: View {
 
     var body: some View {
         Text(track.qualityLabel)
-            .font(.system(size: 9, weight: .bold, design: .rounded))
-            .foregroundStyle(track.isHiRes ? Color.black.opacity(0.8) : AwakeTheme.secondaryText)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(track.isHiRes ? AwakeTheme.warm.opacity(0.85) : Color.white.opacity(0.07))
-            )
+            .font(.system(size: AwakeType.metaSize, design: .monospaced))
+            .foregroundStyle(track.isHiRes ? AwakeTheme.warm : AwakeTheme.secondaryText)
     }
 }
 
@@ -100,10 +92,10 @@ struct HomeView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greeting)
-                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .font(.system(size: AwakeType.displaySize, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
             Text(subtitle)
-                .font(.system(size: 13))
+                .font(.system(size: AwakeType.bodySize))
                 .foregroundStyle(AwakeTheme.secondaryText)
         }
     }
@@ -124,9 +116,9 @@ struct HomeView: View {
             return model.library.scanStatus.isEmpty ? "正在索引曲库…" : model.library.scanStatus
         }
         let count = model.library.tracks.count
-        if count == 0 { return "把音乐文件夹、NAS 或 Plex 接进来，剩下的交给 Awake。" }
+        if count == 0 { return "把音乐文件夹、NAS 或 Plex 接进来。" }
         let artists = Set(model.library.tracks.map { $0.artist }).count
-        return "\(count) 首歌 · \(artists) 位艺人 · 全部自动匹配封面、歌词与 EQ"
+        return "\(count) 首歌，\(artists) 位艺人"
     }
 
     private var latest: Album? {
@@ -137,21 +129,16 @@ struct HomeView: View {
     private var hero: some View {
         if let album = latest {
             HStack(spacing: 22) {
-                AlbumArt(path: album.artworkPath, cornerRadius: 16, palette: model.palette)
+                AlbumArt(path: album.artworkPath, cornerRadius: 8, palette: model.palette)
                     .frame(width: 168, height: 168)
-                    .shadow(color: model.palette.primary.opacity(0.45), radius: 30, y: 14)
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("继续聆听")
-                        .font(.system(size: 10, weight: .bold))
-                        .tracking(1.4)
-                        .foregroundStyle(model.palette.secondary)
                     Text(album.title)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .font(.system(size: AwakeType.titleSize, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(2)
                     Text(album.artist.isEmpty ? "未知艺人" : album.artist)
-                        .font(.system(size: 13))
+                        .font(.system(size: AwakeType.bodySize))
                         .foregroundStyle(AwakeTheme.secondaryText)
 
                     HStack(spacing: 10) {
@@ -159,7 +146,7 @@ struct HomeView: View {
                             model.playAlbum(album)
                         } label: {
                             Label("播放专辑", systemImage: "play.fill")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: AwakeType.bodySize, weight: .semibold))
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 9)
                                 .background(Capsule().fill(Color.white))
@@ -171,7 +158,7 @@ struct HomeView: View {
                             model.playAlbum(album, startingAt: album.tracks.randomElement())
                         } label: {
                             Label("随机", systemImage: "shuffle")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: AwakeType.bodySize, weight: .medium))
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 9)
                                 .background(Capsule().fill(Color.white.opacity(0.08)))
@@ -184,34 +171,31 @@ struct HomeView: View {
                 Spacer()
                 if let track = album.tracks.first {
                     VStack(alignment: .trailing, spacing: 6) {
-                        Text("音质")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(AwakeTheme.tertiaryText)
                         Text(track.qualityLabel)
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .font(.system(size: AwakeType.bodySize, weight: .bold, design: .rounded))
                             .foregroundStyle(track.isHiRes ? AwakeTheme.warm : .white)
                         if let decision = model.autoEQDecision {
                             Text(decision.headphone.name)
-                                .font(.system(size: 10))
+                                .font(.system(size: AwakeType.metaSize))
                                 .foregroundStyle(AwakeTheme.secondaryText)
                                 .lineLimit(1)
                         }
                     }
                 }
             }
-            .padding(24)
+            .padding(20)
             .background(
                 ZStack {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(.ultraThinMaterial.opacity(0.35))
                     LinearGradient(colors: [model.palette.primary.opacity(0.22), .clear],
                                    startPoint: .topLeading,
                                    endPoint: .bottomTrailing)
-                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(.white.opacity(0.08), lineWidth: 1)
             )
         }
@@ -222,7 +206,7 @@ struct HomeView: View {
         let albums = Array(model.library.recentlyAdded.prefix(6))
         if !albums.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "最近添加", subtitle: "自动识别专辑与封面", action: {
+                SectionHeader(title: "最近添加", action: {
                     model.destination = .albums
                 })
                 ScrollView(.horizontal) {
@@ -243,7 +227,7 @@ struct HomeView: View {
         let tracks = Array(model.library.recentlyPlayed.prefix(6))
         if !tracks.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "常听", subtitle: "继续上次的声音", action: {
+                SectionHeader(title: "常听", action: {
                     model.destination = .songs
                 })
                 VStack(spacing: 2) {
@@ -263,7 +247,7 @@ struct HomeView: View {
         let tracks = Array(model.library.favorites.prefix(5))
         if !tracks.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "收藏", subtitle: "\(model.library.favorites.count) 首", action: {
+                SectionHeader(title: "收藏", trailing: "\(model.library.favorites.count) 首", action: {
                     model.destination = .favorites
                 })
                 VStack(spacing: 2) {
@@ -284,10 +268,10 @@ struct HomeView: View {
                 .font(.system(size: 44, weight: .light))
                 .foregroundStyle(model.palette.primary)
             Text("曲库还是空的")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(.system(size: AwakeType.titleSize, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
-            Text("选择一个音乐文件夹，或者连接 NAS / Plex。Awake 会自动完成剩余的一切。")
-                .font(.system(size: 12))
+            Text("选择一个音乐文件夹，或者连接 NAS / Plex。")
+                .font(.system(size: AwakeType.bodySize))
                 .foregroundStyle(AwakeTheme.secondaryText)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 380)
@@ -300,7 +284,7 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 70)
-        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.white.opacity(0.03)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.03)))
     }
 }
 
@@ -309,7 +293,7 @@ struct PillButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: AwakeType.bodySize, weight: .semibold))
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
             .background(Capsule().fill(filled ? Color.white : Color.white.opacity(0.08)))
@@ -329,9 +313,8 @@ struct AlbumCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomTrailing) {
-                AlbumArt(path: album.artworkPath, cornerRadius: 13, palette: model.palette)
+                AlbumArt(path: album.artworkPath, cornerRadius: 8, palette: model.palette)
                     .frame(width: width, height: width)
-                    .shadow(color: .black.opacity(hovered ? 0.55 : 0.3), radius: hovered ? 18 : 9, y: hovered ? 10 : 5)
                 if hovered {
                     Button {
                         model.playAlbum(album)
@@ -339,9 +322,8 @@ struct AlbumCard: View {
                         Image(systemName: "play.fill")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(.black)
-                            .frame(width: 38, height: 38)
+                            .frame(width: 36, height: 36)
                             .background(Circle().fill(.white))
-                            .shadow(radius: 8)
                     }
                     .buttonStyle(.plain)
                     .padding(10)
@@ -352,11 +334,11 @@ struct AlbumCard: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(album.title)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: AwakeType.bodySize, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Text(album.artist)
-                    .font(.system(size: 11))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(AwakeTheme.tertiaryText)
                     .lineLimit(1)
             }
@@ -379,7 +361,7 @@ struct AlbumsGridView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                SectionHeader(title: "专辑", subtitle: "\(model.library.albums.count) 张")
+                SectionHeader(title: "专辑", trailing: "\(model.library.albums.count) 张")
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 24) {
                     ForEach(model.library.albums) { album in
                         AlbumCard(album: album)
@@ -406,27 +388,22 @@ struct AlbumDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
                 HStack(alignment: .bottom, spacing: 24) {
-                    AlbumArt(path: album.artworkPath, cornerRadius: 16, palette: model.palette)
+                    AlbumArt(path: album.artworkPath, cornerRadius: 8, palette: model.palette)
                         .frame(width: 190, height: 190)
-                        .shadow(color: model.palette.primary.opacity(0.5), radius: 34, y: 16)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("专辑")
-                            .font(.system(size: 10, weight: .bold))
-                            .tracking(1.2)
-                            .foregroundStyle(model.palette.secondary)
                         Text(album.title)
-                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .font(.system(size: AwakeType.displaySize, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                             .lineLimit(2)
                         Text(album.artist)
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: AwakeType.bodySize, weight: .medium))
                             .foregroundStyle(AwakeTheme.secondaryText)
                         HStack(spacing: 8) {
                             if let year = album.year { Text(String(year)) }
                             Text("\(tracks.count) 首")
                             if let first = tracks.first, first.isHiRes { Text("Hi-Res") }
                         }
-                        .font(.system(size: 11))
+                        .font(.system(size: AwakeType.metaSize))
                         .foregroundStyle(AwakeTheme.tertiaryText)
 
                         HStack(spacing: 10) {
@@ -434,7 +411,7 @@ struct AlbumDetailView: View {
                                 model.playAlbum(album)
                             } label: {
                                 Label("播放", systemImage: "play.fill")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.system(size: AwakeType.bodySize, weight: .semibold))
                                     .padding(.horizontal, 18)
                                     .padding(.vertical, 9)
                                     .background(Capsule().fill(.white))
@@ -445,7 +422,7 @@ struct AlbumDetailView: View {
                                 model.playAlbum(album, startingAt: tracks.randomElement())
                             } label: {
                                 Label("随机", systemImage: "shuffle")
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(.system(size: AwakeType.bodySize, weight: .medium))
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 9)
                                     .background(Capsule().fill(.white.opacity(0.08)))
@@ -515,7 +492,7 @@ struct ArtistsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                SectionHeader(title: "艺人", subtitle: "\(model.library.artists.count) 位")
+                SectionHeader(title: "艺人", trailing: "\(model.library.artists.count) 位")
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 22) {
                     ForEach(model.library.artists, id: \.name) { artist in
                         Button {
@@ -527,11 +504,11 @@ struct ArtistsView: View {
                                              palette: model.palette,
                                              size: 132)
                                 Text(artist.name)
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.system(size: AwakeType.bodySize, weight: .semibold))
                                     .foregroundStyle(.white)
                                     .lineLimit(1)
                                 Text("\(artist.albums.count) 张专辑")
-                                    .font(.system(size: 10))
+                                    .font(.system(size: AwakeType.metaSize))
                                     .foregroundStyle(AwakeTheme.tertiaryText)
                             }
                             .frame(width: 132, alignment: .leading)
@@ -567,16 +544,16 @@ struct ArtistDetailView: View {
                     ArtistAvatar(path: albums.first?.artworkPath, name: name, palette: model.palette, size: 128)
                     VStack(alignment: .leading, spacing: 8) {
                     Text(name)
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .font(.system(size: AwakeType.displaySize, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
-                    Text("\(albums.count) 张专辑 · \(tracks.count) 首歌")
-                        .font(.system(size: 12))
+                    Text("\(albums.count) 张专辑，\(tracks.count) 首歌")
+                        .font(.system(size: AwakeType.bodySize))
                         .foregroundStyle(AwakeTheme.secondaryText)
                     Button {
                         model.playArtist(name)
                     } label: {
                         Label("播放全部", systemImage: "play.fill")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: AwakeType.bodySize, weight: .semibold))
                             .padding(.horizontal, 18)
                             .padding(.vertical, 9)
                             .background(Capsule().fill(.white))
@@ -625,10 +602,10 @@ struct SongsView: View {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("歌曲")
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .font(.system(size: AwakeType.displaySize, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                     Text("\(model.library.tracks.count) 首")
-                        .font(.system(size: 12))
+                        .font(.system(size: AwakeType.bodySize))
                         .foregroundStyle(AwakeTheme.secondaryText)
                 }
                 Spacer()
@@ -638,7 +615,7 @@ struct SongsView: View {
                         .foregroundStyle(AwakeTheme.tertiaryText)
                     TextField("筛选歌曲", text: $query)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 12))
+                        .font(.system(size: AwakeType.bodySize))
                         .frame(width: 160)
                 }
                 .padding(.horizontal, 10)
@@ -670,10 +647,10 @@ struct FavoritesView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                SectionHeader(title: "收藏", subtitle: "\(model.library.favorites.count) 首")
+                SectionHeader(title: "收藏", trailing: "\(model.library.favorites.count) 首")
                 if model.library.favorites.isEmpty {
-                    Text("还没有收藏。播放时点一下心形，就会出现在这里。")
-                        .font(.system(size: 12))
+                    Text("播放时点一下心形，收藏的歌曲会出现在这里。")
+                        .font(.system(size: AwakeType.bodySize))
                         .foregroundStyle(AwakeTheme.secondaryText)
                         .padding(.vertical, 40)
                 } else {
@@ -716,7 +693,7 @@ struct TrackRow: View {
                     EqualizerBars(color: model.palette.secondary)
                 } else {
                     Text(String(index))
-                        .font(.system(size: 11, design: .rounded))
+                        .font(.system(size: AwakeType.metaSize, design: .rounded))
                         .foregroundStyle(AwakeTheme.tertiaryText)
                         .opacity(hovered ? 0 : 1)
                     if hovered {
@@ -730,11 +707,11 @@ struct TrackRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
-                    .font(.system(size: 12.5, weight: isCurrent ? .semibold : .regular))
+                    .font(.system(size: AwakeType.bodySize, weight: isCurrent ? .semibold : .regular))
                     .foregroundStyle(isCurrent ? model.palette.secondary : .white)
                     .lineLimit(1)
                 Text(track.artist.isEmpty ? "未知艺人" : track.artist)
-                    .font(.system(size: 10.5))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(AwakeTheme.tertiaryText)
                     .lineLimit(1)
             }
@@ -742,7 +719,7 @@ struct TrackRow: View {
 
             if showAlbum {
                 Text(track.album)
-                    .font(.system(size: 11))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(AwakeTheme.tertiaryText)
                     .lineLimit(1)
                     .frame(width: 190, alignment: .leading)
@@ -763,7 +740,7 @@ struct TrackRow: View {
             .opacity(track.favorite || hovered ? 1 : 0)
 
             Text(track.duration.timecode)
-                .font(.system(size: 11, design: .rounded))
+                .font(.system(size: AwakeType.metaSize, design: .rounded))
                 .foregroundStyle(AwakeTheme.tertiaryText)
                 .frame(width: 46, alignment: .trailing)
         }

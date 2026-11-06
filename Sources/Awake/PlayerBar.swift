@@ -42,20 +42,15 @@ struct PlayerBar: View {
             Image(systemName: "waveform")
                 .font(.system(size: 18, weight: .light))
                 .foregroundStyle(model.palette.secondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Awake")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                Text("双击任意歌曲开始播放 · ⌘K 搜索")
-                    .font(.system(size: 11))
-                    .foregroundStyle(AwakeTheme.tertiaryText)
-            }
+            Text("Awake")
+                .font(.system(size: AwakeType.bodySize, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
             Spacer()
             Button {
                 model.showPalette = true
             } label: {
                 Label("搜索", systemImage: "magnifyingglass")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: AwakeType.metaSize, weight: .medium))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
                     .background(Capsule().fill(.white.opacity(0.07)))
@@ -72,17 +67,16 @@ struct PlayerBar: View {
             } label: {
                 ArtworkView(image: model.artwork, cornerRadius: 8, palette: model.palette)
                     .frame(width: 52, height: 52)
-                    .shadow(color: .black.opacity(0.4), radius: 8, y: 3)
             }
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(track.title)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: AwakeType.bodySize, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Text(track.artist.isEmpty ? "未知艺人" : track.artist)
-                    .font(.system(size: 11))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(AwakeTheme.secondaryText)
                     .lineLimit(1)
             }
@@ -144,13 +138,13 @@ struct PlayerBar: View {
 
             HStack(spacing: 8) {
                 Text(model.elapsed.timecode)
-                    .font(.system(size: 9, design: .rounded))
+                    .font(.system(size: AwakeType.metaSize, design: .rounded))
                     .foregroundStyle(AwakeTheme.tertiaryText)
                     .frame(width: 34, alignment: .trailing)
                 scrubber
                     .frame(width: 260)
                 Text("-" + model.engine.secondsRemaining.timecode)
-                    .font(.system(size: 9, design: .rounded))
+                    .font(.system(size: AwakeType.metaSize, design: .rounded))
                     .foregroundStyle(AwakeTheme.tertiaryText)
                     .frame(width: 38, alignment: .leading)
             }
@@ -194,15 +188,14 @@ struct PlayerBar: View {
         HStack(spacing: 14) {
             if model.engine.isBitPerfect {
                 Text("BIT-PERFECT")
-                    .font(.system(size: 8, weight: .bold, design: .rounded))
-                    .tracking(0.8)
+                    .font(.system(size: AwakeType.metaSize, weight: .bold, design: .rounded))
                     .foregroundStyle(AwakeTheme.warm)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(RoundedRectangle(cornerRadius: 4).fill(AwakeTheme.warm.opacity(0.14)))
             } else if track.isHiRes {
                 Text(track.sampleRate > 0 ? String(format: "%.1f kHz", Double(track.sampleRate) / 1000) : "HI-RES")
-                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .font(.system(size: AwakeType.metaSize, weight: .bold, design: .rounded))
                     .foregroundStyle(AwakeTheme.secondaryText)
             }
 

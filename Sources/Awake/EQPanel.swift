@@ -50,14 +50,9 @@ struct EQPanelView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(model.palette.secondary)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("自动 EQ")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                Text("耳机校正 · 曲目频谱 · 你的听感")
-                    .font(.system(size: 10))
-                    .foregroundStyle(AwakeTheme.tertiaryText)
-            }
+            Text("自动 EQ")
+                .font(.system(size: AwakeType.titleSize, weight: .semibold))
+                .foregroundStyle(.white)
             Spacer()
             Toggle("", isOn: Binding(get: { model.settings.settings.autoEQ },
                                      set: { model.setAutoEQEnabled($0) }))
@@ -76,10 +71,10 @@ struct EQPanelView: View {
         HStack(alignment: .top, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(model.autoEQDecision?.headphone.displayName ?? "未检测到耳机配置")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: AwakeType.bodySize, weight: .semibold))
                     .foregroundStyle(.white)
-                Text(model.autoEQDecision?.reason ?? "播放一首歌，Awake 会自动读取输出设备、分析曲目频谱并生成校正曲线。")
-                    .font(.system(size: 11))
+                Text(model.autoEQDecision?.reason ?? "播放一首歌后自动生成。")
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(AwakeTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 if let profile = model.autoEQDecision?.trackProfile {
@@ -95,15 +90,15 @@ struct EQPanelView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
                 Text(model.engine.outputDevice?.name ?? "系统输出")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: AwakeType.metaSize, weight: .medium))
                     .foregroundStyle(.white.opacity(0.8))
                     .lineLimit(1)
                 Text(model.engine.outputDevice?.transportLabel ?? "")
-                    .font(.system(size: 9))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(AwakeTheme.tertiaryText)
                 if model.engine.isBitPerfect {
                     Text("BIT-PERFECT")
-                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .font(.system(size: AwakeType.metaSize, weight: .bold, design: .rounded))
                         .foregroundStyle(AwakeTheme.warm)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -113,18 +108,18 @@ struct EQPanelView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.035)))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.white.opacity(0.06), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.035)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.06), lineWidth: 1))
     }
 
     private func stat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(label)
-                .font(.system(size: 8))
+                .font(.system(size: AwakeType.metaSize))
                 .foregroundStyle(AwakeTheme.tertiaryText)
             Text(value)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.75))
+                .font(.system(size: AwakeType.bodySize, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.8))
         }
     }
 
@@ -143,11 +138,11 @@ struct EQPanelView: View {
                                        endPoint: .trailing),
                         style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
             HStack {
-                Text("+12 dB").font(.system(size: 8)).foregroundStyle(AwakeTheme.tertiaryText)
+                Text("+12 dB").font(.system(size: AwakeType.metaSize)).foregroundStyle(AwakeTheme.tertiaryText)
                 Spacer()
-                Text("0").font(.system(size: 8)).foregroundStyle(AwakeTheme.tertiaryText)
+                Text("0").font(.system(size: AwakeType.metaSize)).foregroundStyle(AwakeTheme.tertiaryText)
                 Spacer()
-                Text("-12 dB").font(.system(size: 8)).foregroundStyle(AwakeTheme.tertiaryText)
+                Text("-12 dB").font(.system(size: AwakeType.metaSize)).foregroundStyle(AwakeTheme.tertiaryText)
             }
             .padding(.horizontal, 8)
             .frame(maxHeight: .infinity, alignment: .topLeading)
@@ -162,15 +157,16 @@ struct EQPanelView: View {
             HStack(spacing: 0) {
                 ForEach(Array(EQBand.frequencies.enumerated()), id: \.offset) { index, frequency in
                     VStack(spacing: 6) {
-                        Text(String(format: "%.0f", currentGains[safe: index] ?? 0))
-                            .font(.system(size: 8, design: .rounded))
-                            .foregroundStyle(abs(currentGains[safe: index] ?? 0) > 0.5 ? model.palette.secondary : AwakeTheme.tertiaryText)
+                        Text(abs(currentGains[safe: index] ?? 0) > 0.05
+                             ? String(format: "%.0f", currentGains[safe: index] ?? 0)
+                             : " ")
+                            .font(.system(size: AwakeType.metaSize, design: .rounded))
+                            .foregroundStyle(model.palette.secondary)
                         EQBandSlider(value: binding(for: index), tint: model.palette.primary)
                             .frame(height: 120)
-                        Text(EQBand.label(for: index))
-                            .font(.system(size: 7.5, design: .rounded))
+                        Text(index % 5 == 0 ? EQBand.label(for: index) : " ")
+                            .font(.system(size: AwakeType.metaSize, design: .rounded))
                             .foregroundStyle(AwakeTheme.tertiaryText)
-                            .rotationEffect(.degrees(index % 2 == 0 ? 0 : -35))
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -202,7 +198,7 @@ struct EQPanelView: View {
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("强度")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: AwakeType.metaSize, weight: .semibold))
                         .foregroundStyle(AwakeTheme.secondaryText)
                     Slider(value: Binding(get: { model.settings.settings.autoEQIntensity },
                                           set: { model.setAutoEQIntensity($0); syncFromModel() }),
@@ -212,7 +208,7 @@ struct EQPanelView: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("耳机")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: AwakeType.metaSize, weight: .semibold))
                         .foregroundStyle(AwakeTheme.secondaryText)
                     Picker("", selection: Binding(get: { model.settings.settings.headphoneProfileID },
                                                   set: { model.setHeadphonePreference($0); syncFromModel() })) {
@@ -228,7 +224,7 @@ struct EQPanelView: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 6) {
                     Text(String(format: "预览曲线峰值 %.1f dB", currentGains.max() ?? 0))
-                        .font(.system(size: 9, design: .rounded))
+                        .font(.system(size: AwakeType.metaSize, design: .rounded))
                         .foregroundStyle(AwakeTheme.tertiaryText)
                     HStack(spacing: 10) {
                         Button("重置学习") { model.resetListeningProfile() }
@@ -240,13 +236,9 @@ struct EQPanelView: View {
                     }
                 }
             }
-            Text("拖动任意频段即进入手动模式；点「记住这个声音」后，Awake 会把这条曲线与自动曲线的差学习成你的长期听感，不再每次重调。")
-                .font(.system(size: 9))
-                .foregroundStyle(AwakeTheme.tertiaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.03)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.03)))
     }
 }
 

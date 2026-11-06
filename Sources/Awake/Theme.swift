@@ -3,6 +3,15 @@ import AppKit
 
 // MARK: - Theme
 
+/// Typography scale: four sizes, nothing below 12pt.
+/// Hierarchy comes from weight, opacity and spacing rather than extra sizes.
+enum AwakeType {
+    static let metaSize: CGFloat = 12
+    static let bodySize: CGFloat = 15
+    static let titleSize: CGFloat = 20
+    static let displaySize: CGFloat = 32
+}
+
 enum AwakeTheme {
     static let background = Color(red: 0.035, green: 0.035, blue: 0.047)
     static let elevated = Color(red: 0.075, green: 0.075, blue: 0.092)
@@ -182,21 +191,6 @@ extension View {
             )
     }
 
-    func hoverLift() -> some View {
-        modifier(HoverLift())
-    }
-}
-
-private struct HoverLift: ViewModifier {
-    @State private var hovered = false
-
-    func body(content: Content) -> some View {
-        content
-            .scaleEffect(hovered ? 1.015 : 1)
-            .shadow(color: .black.opacity(hovered ? 0.45 : 0.25), radius: hovered ? 22 : 12, y: hovered ? 12 : 6)
-            .animation(AwakeTheme.spring, value: hovered)
-            .onHover { hovered = $0 }
-    }
 }
 
 // MARK: - Artwork

@@ -138,7 +138,7 @@ struct RootView: View {
                     .fill(model.palette.secondary)
                     .frame(width: 6, height: 6)
                 Text(toast)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: AwakeType.bodySize, weight: .medium))
                     .foregroundStyle(.white.opacity(0.85))
             }
             .padding(.horizontal, 16)
@@ -181,10 +181,8 @@ struct SidebarView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("音乐来源")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: AwakeType.metaSize, weight: .semibold))
                         .foregroundStyle(AwakeTheme.tertiaryText)
-                        .textCase(.uppercase)
-                        .tracking(0.6)
                     Spacer()
                     Button {
                         model.showSources = true
@@ -202,25 +200,16 @@ struct SidebarView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(AwakeTheme.secondaryText)
                         Text(source.name)
-                            .font(.system(size: 12))
+                            .font(.system(size: AwakeType.bodySize))
                             .foregroundStyle(AwakeTheme.secondaryText)
                             .lineLimit(1)
                         Spacer()
                         Text(String(source.trackCount))
-                            .font(.system(size: 10, design: .rounded))
+                            .font(.system(size: AwakeType.metaSize, design: .rounded))
                             .foregroundStyle(AwakeTheme.tertiaryText)
                     }
                 }
 
-                Button {
-                    model.showSources = true
-                } label: {
-                    Text(model.library.isScanning ? model.library.scanStatus : "NAS · Plex · 本地")
-                        .font(.system(size: 11))
-                        .foregroundStyle(AwakeTheme.tertiaryText)
-                        .lineLimit(1)
-                }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 20)
 
@@ -248,7 +237,7 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 Spacer()
                 Text("Awake \(model.appVersion)")
-                    .font(.system(size: 10, design: .rounded))
+                    .font(.system(size: AwakeType.metaSize, design: .rounded))
                     .foregroundStyle(AwakeTheme.tertiaryText)
             }
             .padding(.horizontal, 20)
@@ -261,7 +250,7 @@ struct SidebarView: View {
     private var brand: some View {
         HStack(spacing: 10) {
             ZStack {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(LinearGradient(colors: [model.palette.primary, model.palette.secondary],
                                          startPoint: .topLeading,
                                          endPoint: .bottomTrailing))
@@ -270,15 +259,9 @@ struct SidebarView: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.black.opacity(0.8))
             }
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Awake")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                Text("listen deeper")
-                    .font(.system(size: 9, weight: .medium, design: .rounded))
-                    .foregroundStyle(AwakeTheme.tertiaryText)
-                    .tracking(1.1)
-            }
+            Text("Awake")
+                .font(.system(size: AwakeType.titleSize, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
             Spacer()
         }
     }
@@ -295,14 +278,14 @@ struct SidebarView: View {
                     .font(.system(size: 13, weight: .medium))
                     .frame(width: 18)
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: AwakeType.bodySize, weight: .medium))
                 Spacer()
             }
             .foregroundStyle(selected ? Color.white : AwakeTheme.secondaryText)
             .padding(.horizontal, 11)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(selected ? Color.white.opacity(0.09) : Color.clear)
             )
             .contentShape(Rectangle())

@@ -31,14 +31,9 @@ struct SourcesSheet: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(model.palette.secondary)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("音乐来源")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    Text("本地 · SMB · WebDAV · Plex，全部增量索引")
-                        .font(.system(size: 10))
-                        .foregroundStyle(AwakeTheme.tertiaryText)
-                }
+                Text("音乐来源")
+                    .font(.system(size: AwakeType.titleSize, weight: .semibold))
+                    .foregroundStyle(.white)
                 Spacer()
                 Button("完成") { dismiss() }
                     .buttonStyle(PillButtonStyle(filled: true))
@@ -72,7 +67,7 @@ struct SourcesSheet: View {
                             Image(systemName: item.2)
                                 .font(.system(size: 10))
                             Text(item.1)
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: AwakeType.metaSize, weight: .medium))
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
@@ -90,8 +85,8 @@ struct SourcesSheet: View {
                 HStack(spacing: 12) {
                     Image(systemName: "folder")
                         .foregroundStyle(model.palette.secondary)
-                    Text("选择一个音乐文件夹。Awake 会递归扫描并记住增量。")
-                        .font(.system(size: 11))
+                    Text("选择音乐文件夹，Awake 会增量扫描。")
+                        .font(.system(size: AwakeType.metaSize))
                         .foregroundStyle(AwakeTheme.secondaryText)
                     Spacer()
                     Button("选择文件夹") {
@@ -121,7 +116,7 @@ struct SourcesSheet: View {
 
                 HStack {
                     Text(kind == .smb ? "SMB 会自动挂载到系统，无需提前在 Finder 连接。" : "凭据只保存在本机钥匙串。")
-                        .font(.system(size: 9))
+                        .font(.system(size: AwakeType.metaSize))
                         .foregroundStyle(AwakeTheme.tertiaryText)
                     Spacer()
                     Button("连接并扫描") {
@@ -141,26 +136,26 @@ struct SourcesSheet: View {
             }
         }
         .padding(18)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.035)))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white.opacity(0.06), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.035)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.06), lineWidth: 1))
     }
 
     private var existingSources: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("已连接")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: AwakeType.bodySize, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.8))
                 Spacer()
                 Button("重新扫描全部") { model.rescanAll() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 10))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(model.palette.secondary)
             }
 
             if model.library.sources.isEmpty {
                 Text("还没有来源。")
-                    .font(.system(size: 11))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(AwakeTheme.tertiaryText)
                     .padding(.vertical, 8)
             }
@@ -174,22 +169,22 @@ struct SourcesSheet: View {
                         .background(Circle().fill(Color.white.opacity(0.05)))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(source.name)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: AwakeType.bodySize, weight: .medium))
                             .foregroundStyle(.white)
                         Text(source.url)
-                            .font(.system(size: 9.5))
+                            .font(.system(size: AwakeType.metaSize))
                             .foregroundStyle(AwakeTheme.tertiaryText)
                             .lineLimit(1)
                     }
                     Spacer()
                     Text("\(source.trackCount) 首")
-                        .font(.system(size: 10, design: .rounded))
+                        .font(.system(size: AwakeType.metaSize, design: .rounded))
                         .foregroundStyle(AwakeTheme.secondaryText)
                     Button("扫描") {
                         Task { await model.library.scan(source) }
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 10))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(model.palette.secondary)
                     Button {
                         model.removeSource(source.id)
@@ -201,22 +196,22 @@ struct SourcesSheet: View {
                     .buttonStyle(.plain)
                 }
                 .padding(10)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.03)))
             }
         }
         .padding(18)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.025)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.025)))
     }
 
     private func field(_ label: String, text: Binding<String>, placeholder: String) -> some View {
         HStack(spacing: 10) {
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: AwakeType.metaSize, weight: .medium))
                 .foregroundStyle(AwakeTheme.tertiaryText)
                 .frame(width: 88, alignment: .leading)
             TextField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 11))
+                .font(.system(size: AwakeType.metaSize))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(0.28)))
@@ -226,12 +221,12 @@ struct SourcesSheet: View {
     private func secureField(_ label: String, text: Binding<String>, placeholder: String) -> some View {
         HStack(spacing: 10) {
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: AwakeType.metaSize, weight: .medium))
                 .foregroundStyle(AwakeTheme.tertiaryText)
                 .frame(width: 44, alignment: .leading)
             SecureField(placeholder, text: text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 11))
+                .font(.system(size: AwakeType.metaSize))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(0.28)))
@@ -249,7 +244,7 @@ struct SettingsSheet: View {
         VStack(spacing: 0) {
             HStack {
                 Text("设置")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.system(size: AwakeType.titleSize, weight: .semibold))
                     .foregroundStyle(.white)
                 Spacer()
                 Button("完成") { dismiss() }
@@ -282,7 +277,7 @@ struct SettingsSheet: View {
                 .padding(22)
             }
         }
-        .frame(width: 640, height: 700)
+        .frame(width: 640, height: 720)
         .background(AwakeTheme.background)
         .onChange(of: model.settings.settings.bitPerfect) { _, value in
             model.engine.setBitPerfectPreferred(value)
@@ -304,21 +299,16 @@ struct SettingsSheet: View {
     private func group(_ title: String, _ rows: [(String, String, Binding<Bool>)]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(.system(size: 10, weight: .bold))
-                .tracking(1.1)
+                .font(.system(size: AwakeType.metaSize, weight: .semibold))
                 .foregroundStyle(AwakeTheme.tertiaryText)
                 .padding(.bottom, 8)
             VStack(spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
                     HStack(spacing: 14) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(row.0)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.9))
-                            Text(row.1)
-                                .font(.system(size: 9.5))
-                                .foregroundStyle(AwakeTheme.tertiaryText)
-                        }
+                        Text(row.0)
+                            .font(.system(size: AwakeType.bodySize))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .help(row.1)
                         Spacer()
                         Toggle("", isOn: row.2)
                             .toggleStyle(.switch)
@@ -327,7 +317,7 @@ struct SettingsSheet: View {
                             .tint(model.palette.secondary)
                     }
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
+                    .padding(.vertical, 8)
                     if index < rows.count - 1 {
                         Divider().overlay(AwakeTheme.hairline).padding(.leading, 14)
                     }
@@ -339,14 +329,10 @@ struct SettingsSheet: View {
 
     private var translationPicker: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("翻译目标语言")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.9))
-                Text("歌词舞台上逐句显示")
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(AwakeTheme.tertiaryText)
-            }
+            Text("翻译目标语言")
+                .font(.system(size: AwakeType.bodySize))
+                .foregroundStyle(.white.opacity(0.9))
+                .help("歌词舞台上逐句显示")
             Spacer()
             Picker("", selection: Binding(get: { model.settings.settings.translationTarget },
                                           set: { model.settings.settings.translationTarget = $0 })) {
@@ -367,17 +353,16 @@ struct SettingsSheet: View {
     private var updateSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("关于与更新")
-                .font(.system(size: 10, weight: .bold))
-                .tracking(1.1)
+                .font(.system(size: AwakeType.metaSize, weight: .semibold))
                 .foregroundStyle(AwakeTheme.tertiaryText)
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Awake \(model.appVersion)")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: AwakeType.bodySize, weight: .medium))
                             .foregroundStyle(.white.opacity(0.9))
                         Text(updateStatusLine)
-                            .font(.system(size: 9.5))
+                            .font(.system(size: AwakeType.metaSize))
                             .foregroundStyle(AwakeTheme.tertiaryText)
                     }
                     Spacer()
@@ -390,14 +375,10 @@ struct SettingsSheet: View {
                 Divider().overlay(AwakeTheme.hairline).padding(.leading, 14)
 
                 HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("自动检查更新")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.9))
-                        Text("每天最多一次，仅查询 GitHub Releases")
-                            .font(.system(size: 9.5))
-                            .foregroundStyle(AwakeTheme.tertiaryText)
-                    }
+                    Text("自动检查更新")
+                        .font(.system(size: AwakeType.bodySize))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .help("每天最多一次，仅查询 GitHub Releases")
                     Spacer()
                     Toggle("", isOn: binding(\.autoCheckUpdates))
                         .toggleStyle(.switch)
@@ -414,12 +395,10 @@ struct SettingsSheet: View {
                     Link("GitHub 仓库", destination: URL(string: "https://github.com/sevenaaaaaaaaa/awake")!)
                     Spacer()
                     Link("发行说明", destination: UpdateChannel.releasePage)
-                    Text("·")
-                        .foregroundStyle(AwakeTheme.tertiaryText)
                     Text("build \(model.buildNumber)")
-                        .font(.system(size: 9.5, design: .monospaced))
+                        .font(.system(size: AwakeType.metaSize, design: .monospaced))
                 }
-                .font(.system(size: 10))
+                .font(.system(size: AwakeType.metaSize))
                 .foregroundStyle(AwakeTheme.tertiaryText)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
@@ -431,7 +410,7 @@ struct SettingsSheet: View {
     private var updateStatusLine: String {
         switch model.updatePhase {
         case .idle:
-            return "Apple Silicon · macOS 14+"
+            return "Apple Silicon / macOS 14+"
         case .checking:
             return "正在检查更新…"
         case .upToDate(let version):
@@ -439,7 +418,7 @@ struct SettingsSheet: View {
         case .available(let info):
             return "可更新到 \(info.version)（当前 \(info.currentVersion)）"
         case .downloading(let progress, let version):
-            return "正在下载 \(version) · \(Int(progress * 100))%"
+            return "正在下载 \(version)，\(Int(progress * 100))%"
         case .installing(let version):
             return "正在安装 \(version)…"
         case .failed:
@@ -488,13 +467,13 @@ struct CommandPaletteView: View {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 14))
                         .foregroundStyle(AwakeTheme.secondaryText)
-                    TextField("搜索歌曲、专辑、艺人，或输入命令", text: $query)
+                    TextField("搜索歌曲、专辑或艺人", text: $query)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 14))
+                        .font(.system(size: AwakeType.bodySize))
                         .focused($focused)
                         .onSubmit { playFirst() }
                     Text("esc")
-                        .font(.system(size: 9, design: .rounded))
+                        .font(.system(size: AwakeType.metaSize, design: .rounded))
                         .foregroundStyle(AwakeTheme.tertiaryText)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -542,7 +521,7 @@ struct CommandPaletteView: View {
                             }
                             if tracks.isEmpty && albums.isEmpty && artists.isEmpty {
                                 Text("没有找到匹配项")
-                                    .font(.system(size: 12))
+                                    .font(.system(size: AwakeType.bodySize))
                                     .foregroundStyle(AwakeTheme.tertiaryText)
                                     .padding(20)
                             }
@@ -554,14 +533,14 @@ struct CommandPaletteView: View {
             }
             .frame(width: 620)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color(red: 0.055, green: 0.055, blue: 0.070))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(.white.opacity(0.10), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.55), radius: 40, y: 20)
+            .shadow(color: .black.opacity(0.45), radius: 24, y: 12)
             .padding(.top, 120)
             .frame(maxHeight: .infinity, alignment: .top)
         }
@@ -586,7 +565,7 @@ struct CommandPaletteView: View {
                 model.showEQ = true
                 close()
             }
-            paletteRow(icon: "externaldrive", title: "音乐来源", subtitle: "⌘,", badge: "") {
+            paletteRow(icon: "externaldrive", title: "音乐来源", subtitle: "⌘⇧,", badge: "") {
                 model.showSources = true
                 close()
             }
@@ -595,8 +574,7 @@ struct CommandPaletteView: View {
 
     private func label(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 9, weight: .bold))
-            .tracking(1.0)
+            .font(.system(size: AwakeType.metaSize, weight: .semibold))
             .foregroundStyle(AwakeTheme.tertiaryText)
             .padding(.horizontal, 10)
             .padding(.top, 8)
@@ -606,7 +584,7 @@ struct CommandPaletteView: View {
     private func trackRow(_ track: Track) -> some View {
         paletteRow(icon: "music.note",
                    title: track.title,
-                   subtitle: track.artist + " · " + track.album,
+                   subtitle: track.artist + " — " + track.album,
                    badge: track.qualityLabel) {
             model.play(track, context: tracks, title: "搜索")
             close()
@@ -622,12 +600,12 @@ struct CommandPaletteView: View {
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: AwakeType.bodySize, weight: .medium))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     if !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.system(size: 10))
+                            .font(.system(size: AwakeType.metaSize))
                             .foregroundStyle(AwakeTheme.tertiaryText)
                             .lineLimit(1)
                     }
@@ -635,7 +613,7 @@ struct CommandPaletteView: View {
                 Spacer()
                 if !badge.isEmpty {
                     Text(badge)
-                        .font(.system(size: 9, design: .rounded))
+                        .font(.system(size: AwakeType.metaSize, design: .rounded))
                         .foregroundStyle(AwakeTheme.tertiaryText)
                 }
             }

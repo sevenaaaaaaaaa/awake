@@ -116,7 +116,7 @@ public final class MusicLibrary: ObservableObject {
             await scan(source)
         }
         scannedAt = Date()
-        scanStatus = "扫描完成 · \(tracks.count) 首"
+        scanStatus = "扫描完成，\(tracks.count) 首"
         saveNow()
     }
 
@@ -134,7 +134,7 @@ public final class MusicLibrary: ObservableObject {
                     tick += 1
                     guard tick % 8 == 0 else { return }
                     Task { @MainActor [weak self] in
-                        self?.scanStatus = "\(source.name) · \(count) 首 · \(label)"
+                        self?.scanStatus = "\(source.name)，\(count) 首，\(label)"
                     }
                 }
             } else {
@@ -142,7 +142,7 @@ public final class MusicLibrary: ObservableObject {
                     tick += 1
                     guard tick % 8 == 0 else { return }
                     Task { @MainActor [weak self] in
-                        self?.scanStatus = "\(source.name) · \(count) 首 · \(label)"
+                        self?.scanStatus = "\(source.name)，\(count) 首，\(label)"
                     }
                 }
             }
@@ -165,7 +165,7 @@ public final class MusicLibrary: ObservableObject {
                 sources[index].lastScan = Date()
                 sources[index].trackCount = merged.count
             }
-            scanStatus = "\(source.name) · 已收录 \(merged.count) 首"
+            scanStatus = "\(source.name) 已收录 \(merged.count) 首"
             save()
         } catch {
             lastError = error.localizedDescription

@@ -175,7 +175,7 @@ public actor AutoEQEngine {
         return AutoEQDecision(curve: final,
                               headphone: headphone,
                               trackProfile: trackProfile,
-                              reason: reasons.joined(separator: " · "),
+                              reason: reasons.joined(separator: "，"),
                               confidence: min(0.98, confidence),
                               usedListenerBias: usedBias)
     }

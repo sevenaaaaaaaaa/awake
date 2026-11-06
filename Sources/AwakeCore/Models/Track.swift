@@ -66,17 +66,17 @@ public struct Track: Identifiable, Codable, Hashable {
     public var albumKey: String { "\((albumArtist.isEmpty ? artist : albumArtist).lowercased())|\(album.lowercased())" }
 
     public var qualityLabel: String {
-        guard sampleRate > 0 else { return codec.isEmpty ? "待解析" : "\(codec) · 待解析" }
+        guard sampleRate > 0 else { return codec.isEmpty ? "待解析" : "\(codec) 待解析" }
         if codec.uppercased() == "DSD" {
             let multiple = Int((Double(sampleRate) / 44100.0).rounded())
             let mhz = String(format: "%.1f", Double(sampleRate) / 1_000_000.0)
-            var label = multiple > 0 ? "DSD\(multiple) · 1-bit / \(mhz) MHz" : "DSD · 1-bit / \(mhz) MHz"
-            if channels > 2 { label += " · \(channels)ch" }
+            var label = multiple > 0 ? "DSD\(multiple) 1-bit/\(mhz) MHz" : "DSD 1-bit/\(mhz) MHz"
+            if channels > 2 { label += " \(channels)ch" }
             return label
         }
         let khz = sampleRate >= 1000 ? String(format: "%.1f", Double(sampleRate) / 1000.0) : "\(sampleRate)"
         var label = "\(codec.isEmpty ? "PCM" : codec) \(bitDepth)-bit / \(khz) kHz"
-        if channels > 2 { label += " · \(channels)ch" }
+        if channels > 2 { label += " \(channels)ch" }
         return label
     }
 
