@@ -103,6 +103,8 @@ Awake 不依赖 Sparkle 或安装器，直接用 GitHub Releases 做在线更新
 - **自动检查**：默认开启，启动时静默查询，24 小时内最多一次；发现新版本时侧边栏齿轮出现小圆点，不打断播放。
 - **安全边界**：只接受 https 的 GitHub 资源；安装前核对 `CFBundleIdentifier`、版本号与 `codesign --verify --deep --strict`，任何一项不通过就中止并给出原因。
 
+![软件更新](screens/update.png)
+
 无界面自检（与 UI 同一条代码路径）：
 
 ```bash
