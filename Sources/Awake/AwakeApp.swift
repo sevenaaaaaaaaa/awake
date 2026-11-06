@@ -17,6 +17,13 @@ struct AwakeApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("设置…") { model.showSettings = true }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
+            CommandGroup(after: .appInfo) {
+                Button("检查更新…") { model.presentUpdates() }
+            }
             CommandMenu("播放") {
                 Button(model.isPlaying ? "暂停" : "播放") { model.togglePlayPause() }
                     .keyboardShortcut(.space, modifiers: [])
@@ -36,7 +43,7 @@ struct AwakeApp: App {
                 Button("自动 EQ") { model.showEQ = true }
                     .keyboardShortcut("e", modifiers: .command)
                 Button("音乐来源…") { model.showSources = true }
-                    .keyboardShortcut(",", modifiers: .command)
+                    .keyboardShortcut(",", modifiers: [.command, .shift])
             }
         }
     }

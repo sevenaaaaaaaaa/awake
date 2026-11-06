@@ -39,6 +39,8 @@ final class AppModel: ObservableObject {
     @Published var showSources = false
     @Published var showSettings = false
     @Published var showPalette = false
+    @Published var showUpdateSheet = false
+    @Published private(set) var updatePhase: UpdatePhase = .idle
 
     @Published private(set) var toast: String?
     @Published private(set) var isResolving = false
@@ -74,6 +76,13 @@ final class AppModel: ObservableObject {
         }
     }
     // MARK: - Derived state
+
+    var appVersion: String { Bundle.main.shortVersion }
+    var buildNumber: String { Bundle.main.buildNumber }
+    var hasUpdate: Bool {
+        if case .available = updatePhase { return true }
+        return false
+    }
 
     var currentTrack: Track? { engine.currentTrack }
     var isPlaying: Bool { engine.isPlaying }
@@ -111,6 +120,13 @@ final class AppModel: ObservableObject {
     func bootstrap() async {
         guard !didBootstrap else { return }
         didBootstrap = true
+
+        // 无界面自检：--update-check 只打印结果，--update-install 走完整替换流程。
+        let cliArgs = CommandLine.arguments
+        if cliArgs.contains("--update-check") || cliArgs.contains("--update-install") {
+            await runUpdateCLI(install: cliArgs.contains("--update-install"))
+            return
+        }
         AwakePaths.ensure()
         library.load()
 
@@ -159,6 +175,15 @@ final class AppModel: ObservableObject {
                 if args.contains("--play-webdav") {
                     play(remote, context: library.tracks, title: "WebDAV")
                 }
+            }
+        }
+
+        if let index = args.firstIndex(of: "--just-updated"), index + 1 < args.count {
+            toast("已更新到 \(args[index + 1])")
+        }
+        if settings.settings.autoCheckUpdates {
+            Task { [weak self] in
+                await self?.checkForUpdates(force: false)
             }
         }
     }
@@ -552,6 +577,119 @@ final class AppModel: ObservableObject {
 
     func removeSource(_ id: UUID) {
         library.removeSource(id)
+    }
+
+    // MARK: - Updates
+
+    private static let lastUpdateCheckKey = "awake.update.lastCheck"
+
+    private func runUpdateCLI(install: Bool) async {
+        do {
+            let outcome = try await UpdateChecker.check(currentVersion: appVersion)
+            switch outcome {
+            case .upToDate(let version):
+                print("[awake-update] up-to-date current=\(appVersion) latest=\(version)")
+            case .available(let info):
+                print("[awake-update] available current=\(info.currentVersion) latest=\(info.version) asset=\(info.assetName) bytes=\(info.assetSize)")
+                guard install else { break }
+                print("[awake-update] downloading \(info.downloadURL.absoluteString)")
+                let zip = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("Awake-\(info.version).zip")
+                try? FileManager.default.removeItem(at: zip)
+                try await UpdateDownloader.download(info, to: zip) { ratio in
+                    if ratio >= 1 { print("[awake-update] downloaded") }
+                }
+                print("[awake-update] unpacking")
+                let bundle = try UpdateInstaller.unpack(zip: zip, expectedVersion: info.version)
+                try UpdateInstaller.installAndRelaunch(newBundle: bundle,
+                                                       destination: Bundle.main.bundleURL,
+                                                       version: info.version)
+                print("[awake-update] install scheduled, terminating pid=\(ProcessInfo.processInfo.processIdentifier)")
+            }
+        } catch {
+            print("[awake-update] failed: \(error.localizedDescription)")
+            exit(2)
+        }
+        NSApp.terminate(nil)
+    }
+
+    func presentUpdates() {
+        showUpdateSheet = true
+        Task { await checkForUpdates(force: true) }
+    }
+
+    /// Called when the update sheet appears; reuses a result that is already on screen.
+    func ensureUpdateCheck() {
+        if case .idle = updatePhase {
+            Task { await checkForUpdates(force: true) }
+        }
+    }
+
+    func checkForUpdates(force: Bool) async {
+        switch updatePhase {
+        case .downloading, .installing:
+            return
+        default:
+            break
+        }
+        if !force,
+           let last = UserDefaults.standard.object(forKey: Self.lastUpdateCheckKey) as? Date,
+           Date().timeIntervalSince(last) < 24 * 60 * 60 {
+            return
+        }
+        updatePhase = .checking
+        do {
+            let outcome = try await UpdateChecker.check(currentVersion: appVersion)
+            UserDefaults.standard.set(Date(), forKey: Self.lastUpdateCheckKey)
+            switch outcome {
+            case .upToDate(let version):
+                updatePhase = .upToDate(version: version)
+            case .available(let info):
+                updatePhase = .available(info)
+                if !force {
+                    toast("发现新版本 \(info.version)，打开「Awake › 检查更新…」即可安装")
+                }
+            }
+        } catch {
+            if force {
+                updatePhase = .failed(error.localizedDescription)
+                toast(error.localizedDescription)
+            } else {
+                updatePhase = .idle
+            }
+        }
+    }
+
+    func installAvailableUpdate() {
+        guard case .available(let info) = updatePhase else { return }
+        Task { await downloadAndInstall(info) }
+    }
+
+    private func downloadAndInstall(_ info: UpdateInfo) async {
+        updatePhase = .downloading(progress: 0, version: info.version)
+        do {
+            let zip = FileManager.default.temporaryDirectory
+                .appendingPathComponent("Awake-\(info.version).zip")
+            try? FileManager.default.removeItem(at: zip)
+            try await UpdateDownloader.download(info, to: zip) { ratio in
+                Task { @MainActor [weak self] in
+                    guard let self,
+                          case .downloading(let previous, let version) = self.updatePhase else { return }
+                    if ratio - previous >= 0.01 || ratio >= 0.999 {
+                        self.updatePhase = .downloading(progress: ratio, version: version)
+                    }
+                }
+            }
+            updatePhase = .installing(version: info.version)
+            let bundle = try UpdateInstaller.unpack(zip: zip, expectedVersion: info.version)
+            try UpdateInstaller.installAndRelaunch(newBundle: bundle,
+                                                   destination: Bundle.main.bundleURL,
+                                                   version: info.version)
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            NSApp.terminate(nil)
+        } catch {
+            updatePhase = .failed(error.localizedDescription)
+        }
     }
 
     // MARK: - Toasts

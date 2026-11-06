@@ -40,6 +40,7 @@ struct RootView: View {
         .sheet(isPresented: $model.showEQ) { EQPanelView().environmentObject(model) }
         .sheet(isPresented: $model.showSources) { SourcesSheet().environmentObject(model) }
         .sheet(isPresented: $model.showSettings) { SettingsSheet().environmentObject(model) }
+        .sheet(isPresented: $model.showUpdateSheet) { UpdateSheet().environmentObject(model) }
         .animation(AwakeTheme.spring, value: model.showNowPlaying)
         .animation(.easeOut(duration: 0.15), value: model.showPalette)
         .task {
@@ -235,10 +236,18 @@ struct SidebarView: View {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 13))
                         .foregroundStyle(AwakeTheme.secondaryText)
+                        .overlay(alignment: .topTrailing) {
+                            if model.hasUpdate {
+                                Circle()
+                                    .fill(AwakeTheme.warm)
+                                    .frame(width: 6, height: 6)
+                                    .offset(x: 1, y: -1)
+                            }
+                        }
                 }
                 .buttonStyle(.plain)
                 Spacer()
-                Text("Awake 0.1")
+                Text("Awake \(model.appVersion)")
                     .font(.system(size: 10, design: .rounded))
                     .foregroundStyle(AwakeTheme.tertiaryText)
             }

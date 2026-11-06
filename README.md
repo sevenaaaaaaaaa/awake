@@ -8,10 +8,10 @@
 
 ## 下载
 
-Release 提供 `Awake-0.1.0-macos-arm64.zip`（Apple Silicon，macOS 14+，内置 9 首 24-bit / 96 kHz 演示曲库）：
+Release 提供 `Awake-0.1.1-macos-arm64.zip`（Apple Silicon，macOS 14+，内置 9 首 24-bit / 96 kHz 演示曲库）：
 
 ```bash
-curl -L -o Awake.zip https://github.com/sevenaaaaaaaaa/awake/releases/latest/download/Awake-0.1.0-macos-arm64.zip
+curl -L -o Awake.zip https://github.com/sevenaaaaaaaaa/awake/releases/latest/download/Awake-0.1.1-macos-arm64.zip
 unzip Awake.zip -d /Applications
 open /Applications/Awake.app
 ```
@@ -94,6 +94,24 @@ open dist/Awake.app
 
 ---
 
+## 原生更新与设置
+
+Awake 不依赖 Sparkle 或安装器，直接用 GitHub Releases 做在线更新：
+
+- **设置…（⌘,）**：App 菜单里的标准设置项，打开声音、自动化、曲库、更新四组设置。
+- **检查更新…**：查询 `api.github.com/repos/sevenaaaaaaaaa/awake/releases/latest`，展示版本号与发行说明；一键下载 `Awake-*-macos-arm64.zip`，校验签名后替换 `/Applications/Awake.app` 并自动重启。
+- **自动检查**：默认开启，启动时静默查询，24 小时内最多一次；发现新版本时侧边栏齿轮出现小圆点，不打断播放。
+- **安全边界**：只接受 https 的 GitHub 资源；安装前核对 `CFBundleIdentifier`、版本号与 `codesign --verify --deep --strict`，任何一项不通过就中止并给出原因。
+
+无界面自检（与 UI 同一条代码路径）：
+
+```bash
+/Applications/Awake.app/Contents/MacOS/Awake --update-check
+/Applications/Awake.app/Contents/MacOS/Awake --update-install
+```
+
+---
+
 ## 接上你的音乐
 
 侧边栏「音乐来源」→ 添加：
@@ -172,7 +190,8 @@ Sources/
 │   ├── Metadata/                 # LRC、LRCLIB、翻译、封面链路、MetadataHub
 │   ├── Models/                   # Track / Album / MediaSource
 │   ├── Providers/                # Local / SMB / WebDAV / Plex
-│   └── Store/                    # 设置持久化
+│   ├── Store/                    # 设置持久化
+│   └── Update/                   # GitHub Releases 检查、下载、签名校验、替换安装
 ├── Awake/                        # SwiftUI 应用
 │   ├── AppModel.swift            # 队列、播放、元数据、AutoEQ 编排
 │   ├── RootView / LibraryViews   # 首页、专辑、艺人、歌曲、收藏

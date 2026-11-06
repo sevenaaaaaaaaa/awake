@@ -277,7 +277,7 @@ struct SettingsSheet: View {
                         ("启动时扫描", "打开 Awake 时增量刷新所有来源", binding(\.scanOnLaunch)),
                         ("显示频谱", "歌词舞台上显示实时频谱", binding(\.showVisualizer))
                     ])
-                    about
+                    updateSection
                 }
                 .padding(22)
             }
@@ -364,16 +364,87 @@ struct SettingsSheet: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03)))
     }
 
-    private var about: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Awake 0.1")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.7))
-            Text("高品质音乐播放器 · 自动封面 / 歌词 / 翻译 / EQ。本地优先，NAS 与 Plex 一等公民。")
-                .font(.system(size: 9.5))
+    private var updateSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("关于与更新")
+                .font(.system(size: 10, weight: .bold))
+                .tracking(1.1)
                 .foregroundStyle(AwakeTheme.tertiaryText)
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Awake \(model.appVersion)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.9))
+                        Text(updateStatusLine)
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(AwakeTheme.tertiaryText)
+                    }
+                    Spacer()
+                    Button(model.hasUpdate ? "安装更新" : "检查更新") { model.presentUpdates() }
+                        .buttonStyle(PillButtonStyle(filled: model.hasUpdate))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+
+                Divider().overlay(AwakeTheme.hairline).padding(.leading, 14)
+
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("自动检查更新")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.9))
+                        Text("每天最多一次，仅查询 GitHub Releases")
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(AwakeTheme.tertiaryText)
+                    }
+                    Spacer()
+                    Toggle("", isOn: binding(\.autoCheckUpdates))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .controlSize(.small)
+                        .tint(model.palette.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+
+                Divider().overlay(AwakeTheme.hairline).padding(.leading, 14)
+
+                HStack {
+                    Link("GitHub 仓库", destination: URL(string: "https://github.com/sevenaaaaaaaaa/awake")!)
+                    Spacer()
+                    Link("发行说明", destination: UpdateChannel.releasePage)
+                    Text("·")
+                        .foregroundStyle(AwakeTheme.tertiaryText)
+                    Text("build \(model.buildNumber)")
+                        .font(.system(size: 9.5, design: .monospaced))
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(AwakeTheme.tertiaryText)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+            }
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03)))
         }
-        .padding(.top, 4)
+    }
+
+    private var updateStatusLine: String {
+        switch model.updatePhase {
+        case .idle:
+            return "Apple Silicon · macOS 14+"
+        case .checking:
+            return "正在检查更新…"
+        case .upToDate(let version):
+            return "已是最新（\(version)）"
+        case .available(let info):
+            return "可更新到 \(info.version)（当前 \(info.currentVersion)）"
+        case .downloading(let progress, let version):
+            return "正在下载 \(version) · \(Int(progress * 100))%"
+        case .installing(let version):
+            return "正在安装 \(version)…"
+        case .failed:
+            return "上次检查失败，可重试"
+        }
     }
 }
 

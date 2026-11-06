@@ -15,13 +15,14 @@ public struct AwakeSettings: Codable, Equatable {
     public var showVisualizer: Bool = true
     public var volume: Double = 0.85
     public var headroomDB: Double = -3.0
+    public var autoCheckUpdates: Bool = true
 
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
         case autoEQ, autoEQIntensity, headphoneProfileID, translationEnabled, translationTarget
         case autoFetchLyrics, autoFetchArtwork, bitPerfect, gapless, exclusiveMode
-        case scanOnLaunch, showVisualizer, volume, headroomDB
+        case scanOnLaunch, showVisualizer, volume, headroomDB, autoCheckUpdates
     }
 
     /// Lenient decoding so adding settings never resets an existing profile.
@@ -42,6 +43,7 @@ public struct AwakeSettings: Codable, Equatable {
         showVisualizer = try c.decodeIfPresent(Bool.self, forKey: .showVisualizer) ?? d.showVisualizer
         volume = try c.decodeIfPresent(Double.self, forKey: .volume) ?? d.volume
         headroomDB = try c.decodeIfPresent(Double.self, forKey: .headroomDB) ?? d.headroomDB
+        autoCheckUpdates = try c.decodeIfPresent(Bool.self, forKey: .autoCheckUpdates) ?? d.autoCheckUpdates
     }
 
     public static func load() -> AwakeSettings {
