@@ -26,10 +26,10 @@ struct SourcesSheet: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(model.palette.primary.opacity(0.18)).frame(width: 34, height: 34)
+                    Circle().fill(AwakeTheme.deepIndigo).frame(width: 34, height: 34)
                     Image(systemName: "externaldrive.badge.plus")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(model.palette.secondary)
+                        .foregroundStyle(AwakeTheme.accent)
                 }
                 Text("音乐来源")
                     .font(.system(size: AwakeType.titleSize, weight: .semibold))
@@ -72,9 +72,10 @@ struct SourcesSheet: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
                         .background(
-                            Capsule().fill(kind == item.0 ? Color.white : Color.white.opacity(0.06))
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(kind == item.0 ? AwakeTheme.accent : AwakeTheme.surfaceRaised)
                         )
-                        .foregroundStyle(kind == item.0 ? Color.black : Color.white.opacity(0.75))
+                        .foregroundStyle(kind == item.0 ? AwakeTheme.onAccent : AwakeTheme.textPrimary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -84,7 +85,7 @@ struct SourcesSheet: View {
             if kind == .local {
                 HStack(spacing: 12) {
                     Image(systemName: "folder")
-                        .foregroundStyle(model.palette.secondary)
+                        .foregroundStyle(AwakeTheme.accent)
                     Text("选择音乐文件夹，Awake 会增量扫描。")
                         .font(.system(size: AwakeType.metaSize))
                         .foregroundStyle(AwakeTheme.secondaryText)
@@ -96,7 +97,7 @@ struct SourcesSheet: View {
                     .buttonStyle(PillButtonStyle(filled: true))
                 }
                 .padding(14)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03)))
+                .background(RoundedRectangle(cornerRadius: 12).fill(AwakeTheme.surface))
             } else {
                 VStack(spacing: 10) {
                     field("名称", text: $name, placeholder: kind == .plex ? "家里的 Plex" : "我的 NAS 音乐")
@@ -136,8 +137,8 @@ struct SourcesSheet: View {
             }
         }
         .padding(18)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.035)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.06), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AwakeTheme.surface))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(AwakeTheme.border.opacity(0.8), lineWidth: 1))
     }
 
     private var existingSources: some View {
@@ -150,7 +151,7 @@ struct SourcesSheet: View {
                 Button("重新扫描全部") { model.rescanAll() }
                     .buttonStyle(.plain)
                     .font(.system(size: AwakeType.metaSize))
-                    .foregroundStyle(model.palette.secondary)
+                    .foregroundStyle(AwakeTheme.accent)
             }
 
             if model.library.sources.isEmpty {
@@ -164,9 +165,9 @@ struct SourcesSheet: View {
                 HStack(spacing: 12) {
                     Image(systemName: source.kind.symbol)
                         .font(.system(size: 14))
-                        .foregroundStyle(model.palette.secondary)
+                        .foregroundStyle(AwakeTheme.accent)
                         .frame(width: 26, height: 26)
-                        .background(Circle().fill(Color.white.opacity(0.05)))
+                        .background(Circle().fill(AwakeTheme.surfaceRaised))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(source.name)
                             .font(.system(size: AwakeType.bodySize, weight: .medium))
@@ -178,14 +179,14 @@ struct SourcesSheet: View {
                     }
                     Spacer()
                     Text("\(source.trackCount) 首")
-                        .font(.system(size: AwakeType.metaSize, design: .rounded))
+                        .font(.system(size: AwakeType.metaSize))
                         .foregroundStyle(AwakeTheme.secondaryText)
                     Button("扫描") {
                         Task { await model.library.scan(source) }
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: AwakeType.metaSize))
-                    .foregroundStyle(model.palette.secondary)
+                    .foregroundStyle(AwakeTheme.accent)
                     Button {
                         model.removeSource(source.id)
                     } label: {
@@ -196,11 +197,11 @@ struct SourcesSheet: View {
                     .buttonStyle(.plain)
                 }
                 .padding(10)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.03)))
+                .background(RoundedRectangle(cornerRadius: 8).fill(AwakeTheme.surface))
             }
         }
         .padding(18)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.025)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AwakeTheme.surface.opacity(0.55)))
     }
 
     private func field(_ label: String, text: Binding<String>, placeholder: String) -> some View {
@@ -214,7 +215,9 @@ struct SourcesSheet: View {
                 .font(.system(size: AwakeType.metaSize))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(0.28)))
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(AwakeTheme.background))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(AwakeTheme.border.opacity(0.8), lineWidth: 1))
         }
     }
 
@@ -229,7 +232,9 @@ struct SourcesSheet: View {
                 .font(.system(size: AwakeType.metaSize))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(0.28)))
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(AwakeTheme.background))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(AwakeTheme.border.opacity(0.8), lineWidth: 1))
         }
     }
 }
@@ -255,7 +260,7 @@ struct SettingsSheet: View {
             Divider().overlay(AwakeTheme.hairline)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     group("声音", [
                         ("比特完美输出", "设备采样率与曲目一致时自动切换，跳过系统混音", binding(\.bitPerfect)),
                         ("独占模式", "独占音频设备，避免其他 App 抢占", binding(\.exclusiveMode)),
@@ -274,7 +279,7 @@ struct SettingsSheet: View {
                     ])
                     updateSection
                 }
-                .padding(22)
+                .padding(20)
             }
         }
         .frame(width: 640, height: 720)
@@ -301,7 +306,7 @@ struct SettingsSheet: View {
             Text(title)
                 .font(.system(size: AwakeType.metaSize, weight: .semibold))
                 .foregroundStyle(AwakeTheme.tertiaryText)
-                .padding(.bottom, 8)
+                .padding(.bottom, 6)
             VStack(spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
                     HStack(spacing: 14) {
@@ -314,16 +319,16 @@ struct SettingsSheet: View {
                             .toggleStyle(.switch)
                             .labelsHidden()
                             .controlSize(.small)
-                            .tint(model.palette.secondary)
+                            .tint(AwakeTheme.accent)
                     }
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 7)
                     if index < rows.count - 1 {
                         Divider().overlay(AwakeTheme.hairline).padding(.leading, 14)
                     }
                 }
             }
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03)))
+            .background(RoundedRectangle(cornerRadius: 12).fill(AwakeTheme.surface))
         }
     }
 
@@ -344,10 +349,10 @@ struct SettingsSheet: View {
             }
             .labelsHidden()
             .frame(width: 150)
-            .tint(model.palette.secondary)
+            .tint(AwakeTheme.accent)
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03)))
+        .background(RoundedRectangle(cornerRadius: 12).fill(AwakeTheme.surface))
     }
 
     private var updateSection: some View {
@@ -384,7 +389,7 @@ struct SettingsSheet: View {
                         .toggleStyle(.switch)
                         .labelsHidden()
                         .controlSize(.small)
-                        .tint(model.palette.secondary)
+                        .tint(AwakeTheme.accent)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
@@ -400,10 +405,11 @@ struct SettingsSheet: View {
                 }
                 .font(.system(size: AwakeType.metaSize))
                 .foregroundStyle(AwakeTheme.tertiaryText)
+                .tint(AwakeTheme.accent)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
             }
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03)))
+            .background(RoundedRectangle(cornerRadius: 12).fill(AwakeTheme.surface))
         }
     }
 
@@ -473,11 +479,11 @@ struct CommandPaletteView: View {
                         .focused($focused)
                         .onSubmit { playFirst() }
                     Text("esc")
-                        .font(.system(size: AwakeType.metaSize, design: .rounded))
+                        .font(.system(size: AwakeType.metaSize))
                         .foregroundStyle(AwakeTheme.tertiaryText)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.07)))
+                        .background(RoundedRectangle(cornerRadius: 4).fill(AwakeTheme.surfaceRaised))
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 15)
@@ -534,11 +540,11 @@ struct CommandPaletteView: View {
             .frame(width: 620)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(red: 0.055, green: 0.055, blue: 0.070))
+                    .fill(AwakeTheme.surface)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.white.opacity(0.10), lineWidth: 1)
+                    .strokeBorder(AwakeTheme.border, lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.45), radius: 24, y: 12)
             .padding(.top, 120)
@@ -596,7 +602,7 @@ struct CommandPaletteView: View {
             HStack(spacing: 11) {
                 Image(systemName: icon)
                     .font(.system(size: 11))
-                    .foregroundStyle(model.palette.secondary)
+                    .foregroundStyle(AwakeTheme.accent)
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
@@ -613,7 +619,7 @@ struct CommandPaletteView: View {
                 Spacer()
                 if !badge.isEmpty {
                     Text(badge)
-                        .font(.system(size: AwakeType.metaSize, design: .rounded))
+                        .font(.system(size: AwakeType.metaSize))
                         .foregroundStyle(AwakeTheme.tertiaryText)
                 }
             }
@@ -646,7 +652,7 @@ struct PaletteRowStyle: ButtonStyle {
         configuration.label
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(configuration.isPressed ? Color.white.opacity(0.10) : Color.clear)
+                    .fill(configuration.isPressed ? AwakeTheme.surfaceRaised : Color.clear)
             )
     }
 }

@@ -40,10 +40,10 @@ struct UpdateSheet: View {
     private var header: some View {
         HStack(spacing: 12) {
             ZStack {
-                Circle().fill(model.palette.primary.opacity(0.18)).frame(width: 36, height: 36)
+                Circle().fill(AwakeTheme.deepIndigo).frame(width: 36, height: 36)
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(model.palette.secondary)
+                    .foregroundStyle(AwakeTheme.accent)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("软件更新")
@@ -55,7 +55,7 @@ struct UpdateSheet: View {
             }
             Spacer()
             Button("关闭") { dismiss() }
-                .buttonStyle(PillButtonStyle(filled: true))
+                .buttonStyle(PillButtonStyle(filled: false))
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 16)
@@ -87,7 +87,7 @@ struct UpdateSheet: View {
                            spinner: true)
                 ProgressView(value: progress)
                     .progressViewStyle(.linear)
-                    .tint(model.palette.secondary)
+                    .tint(AwakeTheme.accent)
                 Text("\(Int(progress * 100))%")
                     .font(.system(size: AwakeType.metaSize, design: .monospaced))
                     .foregroundStyle(AwakeTheme.tertiaryText)
@@ -107,7 +107,7 @@ struct UpdateSheet: View {
                            spinner: false)
                 Link("打开 GitHub Releases 手动下载", destination: UpdateChannel.releasePage)
                     .font(.system(size: AwakeType.metaSize))
-                    .foregroundStyle(model.palette.secondary)
+                    .foregroundStyle(AwakeTheme.accent)
             }
         }
     }
@@ -128,8 +128,8 @@ struct UpdateSheet: View {
                     .font(.system(size: AwakeType.metaSize, weight: .semibold))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(Capsule().fill(model.palette.primary.opacity(0.25)))
-                    .foregroundStyle(model.palette.secondary)
+                    .background(Capsule().fill(AwakeTheme.accent.opacity(0.16)))
+                    .foregroundStyle(AwakeTheme.accent)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -144,7 +144,7 @@ struct UpdateSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(14)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.035)))
+            .background(RoundedRectangle(cornerRadius: 12).fill(AwakeTheme.surface))
 
             Text("\(info.assetName)（\(byteText(info.assetSize))）")
                 .font(.system(size: AwakeType.metaSize, design: .monospaced))
@@ -156,7 +156,7 @@ struct UpdateSheet: View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(model.palette.secondary)
+                .foregroundStyle(AwakeTheme.accent)
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
@@ -171,7 +171,7 @@ struct UpdateSheet: View {
             }
             Spacer()
             if spinner {
-                ProgressView().controlSize(.small).tint(model.palette.secondary)
+                ProgressView().controlSize(.small).tint(AwakeTheme.accent)
             }
         }
         .padding(.vertical, 4)

@@ -19,18 +19,17 @@ struct PlayerBar: View {
             }
         }
         .padding(.horizontal, 20)
-        .frame(height: 76)
+        .frame(height: 80)
         .background(
             ZStack {
-                Rectangle().fill(.ultraThinMaterial)
-                Rectangle().fill(model.palette.deep.opacity(0.55))
-                LinearGradient(colors: [model.palette.primary.opacity(0.10), .clear],
+                Rectangle().fill(AwakeTheme.surface)
+                LinearGradient(colors: [AwakeTheme.deepIndigo.opacity(0.55), .clear],
                                startPoint: .leading,
                                endPoint: .trailing)
             }
         )
         .overlay(alignment: .top) {
-            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+            Rectangle().fill(AwakeTheme.border).frame(height: 1)
         }
         .padding(.horizontal, 10)
         .padding(.bottom, 10)
@@ -40,10 +39,10 @@ struct PlayerBar: View {
     private var idle: some View {
         HStack(spacing: 12) {
             Image(systemName: "waveform")
-                .font(.system(size: 18, weight: .light))
-                .foregroundStyle(model.palette.secondary)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(AwakeTheme.accent)
             Text("Awake")
-                .font(.system(size: AwakeType.bodySize, weight: .semibold, design: .rounded))
+                .font(.system(size: AwakeType.bodySize, weight: .semibold))
                 .foregroundStyle(.white)
             Spacer()
             Button {
@@ -110,7 +109,7 @@ struct PlayerBar: View {
                 } label: {
                     ZStack {
                         Circle()
-                            .fill(.white)
+                            .fill(AwakeTheme.accent)
                             .frame(width: 34, height: 34)
                         if model.isResolving {
                             ProgressView()
@@ -119,7 +118,7 @@ struct PlayerBar: View {
                         } else {
                             Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(.black)
+                                .foregroundStyle(AwakeTheme.onAccent)
                                 .offset(x: model.isPlaying ? 0 : 1)
                         }
                     }
@@ -138,13 +137,13 @@ struct PlayerBar: View {
 
             HStack(spacing: 8) {
                 Text(model.elapsed.timecode)
-                    .font(.system(size: AwakeType.metaSize, design: .rounded))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(AwakeTheme.tertiaryText)
                     .frame(width: 34, alignment: .trailing)
                 scrubber
                     .frame(width: 260)
                 Text("-" + model.engine.secondsRemaining.timecode)
-                    .font(.system(size: AwakeType.metaSize, design: .rounded))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(AwakeTheme.tertiaryText)
                     .frame(width: 38, alignment: .leading)
             }
@@ -157,7 +156,7 @@ struct PlayerBar: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.white.opacity(0.12)).frame(height: 3)
                 Capsule()
-                    .fill(LinearGradient(colors: [model.palette.secondary, model.palette.primary],
+                    .fill(LinearGradient(colors: [AwakeTheme.accent, AwakeTheme.indigo],
                                          startPoint: .leading,
                                          endPoint: .trailing))
                     .frame(width: max(0, geo.size.width * progress), height: 3)
@@ -188,14 +187,14 @@ struct PlayerBar: View {
         HStack(spacing: 14) {
             if model.engine.isBitPerfect {
                 Text("BIT-PERFECT")
-                    .font(.system(size: AwakeType.metaSize, weight: .bold, design: .rounded))
+                    .font(.system(size: AwakeType.metaSize, weight: .bold))
                     .foregroundStyle(AwakeTheme.warm)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
                     .background(RoundedRectangle(cornerRadius: 4).fill(AwakeTheme.warm.opacity(0.14)))
             } else if track.isHiRes {
                 Text(track.sampleRate > 0 ? String(format: "%.1f kHz", Double(track.sampleRate) / 1000) : "HI-RES")
-                    .font(.system(size: AwakeType.metaSize, weight: .bold, design: .rounded))
+                    .font(.system(size: AwakeType.metaSize, weight: .bold))
                     .foregroundStyle(AwakeTheme.secondaryText)
             }
 
@@ -204,7 +203,7 @@ struct PlayerBar: View {
             } label: {
                 Image(systemName: "quote.bubble")
                     .font(.system(size: 13))
-                    .foregroundStyle(model.lyrics != nil ? model.palette.secondary : AwakeTheme.secondaryText)
+                    .foregroundStyle(model.lyrics != nil ? AwakeTheme.accent : AwakeTheme.secondaryText)
             }
             .buttonStyle(.plain)
             .help("歌词舞台")
@@ -214,7 +213,7 @@ struct PlayerBar: View {
             } label: {
                 Image(systemName: "slider.vertical.3")
                     .font(.system(size: 13))
-                    .foregroundStyle(model.autoEQDecision != nil ? model.palette.secondary : AwakeTheme.secondaryText)
+                    .foregroundStyle(model.autoEQDecision != nil ? AwakeTheme.accent : AwakeTheme.secondaryText)
             }
             .buttonStyle(.plain)
             .help("自动 EQ")
@@ -227,7 +226,7 @@ struct PlayerBar: View {
                                       set: { model.volume = $0 }), in: 0...1)
                     .controlSize(.mini)
                     .frame(width: 74)
-                    .tint(model.palette.secondary)
+                    .tint(AwakeTheme.accent)
             }
         }
         .frame(width: 250, alignment: .trailing)

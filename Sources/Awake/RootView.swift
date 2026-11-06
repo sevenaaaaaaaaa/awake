@@ -42,7 +42,7 @@ struct RootView: View {
         .sheet(isPresented: $model.showSettings) { SettingsSheet().environmentObject(model) }
         .sheet(isPresented: $model.showUpdateSheet) { UpdateSheet().environmentObject(model) }
         .animation(AwakeTheme.spring, value: model.showNowPlaying)
-        .animation(.easeOut(duration: 0.15), value: model.showPalette)
+        .animation(AwakeTheme.quick, value: model.showPalette)
         .task {
             let args = CommandLine.arguments
             if let i = args.firstIndex(of: "--page"), i + 1 < args.count {
@@ -94,18 +94,18 @@ struct RootView: View {
     private var background: some View {
         ZStack {
             AwakeTheme.background
-            LinearGradient(colors: [model.palette.primary.opacity(0.16),
-                                    model.palette.secondary.opacity(0.07),
+            LinearGradient(colors: [AwakeTheme.indigo.opacity(0.18),
+                                    model.palette.primary.opacity(0.06),
                                     Color.clear],
                            startPoint: .topLeading,
                            endPoint: .center)
-            RadialGradient(colors: [model.palette.secondary.opacity(0.10), .clear],
+            RadialGradient(colors: [AwakeTheme.accent.opacity(0.05), .clear],
                            center: .bottomTrailing,
                            startRadius: 20,
                            endRadius: 900)
         }
         .ignoresSafeArea()
-        .animation(.easeInOut(duration: 0.8), value: model.palette.primary)
+        .animation(AwakeTheme.ambient, value: model.palette.primary)
     }
 
     @ViewBuilder
@@ -135,7 +135,7 @@ struct RootView: View {
         if let toast = model.toast {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(model.palette.secondary)
+                    .fill(AwakeTheme.accent)
                     .frame(width: 6, height: 6)
                 Text(toast)
                     .font(.system(size: AwakeType.bodySize, weight: .medium))
@@ -143,8 +143,8 @@ struct RootView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(.white.opacity(0.08), lineWidth: 1))
+            .background(AwakeTheme.surface, in: Capsule())
+            .overlay(Capsule().strokeBorder(AwakeTheme.border.opacity(0.8), lineWidth: 1))
             .padding(.top, 18)
             .transition(.move(edge: .top).combined(with: .opacity))
         }
@@ -205,7 +205,7 @@ struct SidebarView: View {
                             .lineLimit(1)
                         Spacer()
                         Text(String(source.trackCount))
-                            .font(.system(size: AwakeType.metaSize, design: .rounded))
+                            .font(.system(size: AwakeType.metaSize))
                             .foregroundStyle(AwakeTheme.tertiaryText)
                     }
                 }
@@ -237,30 +237,30 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 Spacer()
                 Text("Awake \(model.appVersion)")
-                    .font(.system(size: AwakeType.metaSize, design: .rounded))
+                    .font(.system(size: AwakeType.metaSize))
                     .foregroundStyle(AwakeTheme.tertiaryText)
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 100)
         }
-        .frame(width: 236)
-        .background(Color.white.opacity(0.022))
+        .frame(width: 240)
+        .background(AwakeTheme.surface.opacity(0.35))
     }
 
     private var brand: some View {
         HStack(spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(LinearGradient(colors: [model.palette.primary, model.palette.secondary],
+                    .fill(LinearGradient(colors: [AwakeTheme.indigo, AwakeTheme.accent],
                                          startPoint: .topLeading,
                                          endPoint: .bottomTrailing))
                     .frame(width: 30, height: 30)
                 Image(systemName: "waveform")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.black.opacity(0.8))
+                    .foregroundStyle(AwakeTheme.onAccent)
             }
             Text("Awake")
-                .font(.system(size: AwakeType.titleSize, weight: .semibold, design: .rounded))
+                .font(.system(size: AwakeType.titleSize, weight: .semibold))
                 .foregroundStyle(.white)
             Spacer()
         }
@@ -286,7 +286,7 @@ struct SidebarView: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(selected ? Color.white.opacity(0.09) : Color.clear)
+                    .fill(selected ? AwakeTheme.deepIndigo : Color.clear)
             )
             .contentShape(Rectangle())
         }

@@ -31,17 +31,18 @@ struct NowPlayingView: View {
     private var stageBackground: some View {
         GeometryReader { geo in
             ZStack {
-                model.palette.stageGradient
+                AwakeTheme.background
+                model.palette.stageGradient.opacity(0.85)
                 if let image = model.artwork {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .blur(radius: 110)
-                        .opacity(0.55)
+                        .opacity(0.40)
                 }
-                model.palette.glowGradient
-                LinearGradient(colors: [.black.opacity(0.15), .black.opacity(0.55)],
+                model.palette.glowGradient.opacity(0.55)
+                LinearGradient(colors: [.black.opacity(0.25), .black.opacity(0.65)],
                                startPoint: .top,
                                endPoint: .bottom)
             }
@@ -57,9 +58,9 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .foregroundStyle(AwakeTheme.secondaryText)
                     .frame(width: 30, height: 30)
-                    .background(Circle().fill(.white.opacity(0.08)))
+                    .background(Circle().fill(AwakeTheme.surfaceRaised))
             }
             .buttonStyle(.plain)
             .padding(.leading, 78)
@@ -79,10 +80,10 @@ struct NowPlayingView: View {
                     Text(model.autoEQDecision?.headphone.name ?? "AutoEQ")
                         .font(.system(size: AwakeType.metaSize, weight: .medium))
                 }
-                .foregroundStyle(model.palette.secondary)
+                .foregroundStyle(AwakeTheme.accent)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Capsule().fill(.white.opacity(0.07)))
+                .background(Capsule().fill(AwakeTheme.surfaceRaised))
             }
 
             Button {
@@ -93,9 +94,9 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: "character.book.closed")
                     .font(.system(size: 12))
-                    .foregroundStyle(showTranslation ? model.palette.secondary : .white.opacity(0.5))
+                    .foregroundStyle(showTranslation ? AwakeTheme.accent : AwakeTheme.tertiaryText)
                     .frame(width: 30, height: 30)
-                    .background(Circle().fill(.white.opacity(0.07)))
+                    .background(Circle().fill(AwakeTheme.surfaceRaised))
             }
             .buttonStyle(.plain)
             .help("逐句翻译")
@@ -105,9 +106,9 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: "slider.vertical.3")
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(AwakeTheme.secondaryText)
                     .frame(width: 30, height: 30)
-                    .background(Circle().fill(.white.opacity(0.07)))
+                    .background(Circle().fill(AwakeTheme.surfaceRaised))
             }
             .buttonStyle(.plain)
         }
@@ -122,12 +123,12 @@ struct NowPlayingView: View {
                     .frame(width: 380, height: 380)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(.white.opacity(0.10), lineWidth: 1)
+                            .strokeBorder(AwakeTheme.border, lineWidth: 1)
                     )
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(track.title)
-                        .font(.system(size: AwakeType.displaySize, weight: .bold, design: .rounded))
+                        .font(.system(size: AwakeType.displaySize, weight: .bold))
                         .foregroundStyle(.white)
                         .lineLimit(2)
                     Text(track.artist)
@@ -138,7 +139,7 @@ struct NowPlayingView: View {
                         Text(track.qualityLabel)
                     }
                     .font(.system(size: AwakeType.metaSize))
-                    .foregroundStyle(.white.opacity(0.38))
+                    .foregroundStyle(AwakeTheme.tertiaryText)
                     .lineLimit(1)
                 }
 
@@ -152,7 +153,7 @@ struct NowPlayingView: View {
             VStack(spacing: 12) {
                 Image(systemName: "music.note")
                     .font(.system(size: 40, weight: .light))
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(AwakeTheme.tertiaryText)
                 Text("还没有正在播放的歌")
                     .font(.system(size: AwakeType.bodySize))
                     .foregroundStyle(.white.opacity(0.5))
@@ -176,7 +177,7 @@ struct NowPlayingView: View {
                                   height: height)
                 let shade = 0.35 + normalized * 0.65
                 context.fill(Path(roundedRect: rect, cornerRadius: 1.5),
-                             with: .color(model.palette.secondary.opacity(Double(shade))))
+                             with: .color(AwakeTheme.accent.opacity(Double(shade))))
             }
         }
         .opacity(model.isPlaying ? 1 : 0.35)
@@ -186,9 +187,9 @@ struct NowPlayingView: View {
         VStack(spacing: 5) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.14)).frame(height: 3)
+                    Capsule().fill(AwakeTheme.surfaceRaised).frame(height: 3)
                     Capsule()
-                        .fill(LinearGradient(colors: [model.palette.secondary, model.palette.primary],
+                        .fill(LinearGradient(colors: [AwakeTheme.accent, AwakeTheme.indigo],
                                              startPoint: .leading,
                                              endPoint: .trailing))
                         .frame(width: max(0, geo.size.width * model.engine.progress), height: 3)
@@ -208,8 +209,8 @@ struct NowPlayingView: View {
                 Spacer()
                 Text("-" + model.engine.secondsRemaining.timecode)
             }
-            .font(.system(size: AwakeType.metaSize, design: .rounded))
-            .foregroundStyle(.white.opacity(0.35))
+            .font(.system(size: AwakeType.metaSize))
+            .foregroundStyle(AwakeTheme.tertiaryText)
         }
     }
 
@@ -218,16 +219,16 @@ struct NowPlayingView: View {
             Button { model.previousTrack() } label: {
                 Image(systemName: "backward.fill")
                     .font(.system(size: 15))
-                    .foregroundStyle(.white.opacity(0.65))
+                    .foregroundStyle(AwakeTheme.secondaryText)
             }
             .buttonStyle(.plain)
 
             Button { model.togglePlayPause() } label: {
                 ZStack {
-                    Circle().fill(.white).frame(width: 46, height: 46)
+                    Circle().fill(AwakeTheme.accent).frame(width: 46, height: 46)
                     Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(AwakeTheme.onAccent)
                         .offset(x: model.isPlaying ? 0 : 1)
                 }
             }
@@ -236,7 +237,7 @@ struct NowPlayingView: View {
             Button { model.nextTrack() } label: {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 15))
-                    .foregroundStyle(.white.opacity(0.65))
+                    .foregroundStyle(AwakeTheme.secondaryText)
             }
             .buttonStyle(.plain)
 
@@ -245,7 +246,7 @@ struct NowPlayingView: View {
             Button { model.toggleFavoriteForCurrent() } label: {
                 Image(systemName: model.currentTrack?.favorite == true ? "heart.fill" : "heart")
                     .font(.system(size: 15))
-                    .foregroundStyle(model.currentTrack?.favorite == true ? AwakeTheme.warm : .white.opacity(0.45))
+                    .foregroundStyle(model.currentTrack?.favorite == true ? AwakeTheme.accent : AwakeTheme.tertiaryText)
             }
             .buttonStyle(.plain)
         }
@@ -257,17 +258,17 @@ struct NowPlayingView: View {
             HStack(spacing: 8) {
                 Text("歌词")
                     .font(.system(size: AwakeType.metaSize, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(AwakeTheme.secondaryText)
                 if let lyrics = model.lyrics {
                     Text(lyrics.isSynced ? "逐句同步" : "纯文本")
                         .font(.system(size: AwakeType.metaSize, weight: .medium))
-                        .foregroundStyle(model.palette.secondary.opacity(0.9))
+                        .foregroundStyle(AwakeTheme.accent)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(model.palette.secondary.opacity(0.12)))
+                        .background(Capsule().fill(AwakeTheme.accent.opacity(0.14)))
                     Text(lyrics.source)
                         .font(.system(size: AwakeType.metaSize))
-                        .foregroundStyle(.white.opacity(0.3))
+                        .foregroundStyle(AwakeTheme.tertiaryText)
                 }
                 Spacer()
                 if model.isLoadingMetadata {
@@ -288,11 +289,11 @@ struct NowPlayingView: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.ultraThinMaterial.opacity(0.22))
+                .fill(AwakeTheme.surface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+                .strokeBorder(AwakeTheme.border.opacity(0.8), lineWidth: 1)
         )
     }
 
@@ -320,7 +321,7 @@ struct NowPlayingView: View {
             )
             .onChange(of: activeIndex(lyrics)) { _, newValue in
                 guard let index = newValue else { return }
-                withAnimation(.easeInOut(duration: 0.45)) {
+                withAnimation(AwakeTheme.lyric) {
                     proxy.scrollTo(index, anchor: .center)
                 }
             }
@@ -341,17 +342,19 @@ struct NowPlayingView: View {
                 .font(.system(size: active ? AwakeType.displaySize : AwakeType.titleSize,
                               weight: active ? .bold : .medium,
                               design: .rounded))
-                .foregroundStyle(active ? Color.white : Color.white.opacity(past ? 0.24 : 0.42))
+                .foregroundStyle(active ? AwakeTheme.textPrimary
+                                        : AwakeTheme.tertiaryText.opacity(past ? 0.8 : 1))
                 .lineSpacing(2)
             if showTranslation, let translated, !translated.isEmpty {
                 Text(translated)
                     .font(.system(size: active ? AwakeType.bodySize : AwakeType.metaSize))
-                    .foregroundStyle(active ? model.palette.secondary.opacity(0.95) : Color.white.opacity(past ? 0.16 : 0.30))
+                    .foregroundStyle(active ? AwakeTheme.accent
+                                            : AwakeTheme.tertiaryText.opacity(past ? 0.7 : 0.9))
                     .lineSpacing(1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(.easeOut(duration: 0.28), value: active)
+        .animation(AwakeTheme.lyric, value: active)
     }
 
     private func translatedLine(_ index: Int) -> String? {
@@ -380,10 +383,10 @@ struct NowPlayingView: View {
         VStack(spacing: 12) {
             Image(systemName: model.isLoadingMetadata ? "sparkles" : "text.bubble")
                 .font(.system(size: 30, weight: .light))
-                .foregroundStyle(model.palette.secondary.opacity(0.6))
+                .foregroundStyle(AwakeTheme.accent)
             Text(model.isLoadingMetadata ? "正在为这首歌匹配歌词与翻译…" : "这首还没有歌词")
                 .font(.system(size: AwakeType.bodySize))
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(AwakeTheme.secondaryText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -393,17 +396,17 @@ struct NowPlayingView: View {
             if let decision = model.autoEQDecision {
                 Image(systemName: "waveform.path.ecg")
                     .font(.system(size: 10))
-                    .foregroundStyle(model.palette.secondary.opacity(0.85))
+                    .foregroundStyle(AwakeTheme.accent)
                 Text(decision.reason)
                     .font(.system(size: AwakeType.metaSize))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(AwakeTheme.tertiaryText)
                     .lineLimit(1)
             }
             Spacer()
             if let upNext = model.upNext {
                 Text("接下来：\(upNext.title) — \(upNext.artist)")
                     .font(.system(size: AwakeType.metaSize))
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(AwakeTheme.tertiaryText)
                     .lineLimit(1)
             }
         }

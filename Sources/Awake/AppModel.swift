@@ -700,7 +700,7 @@ final class AppModel: ObservableObject {
         toastTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_600_000_000)
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.25)) { self?.toast = nil }
+            withAnimation(AwakeTheme.fade) { self?.toast = nil }
         }
     }
 }

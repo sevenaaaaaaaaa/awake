@@ -50,7 +50,7 @@ struct SectionHeader: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.bottom, 12)
+        .padding(.bottom, 16)
     }
 }
 
@@ -60,7 +60,7 @@ struct QualityBadge: View {
     var body: some View {
         Text(track.qualityLabel)
             .font(.system(size: AwakeType.metaSize, design: .monospaced))
-            .foregroundStyle(track.isHiRes ? AwakeTheme.warm : AwakeTheme.secondaryText)
+            .foregroundStyle(track.isHiRes ? AwakeTheme.qualityAccent : AwakeTheme.secondaryText)
     }
 }
 
@@ -71,7 +71,7 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
+            VStack(alignment: .leading, spacing: 40) {
                 header
                 if model.library.tracks.isEmpty && !model.library.isScanning {
                     emptyState
@@ -82,8 +82,8 @@ struct HomeView: View {
                     favorites
                 }
             }
-            .padding(.horizontal, 34)
-            .padding(.top, 42)
+            .padding(.horizontal, 32)
+            .padding(.top, 40)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.hidden)
@@ -92,7 +92,7 @@ struct HomeView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greeting)
-                .font(.system(size: AwakeType.displaySize, weight: .bold, design: .rounded))
+                .font(.system(size: AwakeType.displaySize, weight: .bold))
                 .foregroundStyle(.white)
             Text(subtitle)
                 .font(.system(size: AwakeType.bodySize))
@@ -149,8 +149,8 @@ struct HomeView: View {
                                 .font(.system(size: AwakeType.bodySize, weight: .semibold))
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 9)
-                                .background(Capsule().fill(Color.white))
-                                .foregroundStyle(.black)
+                                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(AwakeTheme.accent))
+                                .foregroundStyle(AwakeTheme.onAccent)
                         }
                         .buttonStyle(.plain)
 
@@ -161,8 +161,10 @@ struct HomeView: View {
                                 .font(.system(size: AwakeType.bodySize, weight: .medium))
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 9)
-                                .background(Capsule().fill(Color.white.opacity(0.08)))
-                                .foregroundStyle(.white.opacity(0.85))
+                                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.clear))
+                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .strokeBorder(AwakeTheme.border, lineWidth: 1))
+                                .foregroundStyle(AwakeTheme.textPrimary)
                         }
                         .buttonStyle(.plain)
                     }
@@ -172,8 +174,8 @@ struct HomeView: View {
                 if let track = album.tracks.first {
                     VStack(alignment: .trailing, spacing: 6) {
                         Text(track.qualityLabel)
-                            .font(.system(size: AwakeType.bodySize, weight: .bold, design: .rounded))
-                            .foregroundStyle(track.isHiRes ? AwakeTheme.warm : .white)
+                            .font(.system(size: AwakeType.bodySize, weight: .bold))
+                            .foregroundStyle(track.isHiRes ? AwakeTheme.qualityAccent : AwakeTheme.textPrimary)
                         if let decision = model.autoEQDecision {
                             Text(decision.headphone.name)
                                 .font(.system(size: AwakeType.metaSize))
@@ -187,8 +189,8 @@ struct HomeView: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(.ultraThinMaterial.opacity(0.35))
-                    LinearGradient(colors: [model.palette.primary.opacity(0.22), .clear],
+                        .fill(AwakeTheme.surface)
+                    LinearGradient(colors: [model.palette.primary.opacity(0.14), .clear],
                                    startPoint: .topLeading,
                                    endPoint: .bottomTrailing)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -196,7 +198,7 @@ struct HomeView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(AwakeTheme.border.opacity(0.8), lineWidth: 1)
             )
         }
     }
@@ -266,9 +268,9 @@ struct HomeView: View {
         VStack(spacing: 16) {
             Image(systemName: "music.note.house")
                 .font(.system(size: 44, weight: .light))
-                .foregroundStyle(model.palette.primary)
+                .foregroundStyle(AwakeTheme.accent)
             Text("曲库还是空的")
-                .font(.system(size: AwakeType.titleSize, weight: .bold, design: .rounded))
+                .font(.system(size: AwakeType.titleSize, weight: .bold))
                 .foregroundStyle(.white)
             Text("选择一个音乐文件夹，或者连接 NAS / Plex。")
                 .font(.system(size: AwakeType.bodySize))
@@ -284,7 +286,7 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 70)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.03)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AwakeTheme.surface))
     }
 }
 
@@ -296,8 +298,11 @@ struct PillButtonStyle: ButtonStyle {
             .font(.system(size: AwakeType.bodySize, weight: .semibold))
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
-            .background(Capsule().fill(filled ? Color.white : Color.white.opacity(0.08)))
-            .foregroundStyle(filled ? Color.black : Color.white.opacity(0.9))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(filled ? AwakeTheme.accent : .clear))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(filled ? .clear : AwakeTheme.border, lineWidth: 1))
+            .foregroundStyle(filled ? AwakeTheme.onAccent : AwakeTheme.textPrimary)
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
@@ -368,8 +373,8 @@ struct AlbumsGridView: View {
                     }
                 }
             }
-            .padding(.horizontal, 34)
-            .padding(.top, 42)
+            .padding(.horizontal, 32)
+            .padding(.top, 40)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.hidden)
@@ -392,7 +397,7 @@ struct AlbumDetailView: View {
                         .frame(width: 190, height: 190)
                     VStack(alignment: .leading, spacing: 8) {
                         Text(album.title)
-                            .font(.system(size: AwakeType.displaySize, weight: .bold, design: .rounded))
+                            .font(.system(size: AwakeType.displaySize, weight: .bold))
                             .foregroundStyle(.white)
                             .lineLimit(2)
                         Text(album.artist)
@@ -414,8 +419,8 @@ struct AlbumDetailView: View {
                                     .font(.system(size: AwakeType.bodySize, weight: .semibold))
                                     .padding(.horizontal, 18)
                                     .padding(.vertical, 9)
-                                    .background(Capsule().fill(.white))
-                                    .foregroundStyle(.black)
+                                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(AwakeTheme.accent))
+                                    .foregroundStyle(AwakeTheme.onAccent)
                             }
                             .buttonStyle(.plain)
                             Button {
@@ -425,8 +430,10 @@ struct AlbumDetailView: View {
                                     .font(.system(size: AwakeType.bodySize, weight: .medium))
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 9)
-                                    .background(Capsule().fill(.white.opacity(0.08)))
-                                    .foregroundStyle(.white.opacity(0.85))
+                                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.clear))
+                                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(AwakeTheme.border, lineWidth: 1))
+                                    .foregroundStyle(AwakeTheme.textPrimary)
                             }
                             .buttonStyle(.plain)
                         }
@@ -434,7 +441,7 @@ struct AlbumDetailView: View {
                     }
                     Spacer()
                 }
-                .padding(.top, 42)
+                .padding(.top, 40)
 
                 VStack(spacing: 2) {
                     ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
@@ -446,7 +453,7 @@ struct AlbumDetailView: View {
                     }
                 }
             }
-            .padding(.horizontal, 34)
+            .padding(.horizontal, 32)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.hidden)
@@ -476,12 +483,12 @@ struct ArtistAvatar: View {
                            startPoint: .topLeading,
                            endPoint: .bottomTrailing)
             Text(String(name.prefix(1)).uppercased())
-                .font(.system(size: size * 0.4, weight: .bold, design: .rounded))
+                .font(.system(size: size * 0.4, weight: .bold))
                 .foregroundStyle(.white.opacity(0.92))
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
-        .overlay(Circle().strokeBorder(.white.opacity(0.10), lineWidth: 1))
+        .overlay(Circle().strokeBorder(AwakeTheme.border, lineWidth: 1))
     }
 }
 
@@ -517,8 +524,8 @@ struct ArtistsView: View {
                     }
                 }
             }
-            .padding(.horizontal, 34)
-            .padding(.top, 42)
+            .padding(.horizontal, 32)
+            .padding(.top, 40)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.hidden)
@@ -544,7 +551,7 @@ struct ArtistDetailView: View {
                     ArtistAvatar(path: albums.first?.artworkPath, name: name, palette: model.palette, size: 128)
                     VStack(alignment: .leading, spacing: 8) {
                     Text(name)
-                        .font(.system(size: AwakeType.displaySize, weight: .bold, design: .rounded))
+                        .font(.system(size: AwakeType.displaySize, weight: .bold))
                         .foregroundStyle(.white)
                     Text("\(albums.count) 张专辑，\(tracks.count) 首歌")
                         .font(.system(size: AwakeType.bodySize))
@@ -556,14 +563,14 @@ struct ArtistDetailView: View {
                             .font(.system(size: AwakeType.bodySize, weight: .semibold))
                             .padding(.horizontal, 18)
                             .padding(.vertical, 9)
-                            .background(Capsule().fill(.white))
-                            .foregroundStyle(.black)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(AwakeTheme.accent))
+                            .foregroundStyle(AwakeTheme.onAccent)
                     }
                     .buttonStyle(.plain)
                     .padding(.top, 4)
                     }
                 }
-                .padding(.top, 42)
+                .padding(.top, 40)
 
                 ScrollView(.horizontal) {
                     HStack(spacing: 18) {
@@ -580,7 +587,7 @@ struct ArtistDetailView: View {
                     }
                 }
             }
-            .padding(.horizontal, 34)
+            .padding(.horizontal, 32)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.hidden)
@@ -602,7 +609,7 @@ struct SongsView: View {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("歌曲")
-                        .font(.system(size: AwakeType.displaySize, weight: .bold, design: .rounded))
+                        .font(.system(size: AwakeType.displaySize, weight: .bold))
                         .foregroundStyle(.white)
                     Text("\(model.library.tracks.count) 首")
                         .font(.system(size: AwakeType.bodySize))
@@ -620,11 +627,11 @@ struct SongsView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(Capsule().fill(Color.white.opacity(0.06)))
-                .overlay(Capsule().strokeBorder(.white.opacity(0.07), lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(AwakeTheme.surface))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(AwakeTheme.border.opacity(0.8), lineWidth: 1))
             }
-            .padding(.horizontal, 34)
-            .padding(.top, 42)
+            .padding(.horizontal, 32)
+            .padding(.top, 40)
             .padding(.bottom, 18)
 
             ScrollView {
@@ -664,8 +671,8 @@ struct FavoritesView: View {
                     }
                 }
             }
-            .padding(.horizontal, 34)
-            .padding(.top, 42)
+            .padding(.horizontal, 32)
+            .padding(.top, 40)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.hidden)
@@ -690,10 +697,10 @@ struct TrackRow: View {
         HStack(spacing: 12) {
             ZStack {
                 if isCurrent && model.isPlaying {
-                    EqualizerBars(color: model.palette.secondary)
+                    EqualizerBars(color: AwakeTheme.accent)
                 } else {
                     Text(String(index))
-                        .font(.system(size: AwakeType.metaSize, design: .rounded))
+                        .font(.system(size: AwakeType.metaSize))
                         .foregroundStyle(AwakeTheme.tertiaryText)
                         .opacity(hovered ? 0 : 1)
                     if hovered {
@@ -708,7 +715,7 @@ struct TrackRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
                     .font(.system(size: AwakeType.bodySize, weight: isCurrent ? .semibold : .regular))
-                    .foregroundStyle(isCurrent ? model.palette.secondary : .white)
+                    .foregroundStyle(isCurrent ? AwakeTheme.accent : AwakeTheme.textPrimary)
                     .lineLimit(1)
                 Text(track.artist.isEmpty ? "未知艺人" : track.artist)
                     .font(.system(size: AwakeType.metaSize))
@@ -734,13 +741,13 @@ struct TrackRow: View {
             } label: {
                 Image(systemName: track.favorite ? "heart.fill" : "heart")
                     .font(.system(size: 11))
-                    .foregroundStyle(track.favorite ? AwakeTheme.warm : AwakeTheme.tertiaryText)
+                    .foregroundStyle(track.favorite ? AwakeTheme.accent : AwakeTheme.tertiaryText)
             }
             .buttonStyle(.plain)
             .opacity(track.favorite || hovered ? 1 : 0)
 
             Text(track.duration.timecode)
-                .font(.system(size: AwakeType.metaSize, design: .rounded))
+                .font(.system(size: AwakeType.metaSize))
                 .foregroundStyle(AwakeTheme.tertiaryText)
                 .frame(width: 46, alignment: .trailing)
         }
@@ -748,7 +755,8 @@ struct TrackRow: View {
         .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isCurrent ? Color.white.opacity(0.06) : (hovered ? Color.white.opacity(0.035) : .clear))
+                .fill(isCurrent ? AwakeTheme.deepIndigo.opacity(0.55)
+                                : (hovered ? AwakeTheme.surfaceRaised.opacity(0.55) : .clear))
         )
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
@@ -783,6 +791,7 @@ struct EqualizerBars: View {
             }
         }
         .onAppear {
+            guard !AwakeTheme.reduceMotion else { return }
             withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
                 phase = 1
             }

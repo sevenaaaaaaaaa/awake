@@ -13,16 +13,44 @@ enum AwakeType {
 }
 
 enum AwakeTheme {
-    static let background = Color(red: 0.035, green: 0.035, blue: 0.047)
-    static let elevated = Color(red: 0.075, green: 0.075, blue: 0.092)
-    static let hairline = Color.white.opacity(0.075)
-    static let secondaryText = Color.white.opacity(0.56)
-    static let tertiaryText = Color.white.opacity(0.34)
-    static let accent = Color(red: 0.55, green: 0.80, blue: 1.00)
-    static let warm = Color(red: 1.00, green: 0.72, blue: 0.42)
+    // Palette from ui-ux-pro-max: Music Streaming / Dark Mode (OLED).
+    // Fixed product palette; artwork colour still drives ambient light only.
+    static let background = Color(hex: 0x0F0F23)
+    static let surface = Color(hex: 0x1B1B30)
+    static let surfaceRaised = Color(hex: 0x27273B)
+    static let deepIndigo = Color(hex: 0x1E1B4B)
+    static let indigo = Color(hex: 0x4338CA)
+    static let border = Color(hex: 0x312E81)
+    static let hairline = border.opacity(0.55)
+    static let textPrimary = Color(hex: 0xF8FAFC)
+    static let secondaryText = Color(hex: 0xCBD5E1)
+    static let tertiaryText = Color(hex: 0x94A3B8)
+    static let accent = Color(hex: 0x22C55E)
+    static let onAccent = Color(hex: 0x0F172A)
+    static let qualityAccent = Color(hex: 0xA5B4FC)
+    static let danger = Color(hex: 0xEF4444)
+    // Kept for callers that predate the design-system pass.
+    static let elevated = surface
+    static let warm = accent
 
-    static let spring = Animation.spring(response: 0.42, dampingFraction: 0.82)
-    static let quick = Animation.easeOut(duration: 0.18)
+    static var reduceMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+    static var spring: Animation {
+        reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.36, dampingFraction: 0.86)
+    }
+    static var quick: Animation {
+        reduceMotion ? .linear(duration: 0.01) : .easeOut(duration: 0.18)
+    }
+    static var fade: Animation {
+        reduceMotion ? .linear(duration: 0.01) : .easeOut(duration: 0.25)
+    }
+    static var lyric: Animation {
+        reduceMotion ? .linear(duration: 0.01) : .easeInOut(duration: 0.45)
+    }
+    static var ambient: Animation {
+        reduceMotion ? .linear(duration: 0.01) : .easeInOut(duration: 0.8)
+    }
 }
 
 extension Color {
@@ -182,15 +210,14 @@ extension Double {
 }
 
 extension View {
-    func glassCard(cornerRadius: CGFloat = 18) -> some View {
+    func glassCard(cornerRadius: CGFloat = 12) -> some View {
         self
-            .background(.ultraThinMaterial.opacity(0.55), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(AwakeTheme.surface, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.07), lineWidth: 1)
+                    .strokeBorder(AwakeTheme.border.opacity(0.8), lineWidth: 1)
             )
     }
-
 }
 
 // MARK: - Artwork

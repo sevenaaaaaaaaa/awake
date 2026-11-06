@@ -170,6 +170,18 @@ Awake 不依赖 Sparkle 或安装器，直接用 GitHub Releases 做在线更新
 
 ---
 
+## 设计系统（ui-ux-pro-max）
+
+界面按 `ui-ux-pro-max` 的 Music Streaming / Dark Mode (OLED) 方案实现，设计规则落在 [`design-system/awake/MASTER.md`](design-system/awake/MASTER.md)：
+
+- 调色板：背景 `#0F0F23`、卡片 `#1B1B30`、边框 `#312E81`、正文 `#F8FAFC`、次级文字 `#94A3B8`、播放绿 `#22C55E`、次强调靛蓝 `#4338CA`。
+- 绿色只用于播放、主按钮、选中与开关；封面取色只驱动环境光。
+- 原生 macOS 排版（SF Pro + SF Mono），四档字号 12 / 15 / 20 / 32；未引入无中文覆盖的展示字体。
+- 只做深色（OLED 夜间播放器），实体块面不用毛玻璃；圆角 8 / 12，仅命令面板保留一层投影。
+- Reduce Motion 开启时所有动效折叠到约 0ms。
+
+---
+
 ## 设计语言：Lyrics Stage
 
 Awake 的视觉不是「深色皮肤」，而是让正在播放的专辑成为界面本身：

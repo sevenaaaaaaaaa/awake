@@ -45,10 +45,10 @@ struct EQPanelView: View {
     private var header: some View {
         HStack(spacing: 14) {
             ZStack {
-                Circle().fill(model.palette.primary.opacity(0.18)).frame(width: 34, height: 34)
+                Circle().fill(AwakeTheme.deepIndigo).frame(width: 34, height: 34)
                 Image(systemName: "waveform.path.ecg")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(model.palette.secondary)
+                    .foregroundStyle(AwakeTheme.accent)
             }
             Text("自动 EQ")
                 .font(.system(size: AwakeType.titleSize, weight: .semibold))
@@ -58,13 +58,13 @@ struct EQPanelView: View {
                                      set: { model.setAutoEQEnabled($0) }))
                 .toggleStyle(.switch)
                 .labelsHidden()
-                .tint(model.palette.secondary)
+                .tint(AwakeTheme.accent)
             Button("完成") { dismiss() }
                 .buttonStyle(PillButtonStyle(filled: true))
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
-        .background(Color.white.opacity(0.02))
+        .background(AwakeTheme.surface.opacity(0.5))
     }
 
     private var summaryCard: some View {
@@ -98,7 +98,7 @@ struct EQPanelView: View {
                     .foregroundStyle(AwakeTheme.tertiaryText)
                 if model.engine.isBitPerfect {
                     Text("BIT-PERFECT")
-                        .font(.system(size: AwakeType.metaSize, weight: .bold, design: .rounded))
+                        .font(.system(size: AwakeType.metaSize, weight: .bold))
                         .foregroundStyle(AwakeTheme.warm)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -108,8 +108,8 @@ struct EQPanelView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.035)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.06), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AwakeTheme.surface))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(AwakeTheme.border.opacity(0.8), lineWidth: 1))
     }
 
     private func stat(_ label: String, _ value: String) -> some View {
@@ -118,7 +118,7 @@ struct EQPanelView: View {
                 .font(.system(size: AwakeType.metaSize))
                 .foregroundStyle(AwakeTheme.tertiaryText)
             Text(value)
-                .font(.system(size: AwakeType.bodySize, weight: .semibold, design: .rounded))
+                .font(.system(size: AwakeType.bodySize, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.8))
         }
     }
@@ -129,11 +129,11 @@ struct EQPanelView: View {
                 .fill(Color.black.opacity(0.25))
             GridLines()
             CurveShape(gains: currentGains)
-                .fill(LinearGradient(colors: [model.palette.primary.opacity(0.45), .clear],
+                .fill(LinearGradient(colors: [AwakeTheme.indigo.opacity(0.45), .clear],
                                      startPoint: .top,
                                      endPoint: .bottom))
             CurveShape(gains: currentGains)
-                .stroke(LinearGradient(colors: [model.palette.secondary, model.palette.primary],
+                .stroke(LinearGradient(colors: [AwakeTheme.accent, AwakeTheme.indigo],
                                        startPoint: .leading,
                                        endPoint: .trailing),
                         style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
@@ -149,7 +149,7 @@ struct EQPanelView: View {
         }
         .frame(height: 120)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.06), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(AwakeTheme.border.opacity(0.8), lineWidth: 1))
     }
 
     private var bandSliders: some View {
@@ -160,12 +160,12 @@ struct EQPanelView: View {
                         Text(abs(currentGains[safe: index] ?? 0) > 0.05
                              ? String(format: "%.0f", currentGains[safe: index] ?? 0)
                              : " ")
-                            .font(.system(size: AwakeType.metaSize, design: .rounded))
-                            .foregroundStyle(model.palette.secondary)
-                        EQBandSlider(value: binding(for: index), tint: model.palette.primary)
+                            .font(.system(size: AwakeType.metaSize))
+                            .foregroundStyle(AwakeTheme.accent)
+                        EQBandSlider(value: binding(for: index), tint: AwakeTheme.accent)
                             .frame(height: 120)
                         Text(index % 5 == 0 ? EQBand.label(for: index) : " ")
-                            .font(.system(size: AwakeType.metaSize, design: .rounded))
+                            .font(.system(size: AwakeType.metaSize))
                             .foregroundStyle(AwakeTheme.tertiaryText)
                     }
                     .frame(maxWidth: .infinity)
@@ -204,7 +204,7 @@ struct EQPanelView: View {
                                           set: { model.setAutoEQIntensity($0); syncFromModel() }),
                            in: 0...1.2)
                         .frame(width: 220)
-                        .tint(model.palette.secondary)
+                        .tint(AwakeTheme.accent)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("耳机")
@@ -219,12 +219,12 @@ struct EQPanelView: View {
                     }
                     .labelsHidden()
                     .frame(width: 230)
-                    .tint(model.palette.secondary)
+                    .tint(AwakeTheme.accent)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 6) {
                     Text(String(format: "预览曲线峰值 %.1f dB", currentGains.max() ?? 0))
-                        .font(.system(size: AwakeType.metaSize, design: .rounded))
+                        .font(.system(size: AwakeType.metaSize))
                         .foregroundStyle(AwakeTheme.tertiaryText)
                     HStack(spacing: 10) {
                         Button("重置学习") { model.resetListeningProfile() }
@@ -238,7 +238,7 @@ struct EQPanelView: View {
             }
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.03)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AwakeTheme.surface))
     }
 }
 
@@ -293,7 +293,7 @@ struct GridLines: View {
                     path.addLine(to: CGPoint(x: x, y: geo.size.height))
                 }
             }
-            .stroke(Color.white.opacity(0.045), lineWidth: 1)
+            .stroke(AwakeTheme.border.opacity(0.35), lineWidth: 1)
         }
     }
 }
@@ -309,10 +309,10 @@ struct EQBandSlider: View {
             let factor = (geo.size.height - 12) / CGFloat(range)
             ZStack {
                 Capsule()
-                    .fill(Color.white.opacity(0.07))
+                    .fill(AwakeTheme.surfaceRaised)
                     .frame(width: 3)
                 Rectangle()
-                    .fill(Color.white.opacity(0.10))
+                    .fill(AwakeTheme.surfaceRaised)
                     .frame(width: 9, height: 1)
                 Circle()
                     .fill(Color.white)
