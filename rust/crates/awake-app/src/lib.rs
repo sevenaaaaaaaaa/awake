@@ -152,6 +152,34 @@ pub struct LibraryView {
     pub sources: Vec<MediaSource>,
 }
 
+/// 控制 macOS 交通灯（红黄绿）显隐。
+/// 默认隐藏，鼠标靠近窗口顶部时由前端唤出 —— 顶栏不再恒占一条。
+#[tauri::command]
+fn set_traffic_lights(visible: bool, window: tauri::Window) {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSWindow, NSWindowButton};
+        if let Ok(ptr) = window.ns_window() {
+            unsafe {
+                let ns_window: &NSWindow = &*(ptr as *const NSWindow);
+                for button in [
+                    NSWindowButton::NSWindowCloseButton,
+                    NSWindowButton::NSWindowMiniaturizeButton,
+                    NSWindowButton::NSWindowZoomButton,
+                ] {
+                    if let Some(b) = ns_window.standardWindowButton(button) {
+                        b.setHidden(!visible);
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (visible, window);
+    }
+}
+
 /// 前端挂载完成时调用：证明 WebView 加载 + Vue 挂载 + IPC 通道全部通了。
 #[tauri::command]
 fn frontend_ready(version: String, tracks: usize) -> String {
@@ -426,6 +454,7 @@ pub fn run() {
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             scan_library,
+            set_traffic_lights,
             frontend_ready,
             load_library,
             play_track,

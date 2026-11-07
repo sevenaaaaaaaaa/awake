@@ -214,8 +214,24 @@ const totalDuration = computed(() =>
   currentList.value.reduce((sum, t) => sum + (t.duration || 0), 0)
 );
 
+// 交通灯默认隐去，鼠标进入窗口顶部 56px 时浮现，离开即收回。
+// 这样顶栏不占任何视觉空间，又能随时拿到窗口控制。
+let lightsVisible = false;
+async function syncTrafficLights(visible: boolean) {
+  if (visible === lightsVisible) return;
+  lightsVisible = visible;
+  await invoke("set_traffic_lights", { visible }).catch(() => {});
+}
+
+function onWindowMouseMove(e: MouseEvent) {
+  void syncTrafficLights(e.clientY <= 56);
+}
+
 onMounted(async () => {
   await invoke("frontend_ready", { version: "0.1.0", tracks: 0 }).catch(() => {});
+  // 启动即隐藏，进入窗口后再按位置决定
+  await invoke("set_traffic_lights", { visible: false }).catch(() => {});
+  window.addEventListener("mousemove", onWindowMouseMove);
   await refresh();
   if (tracks.value.length === 0) {
     await doScan();
@@ -233,7 +249,7 @@ watch(eqOpen, (v) => {
     <div class="main-drag" data-tauri-drag-region />
     <!-- 侧栏 -->
     <aside class="sidebar">
-      <div class="sidebar-head" data-tauri-drag-region />
+      <div class="sidebar-head" data-tauri-drag-region @mouseenter="syncTrafficLights(true)" @mouseleave="syncTrafficLights(false)" />
       <div class="brand">Awake <span>Rust</span></div>
 
       <div class="nav-section">曲库</div>
