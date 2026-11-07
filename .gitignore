@@ -1,5 +1,15 @@
 .build/
 dist/
+dist-rust/
 DemoMusic/
 *.xcuserstate
 .DS_Store
+
+# Rust 重构工程
+rust/target/
+**/*.rs.bk
+
+# 前端
+ui/node_modules/
+ui/dist/
+ui/.vite/

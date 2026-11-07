@@ -1,0 +1,15 @@
+[package]
+name = "awake-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Awake 命令行验证器：解码 / EQ / 频谱 / 播放"
+
+[dependencies]
+awake-core = { path = "../awake-core" }
+cpal.workspace = true
+rubato = "0.15"
+anyhow.workspace = true
+env_logger.workspace = true
+log.workspace = true

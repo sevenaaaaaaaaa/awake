@@ -1,0 +1,20 @@
+[package]
+name = "awake-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Awake 音频核心：解码、EQ、频谱分析、曲库与元数据"
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+symphonia.workspace = true
+cpal.workspace = true
+rustfft.workspace = true
+rubato = "0.15"
+lofty = "0.22"
+sha2 = "0.10"
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,25 @@
+[package]
+name = "awake-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Awake 播放器（Tauri 2 + Rust）"
+
+[lib]
+name = "awake_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+log.workspace = true
+env_logger.workspace = true
+cpal.workspace = true
+awake-core = { path = "../awake-core" }
+parking_lot = "0.12"
