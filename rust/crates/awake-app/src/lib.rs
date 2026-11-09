@@ -40,9 +40,13 @@ impl AppState {
 }
 
 fn default_data_dir() -> PathBuf {
-    // macOS: ~/Library/Application Support/Awake
+    // macOS: ~/Library/Application Support/com.seven.awake
+    //
+    // 刻意不用 "Awake": Swift 版 v0.2 的曲库缓存就写在那里 (library.json 用 camelCase,
+    // 和这边的 snake_case 不是同一个 schema)。两个应用共用一份 store 会互相覆盖,
+    // 谁后存谁赢 —— 所以 Rust 版用自己的 bundle id 作为目录名。
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join("Library/Application Support/Awake")
+    PathBuf::from(home).join("Library/Application Support/com.seven.awake")
 }
 
 /// 播放控制句柄。

@@ -2,18 +2,25 @@
 
 **听深一点。** 一个为 macOS 做的高品质音乐播放器：把本地曲库、NAS、WebDAV 和 Plex 收进同一个界面，自动补封面、歌词与逐句翻译，并按当前耳机和这首曲子的频谱实时生成 EQ。没有设置向导，没有插件市场，没有「先配置一下」。
 
-![Awake 首页](screens/home.png)
+![Awake 专辑库](screens/ui-albums.png)
 
-> 目标很直接：在 Mac 上做一台比 Apple Music 更懂你的播放器。v0.1 先把「声音」和「自动化」做对，剩下的在路上。
+> 目标很直接：在 Mac 上做一台比 Apple Music 更懂你的播放器。v0.2 把「声音」和「自动化」做对；v0.3 换了界面，也让封面变成曲目自己的频谱。
 
 ## 下载
 
-Release 提供 `Awake-0.1.1-macos-arm64.zip`（Apple Silicon，macOS 14+，内置 9 首 24-bit / 96 kHz 演示曲库）：
+稳定版 `Awake-0.2.0-macos-arm64.zip`（Swift 实现，功能最全：歌词舞台、命令面板、设置、在线更新；Apple Silicon，macOS 14+，内置 9 首 24-bit / 96 kHz 演示曲库）：
 
 ```bash
-curl -L -o Awake.zip https://github.com/sevenaaaaaaaaa/awake/releases/latest/download/Awake-0.1.1-macos-arm64.zip
+curl -L -o Awake.zip https://github.com/sevenaaaaaaaaa/awake/releases/latest/download/Awake-0.2.0-macos-arm64.zip
 unzip Awake.zip -d /Applications
 open /Applications/Awake.app
+```
+
+[v0.3.0](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.3.0) 是 Rust + Tauri 重写版的**预览构建**：新界面、播放与 31 段 EQ 可用，歌词舞台 / 命令面板 / 设置 / 在线更新尚未移植。
+
+```bash
+curl -L -o Awake-0.3.zip https://github.com/sevenaaaaaaaaa/awake/releases/download/v0.3.0/Awake-0.3.0-macos-arm64.zip
+unzip Awake-0.3.zip -d /Applications
 ```
 
 也可以按下方「快速开始」从源码构建。
@@ -33,7 +40,17 @@ open /Applications/Awake.app
 
 ---
 
-## 截图
+## v0.3 界面
+
+暖石墨底 + 一个琥珀强调色；规格做成等宽铭牌 `FLAC · 24-bit · 96.0 kHz · 2 ch`；封面不是图片素材，而是**曲目自己的真实频谱**——这张专辑三首曲目按真实时长相接，纵轴是对数频率、横轴是时间、亮度是绝对 dBFS，色阶与界面同一套。
+
+| 专辑库 | 专辑详情 |
+|---|---|
+| ![专辑库](screens/ui-albums.png) | ![专辑详情](screens/ui-album-detail.png) |
+
+> 这两张是与应用同一套 `App.vue` + `styles.css` 的渲染（`ui/design-preview.html`），不是窗口截图；其余页面暂无 v0.3 截图。
+
+## 功能截图（v0.2 视觉）
 
 ### 歌词舞台：封面、频谱、逐句译文在同一个画面里
 
@@ -68,6 +85,8 @@ open /Applications/Awake.app
 ## 快速开始
 
 要求：macOS 14+，Xcode 15+（本机验证于 macOS 27.3 / Swift 6.4.2）。
+
+仓库里有两套实现：Swift 版（`build_awake.sh`，v0.2 视觉，功能最全）与 Rust + Tauri 版（`rust/`，v0.3 视觉，见 [`rust/README.md`](rust/README.md)）。下面的命令构建 Swift 版；Rust 版用 `cd rust && cargo tauri build`。
 
 ```bash
 # 1. 构建（默认 release）
