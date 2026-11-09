@@ -8,19 +8,22 @@
 
 ## 下载
 
-稳定版 `Awake-0.2.0-macos-arm64.zip`（Swift 实现，功能最全：歌词舞台、命令面板、设置、在线更新；Apple Silicon，macOS 14+，内置 9 首 24-bit / 96 kHz 演示曲库）：
+`Awake-0.3.0-macos-arm64.zip`（Apple Silicon，macOS 14+，内置 9 首 24-bit / 96 kHz 演示曲库）：
 
 ```bash
-curl -L -o Awake.zip https://github.com/sevenaaaaaaaaa/awake/releases/latest/download/Awake-0.2.0-macos-arm64.zip
+curl -L -o Awake.zip https://github.com/sevenaaaaaaaaa/awake/releases/latest/download/Awake-0.3.0-macos-arm64.zip
 unzip Awake.zip -d /Applications
 open /Applications/Awake.app
 ```
 
-[v0.3.0](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.3.0) 是 Rust + Tauri 重写版的**预览构建**：新界面、播放与 31 段 EQ 可用，歌词舞台 / 命令面板 / 设置 / 在线更新尚未移植。
+v0.3.0 是 Rust + Tauri 重写版：新界面与「曲目自己的频谱」封面已就位，曲库扫描、播放、31 段 EQ 可用；**歌词舞台、⌘K 命令面板、设置、在线更新、NAS/WebDAV/Plex 尚未移植**。
+
+需要完整功能就装 Swift 版 v0.2.0。两个应用的 bundle id 与数据目录都不同，可以并存——解压后先改个名：
 
 ```bash
-curl -L -o Awake-0.3.zip https://github.com/sevenaaaaaaaaa/awake/releases/download/v0.3.0/Awake-0.3.0-macos-arm64.zip
-unzip Awake-0.3.zip -d /Applications
+curl -L -o Awake-0.2.zip https://github.com/sevenaaaaaaaaa/awake/releases/download/v0.2.0/Awake-0.2.0-macos-arm64.zip
+unzip Awake-0.2.zip -d /tmp/awake02
+mv /tmp/awake02/Awake.app "/Applications/Awake 0.2.0.app"
 ```
 
 也可以按下方「快速开始」从源码构建。
