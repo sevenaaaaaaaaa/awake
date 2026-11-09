@@ -187,7 +187,7 @@ cat > "$STAGE/README.md" <<'README'
 - 格式：FLAC · 24-bit / 96 kHz · 立体声
 - 结构：3 张专辑 × 3 首，每首 25–40 秒
 - 标签：title / artist / album / album_artist / date / tracknumber / genre
-- 封面：800×800 JPG，以 attached_pic 内嵌
+- 封面：800×800 PNG，内容是曲目本身的真实频谱（attached_pic 内嵌）
 - 歌词：与音频同名的 .lrc（第 1 张中文，第 2 张英文，第 3 张中文）
 
 ## 频谱设计（用于演示 AutoEQ）
@@ -204,7 +204,8 @@ cat > "$STAGE/README.md" <<'README'
 | 频谱边界 | 低频拍频 | 80 Hz + 84 Hz，4 Hz 拍频 |
 | 频谱边界 | 方波泛音 | 100 Hz 奇次谐波（300/500/700 Hz） |
 
-重新生成：bash Tools/make_demo_music.sh
+重新生成音频：bash Tools/make_demo_music.sh
+重新生成封面（真实频谱）：bash Tools/refresh_demo_covers.sh
 README
 printf '%b' "$manifest" > "$STAGE/.manifest"
 
@@ -245,4 +246,14 @@ log "耗时：$((SECONDS - START_SECONDS)) 秒"
 if [ $((SECONDS - START_SECONDS)) -gt 180 ]; then
   warn "生成耗时超过 3 分钟目标"
 fi
+
+# ---- 真实频谱封面 -----------------------------------------------------------
+# 上面内嵌的是 800x800 渐变占位图; 这里换成曲目本身的频谱 (只重写 PICTURE 块, 音频不动).
+# 生成器缺 numpy/Pillow 时不算失败: 演示曲库仍然可用, 只是封面还是渐变图.
+if bash "$ROOT/Tools/refresh_demo_covers.sh"; then
+  log "封面已替换为真实频谱"
+else
+  warn "频谱封面替换失败（检查 Tools/refresh_demo_covers.sh 的 python 依赖），当前为渐变封面"
+fi
+
 find "$DEMO_DIR" -name '*.flac' -type f | sort | sed "s|^$ROOT/|    |"

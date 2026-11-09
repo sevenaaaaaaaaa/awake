@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import Icon from "./Icon.vue";
 
 interface Track {
   id: string;
@@ -57,7 +58,8 @@ const playing = ref(false);
 const nowPlaying = ref<Track | null>(null);
 const eqOpen = ref(false);
 const gains = ref<number[]>(new Array(31).fill(0));
-const tint = ref("210, 190, 255");
+/* 封面回声：低饱和，只用于「正在播放」标记与进度 */
+const tint = ref("217, 162, 74");
 
 const BAND_FREQS = [
   20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160,
@@ -79,16 +81,39 @@ function fmtDuration(secs: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function qualityOf(t: Track): string {
-  if (t.codec?.toUpperCase() === "DSD") {
-    return `DSD ${(t.sample_rate / 1000000).toFixed(1)} MHz`;
+/* 规格铭牌的零件：等宽、右对齐成一列，像设备面板上的丝印 */
+function specParts(t: Track | null | undefined): string[] {
+  if (!t) return [];
+  const codec = (t.codec || "PCM").toUpperCase();
+  if (codec === "DSD") {
+    return [codec, `${Math.round(t.sample_rate / 44100)}`, `${(t.sample_rate / 1000000).toFixed(1)} MHz`, `${t.channels} ch`];
   }
-  const khz = t.sample_rate >= 1000 ? (t.sample_rate / 1000).toFixed(1) : String(t.sample_rate);
-  return `${t.codec || "PCM"} ${t.bit_depth}-bit / ${khz} kHz`;
+  return [
+    codec,
+    `${t.bit_depth}-bit`,
+    `${(t.sample_rate / 1000).toFixed(1)} kHz`,
+    `${t.channels} ch`,
+  ];
+}
+
+/* 列表里用短格式，长格式只出现在详情页的铭牌上 */
+function fmtOf(t: Track): string {
+  const codec = (t.codec || "PCM").toUpperCase();
+  if (codec === "DSD") return `DSD ${Math.round(t.sample_rate / 44100)}`;
+  return `${codec} ${t.bit_depth}/${Math.round(t.sample_rate / 1000)}`;
 }
 
 function isHires(t: Track): boolean {
   return t.sample_rate > 48000 || t.bit_depth > 16;
+}
+
+function shortSpec(a: Album): string {
+  const t = a.tracks.find(isHires) ?? a.tracks[0];
+  if (!t) return "";
+  const codec = (t.codec || "").toUpperCase();
+  if (codec === "DSD") return `DSD${Math.round(t.sample_rate / 44100)}`;
+  if (!isHires(t)) return "";
+  return `${t.bit_depth}/${Math.round(t.sample_rate / 1000)}`;
 }
 
 async function refresh() {
@@ -119,17 +144,39 @@ async function doScan(path = DEMO_PATH) {
   }
 }
 
+/* 已播时间：后端 play_track 每次都从 0 开始，所以这里如实累计，不做假进度 */
+const elapsed = ref(0);
+let clock: number | undefined;
+
+function stopClock() {
+  if (clock !== undefined) {
+    window.clearInterval(clock);
+    clock = undefined;
+  }
+}
+
+function startClock() {
+  stopClock();
+  clock = window.setInterval(() => {
+    const total = nowPlaying.value?.duration ?? 0;
+    elapsed.value = Math.min(elapsed.value + 0.5, total);
+  }, 500);
+}
+
 async function play(t: Track) {
   status.value = "正在解码…";
   nowPlaying.value = t;
+  elapsed.value = 0;
   try {
     await invoke("play_track", {
       req: { source_id: t.source_id, locator: t.locator, gains: gains.value },
     });
     playing.value = true;
-    status.value = `播放中 · ${qualityOf(t)}`;
+    startClock();
+    status.value = "播放中";
   } catch (e) {
     playing.value = false;
+    stopClock();
     status.value = String(e);
   }
 }
@@ -137,6 +184,7 @@ async function play(t: Track) {
 async function stop() {
   await invoke("stop_playback");
   playing.value = false;
+  stopClock();
   status.value = "已停止";
 }
 
@@ -145,12 +193,18 @@ async function togglePlay() {
   else if (nowPlaying.value) await play(nowPlaying.value);
 }
 
+const progress = computed(() => {
+  const total = nowPlaying.value?.duration ?? 0;
+  if (!total) return 0;
+  return Math.min(100, (elapsed.value / total) * 100);
+});
+
 function selectAlbum(a: Album) {
   openAlbum.value = a;
   if (a.tracks[0]?.artwork_path) void applyTint(a.tracks[0].artwork_path);
 }
 
-// 从封面提取主色，驱动界面色调
+/* 从封面取色，钳制到低饱和，让它只是封面的一点回声，不会变成霓虹 */
 async function applyTint(artPath: string) {
   try {
     const src = convertFileSrc(artPath);
@@ -176,9 +230,12 @@ async function applyTint(artPath: string) {
       r += rr; g += gg; b += bb; n++;
     }
     if (n === 0) {
-      r = 160; g = 150; b = 200; n = 1;
+      tint.value = "217, 162, 74";
+      return;
     }
-    tint.value = `${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)}`;
+    /* 与暖石墨混合 45%，并压低亮度上限，避免高饱和封面把界面染色 */
+    const mix = (v: number) => Math.round((v / n) * 0.55 + 90 * 0.45);
+    tint.value = `${mix(r)}, ${mix(g)}, ${mix(b)}`;
   } catch {
     /* 取色失败不影响界面 */
   }
@@ -214,6 +271,13 @@ const totalDuration = computed(() =>
   currentList.value.reduce((sum, t) => sum + (t.duration || 0), 0)
 );
 
+const albumSpec = computed(() => {
+  const a = openAlbum.value;
+  if (!a) return [];
+  const t = a.tracks[0];
+  return specParts(t);
+});
+
 // 交通灯默认隐去，鼠标进入窗口顶部 56px 时浮现，离开即收回。
 // 这样顶栏不占任何视觉空间，又能随时拿到窗口控制。
 let lightsVisible = false;
@@ -228,14 +292,18 @@ function onWindowMouseMove(e: MouseEvent) {
 }
 
 onMounted(async () => {
-  await invoke("frontend_ready", { version: "0.1.0", tracks: 0 }).catch(() => {});
-  // 启动即隐藏，进入窗口后再按位置决定
+  await invoke("frontend_ready", { version: "0.3.0", tracks: 0 }).catch(() => {});
   await invoke("set_traffic_lights", { visible: false }).catch(() => {});
   window.addEventListener("mousemove", onWindowMouseMove);
   await refresh();
   if (tracks.value.length === 0) {
     await doScan();
   }
+});
+
+onUnmounted(() => {
+  window.removeEventListener("mousemove", onWindowMouseMove);
+  stopClock();
 });
 
 watch(eqOpen, (v) => {
@@ -245,64 +313,87 @@ watch(eqOpen, (v) => {
 
 <template>
   <div class="app" :style="{ '--tint': tint }">
-    <!-- 主区顶部透明拖拽带 -->
     <div class="main-drag" data-tauri-drag-region />
+
     <!-- 侧栏 -->
     <aside class="sidebar">
-      <div class="sidebar-head" data-tauri-drag-region @mouseenter="syncTrafficLights(true)" @mouseleave="syncTrafficLights(false)" />
-      <div class="brand">Awake <span>Rust</span></div>
+      <div
+        class="sidebar-head"
+        data-tauri-drag-region
+        @mouseenter="syncTrafficLights(true)"
+        @mouseleave="syncTrafficLights(false)"
+      />
 
-      <div class="nav-section">曲库</div>
-      <button
-        class="nav-item"
-        :class="{ active: view === 'albums' && !openAlbum }"
-        @click="(view = 'albums'), (openAlbum = null)"
-      >
-        <span>◎</span> 专辑
-        <span class="count">{{ albums.length }}</span>
-      </button>
-      <button
-        class="nav-item"
-        :class="{ active: view === 'songs' && !openAlbum }"
-        @click="(view = 'songs'), (openAlbum = null)"
-      >
-        <span>≡</span> 歌曲
-        <span class="count">{{ tracks.length }}</span>
-      </button>
+      <div class="brand">
+        <Icon name="wave" :size="18" class="brand-mark" :stroke="1.75" />
+        <span class="brand-name">Awake</span>
+      </div>
 
-      <div class="nav-section">来源</div>
-      <button
-        v-for="s in sources"
-        :key="s.id"
-        class="nav-item"
-      >
-        <span>▸</span> {{ s.name }}
-        <span class="count">{{ s.track_count }}</span>
-      </button>
-      <button class="nav-item" :disabled="scanning" @click="doScan(DEMO_PATH)">
-        <span v-if="scanning" class="spin" />
-        <span v-else>+</span> 扫描演示曲库
-      </button>
+      <nav class="nav">
+        <div class="nav-section">曲库</div>
+        <button
+          class="nav-item"
+          :class="{ active: view === 'albums' && !openAlbum }"
+          @click="(view = 'albums'), (openAlbum = null)"
+        >
+          <Icon name="disc" />
+          专辑
+          <span class="count">{{ albums.length }}</span>
+        </button>
+        <button
+          class="nav-item"
+          :class="{ active: view === 'songs' && !openAlbum }"
+          @click="(view = 'songs'), (openAlbum = null)"
+        >
+          <Icon name="list" />
+          歌曲
+          <span class="count">{{ tracks.length }}</span>
+        </button>
 
-      <div class="nav-section">声音</div>
-      <button class="nav-item" :class="{ active: eqOpen }" @click="eqOpen = !eqOpen">
-        <span>≈</span> 31 段 EQ
-      </button>
+        <div class="nav-section">来源</div>
+        <button v-for="s in sources" :key="s.id" class="nav-item">
+          <Icon name="database" />
+          {{ s.name }}
+          <span class="count">{{ s.track_count }}</span>
+        </button>
+        <button class="nav-item" :disabled="scanning" @click="doScan(DEMO_PATH)">
+          <span v-if="scanning" class="spin" />
+          <Icon v-else name="plus" />
+          扫描演示曲库
+        </button>
+
+        <div class="nav-section">声音</div>
+        <button class="nav-item" :class="{ active: eqOpen }" @click="eqOpen = !eqOpen">
+          <Icon name="sliders" />
+          31 段 EQ
+        </button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <span class="plate">v0.3.0</span>
+        <span class="plate">{{ tracks.length }} 首</span>
+      </div>
     </aside>
 
     <!-- 主区 -->
     <main class="main">
+      <!-- 专辑详情 -->
       <template v-if="openAlbum">
-        <div class="back-row">
-          <div class="big-art">
+        <button class="back-link" @click="openAlbum = null">
+          <Icon name="back" :size="14" />
+          专辑
+        </button>
+
+        <div class="album-hero">
+          <div class="art">
             <img
               v-if="artUrl(openAlbum.artwork_path)"
               :src="artUrl(openAlbum.artwork_path)!"
               alt=""
             />
-            <span v-else>♪</span>
+            <Icon v-else name="music" :size="32" />
           </div>
-          <div>
+          <div class="body">
             <div class="page-title">{{ openAlbum.title }}</div>
             <div class="page-sub">
               {{ openAlbum.artist }}
@@ -310,11 +401,24 @@ watch(eqOpen, (v) => {
               · {{ openAlbum.tracks.length }} 首 ·
               {{ Math.round(openAlbum.tracks.reduce((s, t) => s + t.duration, 0) / 60) }} 分钟
             </div>
-            <button class="btn primary" @click="play(openAlbum.tracks[0])">播放全部</button>
-            <button class="btn" style="margin-left: 8px" @click="openAlbum = null">返回</button>
+            <div class="spec-plate">
+              <span v-for="p in albumSpec" :key="p">{{ p }}</span>
+            </div>
+            <div class="btn-row">
+              <button class="btn primary lg" @click="play(openAlbum.tracks[0])">
+                <Icon name="play" :size="14" />
+                播放全部
+              </button>
+            </div>
           </div>
         </div>
 
+        <div class="track-head">
+          <span class="num">#</span>
+          <span>曲目</span>
+          <span class="time">时长</span>
+          <span class="fmt">格式</span>
+        </div>
         <div
           v-for="(t, i) in openAlbum.tracks"
           :key="t.id"
@@ -322,40 +426,44 @@ watch(eqOpen, (v) => {
           :class="{ playing: nowPlaying?.id === t.id }"
           @dblclick="play(t)"
         >
-          <span class="idx">{{ t.track_number ?? i + 1 }}</span>
+          <span class="num">{{ t.track_number ?? i + 1 }}</span>
           <span class="title">{{ t.title }}</span>
-          <span>{{ fmtDuration(t.duration) }}</span>
-          <span class="quality">{{ qualityOf(t) }}</span>
+          <span class="time">{{ fmtDuration(t.duration) }}</span>
+          <span class="fmt">{{ fmtOf(t) }}</span>
         </div>
       </template>
 
+      <!-- 专辑网格 -->
       <template v-else-if="view === 'albums'">
-        <div class="page-title">专辑</div>
-        <div class="page-sub">
-          {{ albums.length }} 张专辑 · {{ tracks.length }} 首曲目
-          <template v-if="scanMsg"> · {{ scanMsg }}</template>
+        <div class="page-head">
+          <div class="page-title">专辑</div>
+          <div class="page-sub">
+            {{ albums.length }} 张专辑 · {{ tracks.length }} 首曲目
+            <template v-if="scanMsg"> · {{ scanMsg }}</template>
+          </div>
         </div>
+
         <div class="album-grid">
-          <div
+          <button
             v-for="a in albums"
             :key="a.id"
             class="album-card"
-            @dblclick="selectAlbum(a)"
             @click="selectAlbum(a)"
           >
             <div class="album-art">
               <img v-if="artUrl(a.artwork_path)" :src="artUrl(a.artwork_path)!" alt="" />
-              <span v-else>♪</span>
+              <Icon v-else name="music" :size="28" />
             </div>
             <div class="album-title">{{ a.title }}</div>
             <div class="album-meta">
-              {{ a.artist }}
-              <span v-if="a.tracks.some(isHires)" class="badge-hires">HI-RES</span>
+              <span class="album-artist">{{ a.artist }}</span>
+              <span v-if="shortSpec(a)" class="album-spec">{{ shortSpec(a) }}</span>
             </div>
-          </div>
+          </button>
         </div>
+
         <div v-if="albums.length === 0" class="empty">
-          <div class="empty-icon">◎</div>
+          <Icon name="disc" :size="32" />
           <div class="empty-title">曲库还是空的</div>
           <div class="empty-desc">
             点左侧「扫描演示曲库」把 DemoMusic 里的 9 首 24-bit / 96 kHz 样例收进来。
@@ -363,10 +471,20 @@ watch(eqOpen, (v) => {
         </div>
       </template>
 
+      <!-- 歌曲表 -->
       <template v-else>
-        <div class="page-title">歌曲</div>
-        <div class="page-sub">
-          {{ tracks.length }} 首 · 共 {{ fmtDuration(totalDuration) }}
+        <div class="page-head">
+          <div class="page-title">歌曲</div>
+          <div class="page-sub">
+            {{ tracks.length }} 首 · 共 {{ fmtDuration(totalDuration) }}
+          </div>
+        </div>
+
+        <div class="track-head">
+          <span class="num">#</span>
+          <span>曲目</span>
+          <span class="time">时长</span>
+          <span class="fmt">格式</span>
         </div>
         <div
           v-for="(t, i) in tracks"
@@ -375,10 +493,10 @@ watch(eqOpen, (v) => {
           :class="{ playing: nowPlaying?.id === t.id }"
           @dblclick="play(t)"
         >
-          <span class="idx">{{ i + 1 }}</span>
-          <span class="title">{{ t.title }} <small style="opacity:.5">· {{ t.album }}</small></span>
-          <span>{{ fmtDuration(t.duration) }}</span>
-          <span class="quality">{{ qualityOf(t) }}</span>
+          <span class="num">{{ i + 1 }}</span>
+          <span class="title">{{ t.title }} <small>· {{ t.album }}</small></span>
+          <span class="time">{{ fmtDuration(t.duration) }}</span>
+          <span class="fmt">{{ fmtOf(t) }}</span>
         </div>
       </template>
     </main>
@@ -389,7 +507,8 @@ watch(eqOpen, (v) => {
         <div class="eq-title">31 段 EQ</div>
         <button class="btn" @click="eqOpen = false">收起</button>
       </div>
-      <div class="eq-sub">ISO 1/3 倍频程 · 每段 Q ≈ 4.32 · 自动余量保护</div>
+      <div class="eq-sub">ISO 1/3 倍频程 · Q ≈ 4.32 · 自动余量保护</div>
+
       <div class="eq-bands">
         <div v-for="(f, i) in BAND_FREQS" :key="i" class="eq-band">
           <span class="val">{{ gains[i] > 0 ? "+" : "" }}{{ gains[i].toFixed(0) }}</span>
@@ -399,11 +518,13 @@ watch(eqOpen, (v) => {
             max="12"
             step="0.5"
             v-model.number="gains[i]"
+            :aria-label="`${f >= 1000 ? f / 1000 + 'k' : f} Hz`"
             @change="invoke('set_eq_curve', { req: { gains, preamp: 0 } })"
           />
           <span class="freq">{{ f >= 1000 ? f / 1000 + "k" : f }}</span>
         </div>
       </div>
+
       <div class="eq-actions">
         <button class="btn" @click="applyEqPreset('flat')">平坦</button>
         <button class="btn" @click="applyEqPreset('low')">低频</button>
@@ -421,7 +542,7 @@ watch(eqOpen, (v) => {
             :src="artUrl(nowPlaying.artwork_path!)!"
             alt=""
           />
-          <span v-else>♪</span>
+          <Icon v-else name="music" :size="18" />
         </div>
         <div class="now-text">
           <div class="now-title">{{ nowPlaying?.title ?? "未在播放" }}</div>
@@ -431,14 +552,34 @@ watch(eqOpen, (v) => {
         </div>
       </div>
 
-      <div class="transport">
-        <button class="play-btn" :disabled="!nowPlaying" @click="togglePlay">
-          <span v-if="playing">❙❙</span>
-          <span v-else>▶</span>
-        </button>
+      <div class="transport-block">
+        <div class="transport">
+          <button class="icon-btn" disabled aria-label="上一首">
+            <Icon name="prev" :size="16" />
+          </button>
+          <button class="play-btn" :disabled="!nowPlaying" aria-label="播放或停止" @click="togglePlay">
+            <Icon :name="playing ? 'pause' : 'play'" :size="18" />
+          </button>
+          <button class="icon-btn" disabled aria-label="下一首">
+            <Icon name="next" :size="16" />
+          </button>
+        </div>
+
+        <div class="timeline">
+          <span class="t">{{ fmtDuration(elapsed) }}</span>
+          <div class="rail">
+            <div class="fill" :style="{ width: progress + '%' }" />
+          </div>
+          <span class="t right">{{ fmtDuration(nowPlaying?.duration ?? 0) }}</span>
+        </div>
       </div>
 
-      <div class="status-line">{{ status }}</div>
+      <div class="playbar-right">
+        <div class="spec-plate" v-if="nowPlaying">
+          <span v-for="p in specParts(nowPlaying)" :key="p">{{ p }}</span>
+        </div>
+        <div class="status-line">{{ status }}</div>
+      </div>
     </footer>
   </div>
 </template>
