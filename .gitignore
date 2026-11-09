@@ -13,3 +13,6 @@ rust/target/
 ui/node_modules/
 ui/dist/
 ui/.vite/
+
+# 发行包（构建产物）
+Awake-*-macos-arm64.zip
