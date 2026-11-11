@@ -229,7 +229,24 @@ pub async fn curate_music(
     if prompt.len() > 16000 {
         return Err("选曲描述过长".into());
     }
-    let tracks = state.library.lock().snapshot.tracks.clone();
+    // Telegram-derived metadata and preferences never enter cloud AI requests.
+    let tracks = {
+        let library = state.library.lock();
+        let excluded: std::collections::HashSet<_> = library
+            .snapshot
+            .sources
+            .iter()
+            .filter(|s| s.kind == awake_core::models::SourceKind::Telegram)
+            .map(|s| s.id.as_str())
+            .collect();
+        library
+            .snapshot
+            .tracks
+            .iter()
+            .filter(|t| !excluded.contains(t.source_id.as_str()))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
     let taste = state.taste.lock().clone();
     let candidates = taste.recommend(&tracks, &prompt, &source_ids, 80);
     let service = state
@@ -248,7 +265,7 @@ pub async fn curate_music(
         return Ok(Curation {
             mode: "local".into(),
             recommendations: vec![],
-            warning: Some("当前来源没有可选曲目".into()),
+            warning: Some("当前来源没有可发送到云端的候选；Telegram 媒体库仅支持本地选曲".into()),
         });
     }
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -377,7 +394,24 @@ pub fn start_generation(
         return Err("请输入不超过 4100 字的描述，时长为 10–180 秒".into());
     }
     if use_preferences {
-        let tracks = state.library.lock().snapshot.tracks.clone();
+        // Telegram-derived metadata and preferences never enter cloud AI requests.
+        let tracks = {
+            let library = state.library.lock();
+            let excluded: std::collections::HashSet<_> = library
+                .snapshot
+                .sources
+                .iter()
+                .filter(|s| s.kind == awake_core::models::SourceKind::Telegram)
+                .map(|s| s.id.as_str())
+                .collect();
+            library
+                .snapshot
+                .tracks
+                .iter()
+                .filter(|t| !excluded.contains(t.source_id.as_str()))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
         let taste = state.taste.lock();
         let genres: std::collections::HashSet<_> = tracks
             .iter()

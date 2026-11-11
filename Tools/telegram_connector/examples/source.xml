@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<awake-source>
+  <version>1</version>
+  <kind>telegram</kind>
+  <name>我的 Telegram 音频收藏</name>
+  <url>https://connector.example.invalid/v1/libraries/aaaaaaaaaaaaaaaaaaaaaaaa/</url>
+</awake-source>

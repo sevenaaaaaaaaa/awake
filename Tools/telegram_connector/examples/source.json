@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "kind": "telegram",
+  "name": "我的 Telegram 音频收藏",
+  "url": "https://connector.example.invalid/v1/libraries/aaaaaaaaaaaaaaaaaaaaaaaa/"
+}

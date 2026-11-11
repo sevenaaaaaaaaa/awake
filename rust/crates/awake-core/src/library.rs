@@ -90,6 +90,21 @@ fn folder_artwork(dir: &Path) -> Option<PathBuf> {
     })
 }
 
+fn sidecar_lyrics(file: &Path) -> Option<String> {
+    [
+        file.with_extension("lrc"),
+        file.with_extension("lyrics.txt"),
+    ]
+    .into_iter()
+    .find_map(|path| {
+        if std::fs::metadata(&path).is_ok_and(|m| m.len() <= 131072) {
+            std::fs::read_to_string(path).ok()
+        } else {
+            None
+        }
+    })
+}
+
 /// 计算相对 locator。用规范化后的路径做前缀，避免符号链接导致 locator 退化。
 fn make_locator(root: &Path, file: &Path) -> String {
     let resolved_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
@@ -137,8 +152,22 @@ pub fn scan_local_source(
         // 增量：size 与 mtime 都没变就直接复用
         if let Some(cached) = existing.get(&locator) {
             if cached.file_size == size && (cached.modified - modified).abs() < 1000 {
-                tracks.push(cached.clone());
+                let mut cached = cached.clone();
+                if cached.media_info.is_none() {
+                    if cached.artwork_path.is_none() {
+                        cached.artwork_path = ["jpg", "jpeg", "png", "webp"]
+                            .iter()
+                            .map(|ext| file.with_extension(ext))
+                            .find(|p| p.is_file())
+                            .or_else(|| file.parent().and_then(folder_artwork))
+                            .map(|p| p.to_string_lossy().into_owned());
+                    }
+                    if let Some(lyrics) = sidecar_lyrics(file) {
+                        cached.lyrics = lyrics;
+                    }
+                }
                 progress(index + 1, total, &cached.title);
+                tracks.push(cached);
                 continue;
             }
         }
@@ -147,12 +176,17 @@ pub fn scan_local_source(
         let id = Track::make_id(source_id, &locator);
 
         let dir = file.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-        let sidecar = artwork_cache
+        let folder_cover = artwork_cache
             .entry(dir.clone())
             .or_insert_with(|| folder_artwork(&dir))
             .clone();
 
-        // 封面优先级：内嵌 > 同目录 sidecar（与 Swift 一致）
+        let sidecar = ["jpg", "jpeg", "png", "webp"]
+            .iter()
+            .map(|extension| file.with_extension(extension))
+            .find(|p| p.is_file())
+            .or(folder_cover);
+        // 内嵌 > 与音频同名的封面 > 目录封面。
         let artwork_path = if let (Some(data), Some(out_dir)) = (tags.artwork.as_ref(), artwork_dir)
         {
             if !data.is_empty() {
@@ -193,6 +227,10 @@ pub fn scan_local_source(
                 .map(|t| t.added_at)
                 .unwrap_or_else(now_ms),
             is_remote: false,
+            origin_url: None,
+            comment: tags.comment.clone(),
+            lyrics: sidecar_lyrics(file).unwrap_or_else(|| tags.lyrics.clone()),
+            media_info: None,
         };
         apply_tags(&mut track, &tags);
 
@@ -204,11 +242,14 @@ pub fn scan_local_source(
     let mut album_art: HashMap<String, String> = HashMap::new();
     for t in &tracks {
         if let Some(art) = &t.artwork_path {
+            if t.album.trim().is_empty() {
+                continue;
+            }
             album_art.insert(t.album_key(), art.clone());
         }
     }
     for t in &mut tracks {
-        if t.artwork_path.is_none() {
+        if t.artwork_path.is_none() && !t.album.trim().is_empty() {
             if let Some(art) = album_art.get(&t.album_key()) {
                 t.artwork_path = Some(art.clone());
             }
@@ -272,7 +313,20 @@ impl Library {
     }
 
     /// 重建索引：按来源替换该来源的全部曲目。
-    pub fn replace_source_tracks(&mut self, source_id: &str, tracks: Vec<Track>) {
+    pub fn replace_source_tracks(&mut self, source_id: &str, mut tracks: Vec<Track>) {
+        let old = self.tracks_by_locator(source_id);
+        for track in &mut tracks {
+            if let Some(previous) = old.get(&track.locator).filter(|t| t.media_info.is_some()) {
+                track.title = previous.title.clone();
+                track.artist = previous.artist.clone();
+                track.album_artist = previous.album_artist.clone();
+                track.album = previous.album.clone();
+                track.artwork_path = previous.artwork_path.clone();
+                track.comment = previous.comment.clone();
+                track.lyrics = previous.lyrics.clone();
+                track.media_info = previous.media_info.clone();
+            }
+        }
         self.snapshot.tracks.retain(|t| t.source_id != source_id);
         self.snapshot.tracks.extend(tracks);
     }
@@ -305,6 +359,65 @@ impl Library {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unnamed_recordings_do_not_inherit_unrelated_covers_and_edits_survive_refresh() {
+        let dir = crate::test_audio::directory();
+        crate::test_audio::wav(&dir.join("one.wav"), 48000, 2, &vec![0; 960]);
+        crate::test_audio::wav(&dir.join("two.wav"), 48000, 2, &vec![0; 960]);
+        std::fs::write(dir.join("one.png"), b"fixture cover").unwrap();
+        let rows = scan_local_source(&dir, "source", &HashMap::new(), None, |_, _, _| {}).unwrap();
+        let first = rows
+            .iter()
+            .find(|t| t.locator == "one.wav")
+            .unwrap()
+            .clone();
+        let second = rows.iter().find(|t| t.locator == "two.wav").unwrap();
+        assert!(first.artwork_path.as_ref().unwrap().ends_with("one.png"));
+        assert!(
+            second.artwork_path.is_none(),
+            "unknown albums are not evidence of shared artwork"
+        );
+        let cached: HashMap<_, _> = rows.iter().map(|t| (t.locator.clone(), t.clone())).collect();
+        std::fs::write(dir.join("two.png"), b"second fixture cover").unwrap();
+        std::fs::write(dir.join("two.lyrics.txt"), "A local recording transcript").unwrap();
+        let refreshed = scan_local_source(&dir, "source", &cached, None, |_,_,_|{}).unwrap();
+        let updated = refreshed.iter().find(|t| t.locator == "two.wav").unwrap();
+        assert!(updated.artwork_path.as_ref().unwrap().ends_with("two.png"));
+        assert_eq!(updated.lyrics, "A local recording transcript");
+        let mut library = Library::open(dir.join("library.json"));
+        library.snapshot.tracks = rows.clone();
+        let edited = library
+            .snapshot
+            .tracks
+            .iter_mut()
+            .find(|t| t.id == first.id)
+            .unwrap();
+        edited.title = "My recording".into();
+        edited.lyrics = "[00:01]My text".into();
+        edited.media_info = Some(crate::media_info::MediaInfo {
+            original_title: first.title.clone(),
+            cover_style: "forest".into(),
+            ..Default::default()
+        });
+        library.replace_source_tracks("source", rows);
+        let track = library
+            .snapshot
+            .tracks
+            .iter()
+            .find(|t| t.id == first.id)
+            .unwrap();
+        assert_eq!(track.title, "My recording");
+        assert_eq!(track.locator, "one.wav");
+        assert_eq!(track.lyrics, "[00:01]My text");
+        library.save().unwrap();
+        assert!(Library::open(dir.join("library.json"))
+            .snapshot
+            .tracks
+            .iter()
+            .any(|t| t.media_info.is_some()));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     fn demo_root() -> Option<PathBuf> {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../DemoMusic");

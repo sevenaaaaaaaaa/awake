@@ -24,8 +24,10 @@ mod experience;
 mod feeds;
 mod headphone_catalog;
 mod intelligence;
+mod media_info;
 mod playback;
 mod remote;
+mod telegram;
 mod vault;
 
 /// 全局状态。
@@ -88,6 +90,12 @@ pub struct ScanRequest {
 
 #[tauri::command]
 async fn scan_library(req: ScanRequest, state: State<'_, AppState>) -> Result<ScanResult, String> {
+    if !matches!(
+        req.kind.unwrap_or(SourceKind::Local),
+        SourceKind::Local | SourceKind::Smb
+    ) {
+        return Err("远程媒体库请使用连接来源功能".into());
+    }
     let started = std::time::Instant::now();
     let root = PathBuf::from(&req.path);
 
@@ -289,7 +297,10 @@ fn play_track(req: PlayRequest, state: State<'_, AppState>) -> Result<String, St
                     .iter()
                     .find(|s| s.id == r.source_id)
                     .ok_or("队列来源不存在")?;
-                let remote = matches!(source.kind, SourceKind::Webdav | SourceKind::Plex);
+                let remote = matches!(
+                    source.kind,
+                    SourceKind::Webdav | SourceKind::Plex | SourceKind::Telegram
+                );
                 let path = if remote {
                     PathBuf::new()
                 } else {
@@ -376,16 +387,18 @@ fn playback_status(state: State<'_, AppState>) -> playback::Status {
                     changed = true;
                 }
                 if track.is_remote {
-                    for (value, incoming) in [
-                        (&mut track.title, &status.tags.title),
-                        (&mut track.artist, &status.tags.artist),
-                        (&mut track.album, &status.tags.album),
-                        (&mut track.album_artist, &status.tags.album_artist),
-                        (&mut track.genre, &status.tags.genre),
-                    ] {
-                        if !incoming.is_empty() && *value != *incoming {
-                            *value = incoming.clone();
-                            changed = true;
+                    if track.media_info.is_none() {
+                        for (value, incoming) in [
+                            (&mut track.title, &status.tags.title),
+                            (&mut track.artist, &status.tags.artist),
+                            (&mut track.album, &status.tags.album),
+                            (&mut track.album_artist, &status.tags.album_artist),
+                            (&mut track.genre, &status.tags.genre),
+                        ] {
+                            if !incoming.is_empty() && *value != *incoming {
+                                *value = incoming.clone();
+                                changed = true;
+                            }
                         }
                     }
                     if status.source_bits > 0 && track.bit_depth != status.source_bits {
@@ -513,18 +526,33 @@ fn load_lyrics(
     locator: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<awake_core::lyrics::Line>, String> {
-    let root = state
-        .library
-        .lock()
+    let lib = state.library.lock();
+    let track = lib
+        .snapshot
+        .tracks
+        .iter()
+        .find(|t| t.source_id == source_id && t.locator == locator)
+        .ok_or("曲目不存在")?;
+    if !track.lyrics.is_empty() {
+        return Ok(awake_core::lyrics::parse(&track.lyrics));
+    }
+    let source = lib
         .snapshot
         .sources
         .iter()
         .find(|s| s.id == source_id)
-        .map(|s| s.url.clone())
         .ok_or("找不到来源")?;
-    let path = PathBuf::from(root).join(locator).with_extension("lrc");
+    if !matches!(source.kind, SourceKind::Local | SourceKind::Smb) {
+        return Ok(vec![]);
+    }
+    let path = PathBuf::from(&source.url)
+        .join(locator)
+        .with_extension("lrc");
     if !path.is_file() {
-        return Ok(Vec::new());
+        return Ok(vec![]);
+    }
+    if std::fs::metadata(&path).map_err(|e| e.to_string())?.len() > 131072 {
+        return Err("歌词文件超过 128 KB".into());
     }
     let input = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     Ok(awake_core::lyrics::parse(&input))
@@ -590,6 +618,18 @@ pub fn run() {
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             scan_library,
+            media_info::inspect_media,
+            media_info::search_media_info,
+            media_info::fetch_media_resources,
+            media_info::save_media_info,
+            media_info::reset_media_info,
+            media_info::import_media_attachment,
+            telegram::telegram_catalog,
+            telegram::open_telegram_link,
+            telegram::telegram_collection,
+            telegram::telegram_sponsored,
+            telegram::telegram_ad_viewed,
+            telegram::parse_source_configuration,
             intelligence::get_services,
             intelligence::generate_skin,
             intelligence::save_service,

@@ -1,0 +1,5 @@
+# 替换为你在个人连接器中选择后的媒体库地址；凭据在应用内填写
+version=1
+kind=telegram
+name=我的 Telegram 音频收藏
+url=https://connector.example.invalid/v1/libraries/aaaaaaaaaaaaaaaaaaaaaaaa/

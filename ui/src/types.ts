@@ -18,6 +18,9 @@ export interface ListeningContext {
   sound_key: string;
 }
 export interface Track {
+  comment?: string;
+  lyrics?: string;
+  media_info?: MediaInfo | null;
   id: string;
   title: string;
   artist: string;
@@ -33,12 +36,21 @@ export interface Track {
   channels: number;
   codec: string;
   source_id: string;
+  origin_url?: string | null;
   locator: string;
   file_size: number;
   artwork_path: string | null;
   play_count: number;
   favorite: boolean;
   is_remote: boolean;
+}
+export interface MediaReview {
+  author: string; text: string; source: string; url: string; scope: string; license: string; license_url: string;
+}
+export interface MediaInfo {
+  original_title: string; original_artist: string; original_album: string; original_artwork: string | null;
+  original_comment: string; original_lyrics: string; source_note: string; suggested_filename: string;
+  cover_style: string; credits: string[]; reviews: MediaReview[];
 }
 export interface Album {
   id: string;

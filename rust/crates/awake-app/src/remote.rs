@@ -52,6 +52,8 @@ impl Access {
         if self.source.kind == SourceKind::Plex {
             req.header("X-Plex-Token", &self.secret)
                 .header(header::ACCEPT, "application/json")
+        } else if self.source.kind == SourceKind::Telegram {
+            req.bearer_auth(&self.secret)
         } else if !self.source.username.is_empty() {
             req.basic_auth(&self.source.username, Some(&self.secret))
         } else {
@@ -65,7 +67,7 @@ impl Access {
             url.origin() == base.origin() && url.username().is_empty() && url.password().is_none(),
             "资源地址超出已连接服务器"
         );
-        if self.source.kind == SourceKind::Webdav {
+        if matches!(self.source.kind, SourceKind::Webdav | SourceKind::Telegram) {
             anyhow::ensure!(url.path().starts_with(base.path()), "WebDAV 路径超出根目录");
         }
         anyhow::ensure!(
@@ -104,6 +106,9 @@ impl Access {
         Ok(bytes)
     }
     pub fn decoder(&self, locator: &str) -> Result<StreamDecoder> {
+        if self.source.kind == SourceKind::Telegram {
+            self.connector_json("sponsored", None)?;
+        }
         let url = self.url(locator)?;
         let extension = std::path::Path::new(url.path())
             .extension()
@@ -121,8 +126,91 @@ impl Access {
         match self.source.kind {
             SourceKind::Webdav => self.webdav(),
             SourceKind::Plex => self.plex(),
+            SourceKind::Telegram => self.telegram(),
             _ => anyhow::bail!("该来源需要挂载为本地目录"),
         }
+    }
+    pub fn connector_json(
+        &self,
+        path: &str,
+        body: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value> {
+        let url = self.url(path)?;
+        let client = self.client()?;
+        let mut request = self
+            .request(
+                &client,
+                if body.is_some() {
+                    reqwest::Method::POST
+                } else {
+                    reqwest::Method::GET
+                },
+                url,
+            )
+            .timeout(Duration::from_secs(240));
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+        let response = request
+            .send()
+            .map_err(|_| anyhow::anyhow!("连接器连接失败，请检查地址和网络"))?;
+        let status = response.status();
+        let mut bytes = Vec::new();
+        response
+            .take(16 * 1024 * 1024 + 1)
+            .read_to_end(&mut bytes)?;
+        anyhow::ensure!(bytes.len() <= 16 * 1024 * 1024, "连接器响应过大");
+        let value: serde_json::Value =
+            serde_json::from_slice(&bytes).context("连接器 JSON 格式无效")?;
+        if !status.is_success() {
+            anyhow::bail!("{}", value["error"].as_str().unwrap_or("连接器返回错误"));
+        }
+        Ok(value)
+    }
+    fn telegram(&self) -> Result<Vec<Track>> {
+        crate::telegram::connector(&self.source.url, self.secret.clone())
+            .map_err(anyhow::Error::msg)?;
+        // Rich sponsored content that this release cannot display causes an explicit failure.
+        self.connector_json("sponsored", None)?;
+        let value = self.connector_json("tracks", None)?;
+        let rows = value["tracks"].as_array().context("连接器缺少曲目列表")?;
+        anyhow::ensure!(rows.len() <= 40000, "Telegram 曲目超过上限");
+        let mut tracks = Vec::with_capacity(rows.len());
+        let mut seen = std::collections::HashSet::new();
+        for row in rows {
+            let locator = row["locator"].as_str().context("音频缺少文件地址")?;
+            anyhow::ensure!(
+                locator.starts_with("media/") && seen.insert(locator.to_string()),
+                "音频地址无效或重复"
+            );
+            self.url(locator)?;
+            let mut track = empty_track(&self.source, locator);
+            track.title = row["title"].as_str().unwrap_or("未命名音频").into();
+            track.artist = row["artist"].as_str().unwrap_or("未知艺人").into();
+            track.album_artist = track.artist.clone();
+            track.album = row["album"].as_str().unwrap_or(&self.source.name).into();
+            track.duration = row["duration"]
+                .as_f64()
+                .filter(|n| n.is_finite() && *n >= 0.0)
+                .unwrap_or(0.0);
+            track.file_size = row["size"].as_i64().unwrap_or(0);
+            track.codec = row["codec"].as_str().unwrap_or("").into();
+            track.origin_url = row["origin"]
+                .as_str()
+                .filter(|value| {
+                    reqwest::Url::parse(value).is_ok_and(|u| {
+                        u.scheme() == "https"
+                            && u.host_str() == Some("t.me")
+                            && u.username().is_empty()
+                            && u.password().is_none()
+                            && u.query().is_none()
+                            && u.fragment().is_none()
+                    })
+                })
+                .map(str::to_string);
+            tracks.push(track);
+        }
+        Ok(tracks)
     }
     fn webdav(&self) -> Result<Vec<Track>> {
         let base = self.base()?;
@@ -327,6 +415,10 @@ fn empty_track(source: &MediaSource, locator: &str) -> Track {
         last_played: None,
         added_at: now_ms(),
         is_remote: true,
+        origin_url: None,
+        comment: String::new(),
+        lyrics: String::new(),
+        media_info: None,
     }
 }
 
@@ -533,6 +625,20 @@ mod tests {
                             };
                             ("207 Multi-Status","application/xml",format!("<d:multistatus xmlns:d='DAV:'><d:response><d:href>{href}</d:href><d:propstat><d:prop><d:getcontentlength>1382400044</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>").into_bytes(),String::new())
                         }
+                    } else if target.starts_with("/telegram") && target.ends_with("/sponsored") {
+                        (
+                            "200 OK",
+                            "application/json",
+                            br#"{"messages":[]}"#.to_vec(),
+                            String::new(),
+                        )
+                    } else if target.starts_with("/telegram") && target.ends_with("/tracks") {
+                        let locator = if target.starts_with("/telegram-invalid/") {
+                            "../outside.wav"
+                        } else {
+                            "media/42/7/audio.wav"
+                        };
+                        ("200 OK", "application/json", format!(r#"{{"tracks":[{{"locator":"{locator}","title":"Own audio","artist":"Owner","album":"Saved","duration":7200,"size":1382400044,"codec":"WAV"}}]}}"#).into_bytes(), String::new())
                     } else if target.starts_with("/library/sections/1/all") {
                         let second = target.contains("Start=1");
                         let id = if second { "2" } else { "1" };
@@ -618,6 +724,37 @@ mod tests {
         assert!(logs
             .iter()
             .all(|r| !r.lines().next().unwrap().contains("pass")));
+    }
+
+    #[test]
+    fn telegram_audio_uses_authenticated_ranges_and_preserves_source_boundary() {
+        let server = Server::new();
+        let access = access(&server, SourceKind::Telegram, "/telegram/");
+        let tracks = access.scan().unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(
+            tracks[0].sample_rate, 0,
+            "metadata must not invent Hi-Res quality"
+        );
+        let mut decoder = access.decoder(&tracks[0].locator).unwrap();
+        assert_eq!(decoder.format.duration_secs, Some(7200.0));
+        assert!(decoder.next_packet().unwrap().unwrap().len() < 32768);
+        decoder.seek(7199.8).unwrap();
+        assert!(decoder.next_packet().unwrap().is_some());
+        let requests = server.requests.lock().unwrap();
+        assert!(requests
+            .iter()
+            .all(|r| r.to_lowercase().contains("authorization: bearer pass")));
+        assert!(requests
+            .iter()
+            .all(|r| !r.lines().next().unwrap().contains('?')));
+        drop(requests);
+        assert!(access.url("../outside.wav").is_err());
+        assert!(
+            super::tests::access(&server, SourceKind::Telegram, "/telegram-invalid/")
+                .scan()
+                .is_err()
+        );
     }
     #[test]
     fn plex_pages_music_only_and_keeps_token_in_header() {

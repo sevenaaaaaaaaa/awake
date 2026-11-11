@@ -1,0 +1,71 @@
+Awake personal media sources — 2026-11-11 (Asia/Shanghai)
+Desktop 0.6.1; iOS 0.7.4 build 11
+
+PASS: npm run build --prefix ui (Vue/TypeScript and production bundle).
+
+PASS: cargo test --manifest-path rust/Cargo.toml -p awake-core -p awake-app --lib
+  awake-app: 17 passed, 0 failed, 5 ignored.
+  awake-core: 34 passed, 0 failed.
+  New coverage: JSON/XML/TXT configuration validation; credential and URL boundaries;
+  authenticated Telegram connector catalog-to-audio format; two-hour WAV HTTP Range
+  startup and end seek; source path containment; quality remains unknown until decode.
+  The five ignored tests require separate sound-device/long-duration validation and
+  were not rerun in this task. Existing optional DemoMusic checks are not evidence
+  of real-file format coverage when those fixture files are absent.
+
+PASS: Tools/telegram_connector/.venv/bin/python -m unittest discover -s Tools/telegram_connector -v
+  10 passed, 0 failed.
+  Includes actual Telethon DialogFilter and DialogFilterChatlist object shapes;
+  group/protected-channel exclusion; explicit collection persistence and file modes;
+  protected/deleted message handling; bounded/cancellable download iterator;
+  authenticated real loopback HTTP requests; full/suffix/open-ended byte ranges;
+  HEAD and 416; sponsored-message cache/view receipts and rich-content rejection.
+
+PASS: iOS simulator unit suite with the explicit connector fixture enabled
+  24 passed, 0 failed, 0 skipped.
+  Includes parsing the same JSON/XML/TXT format, secret exclusion, endpoint boundaries,
+  directory import excluding symlinks, catalog/collection/track requests, complete WAV
+  download and AVAudioFile validation (48 kHz, 1 second).
+  /tmp/awake-telegram-ios-acceptance.log records the unit suite. The initial UI run
+  in that invocation failed because the simulator app was unsigned; see signed run below.
+
+PASS: Signed simulator UI acceptance
+  xcodebuild -project ios/Awake.xcodeproj -scheme AwakeIOS -configuration Debug
+    -destination platform=iOS Simulator,id=37FCBD42-9ACB-4406-BCC4-532C4F1E338C
+    -derivedDataPath dist-ios/TelegramSignedDerived
+    CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES
+    DEVELOPMENT_TEAM= AWAKE_CONNECTOR_INTEGRATION=1
+    -only-testing:AwakeUITests/AwakeUITests/testTelegramSourceCanBeSelectedAndRequiresExplicitScope test
+  1 passed, 0 failed. The fixture availability check ran, as confirmed by the log's
+  second catalog read, Saved Messages switch activation, collection creation,
+  connect/scan action, successful Keychain persistence, sheet dismissal and source
+  name assertion. It was not merely the initial form state test.
+  Unsigned simulator builds cannot write Keychain items; signing fixed the test
+  environment. No plaintext credential fallback was introduced.
+
+PASS: Desktop UI flow checked with ego-browser against a test-only native-command
+  adapter using the loopback fixture's catalog. Folder expansion produced a scoped
+  library URL, disabled connection before selection and enabled it afterwards.
+  No horizontal page overflow. This is UI-contract validation, not a running
+  production Tauri IPC test or a real Telegram session.
+
+PASS: ./Tools/build_rust_app.sh
+  release binary built; codesign --verify --deep --strict dist-rust/Awake.app passed.
+  Bundle Info.plist: 0.6.1.
+PASS: ./Tools/build_ios_app.sh unsigned
+  ARCHIVE SUCCEEDED; IPA contains version 0.7.4, build 11; requires user re-signing.
+PASS: git diff --check.
+
+Artifacts:
+  dist-rust/Awake.app
+  dist-rust/Awake-0.6.1-macos-arm64.zip
+  dist-rust/Awake-Telegram-Connector-0.6.1.zip
+  dist-ios/Awake-0.7.4-ios-arm64-unsigned.ipa
+  dist-rust/telegram-release-SHA256SUMS
+
+Not verified:
+  Real Telegram account login, 2FA, real channels, Telegram network performance,
+  user NAS deployment, physical iPhone/DAC output, all sponsored-message variants,
+  full Telegram client-terms applicability, App Store review or copyright licenses.
+  No external AI service was called. Test WAV files and protocol fixtures are
+  explicitly labelled and never presented as a real user library.

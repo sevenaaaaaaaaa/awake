@@ -20,3 +20,10 @@ Awake-*-macos-arm64.zip
 # iOS 构建产物
 dist-ios/
 ios/*.xcodeproj/xcuserdata/
+
+# User-hosted Telegram connector: dependencies and account sessions
+Tools/telegram_connector/.venv/
+**/__pycache__/
+*.session
+*.session-journal
+.awake-telegram/

@@ -16,6 +16,7 @@ rubato = "0.15"
 lofty = "0.22"
 sha2 = "0.10"
 log.workspace = true
+regex = "1"
 serde.workspace = true
 serde_json.workspace = true
 uuid = { version = "1", features = ["v4"] }

@@ -144,6 +144,7 @@ export function useAwake() {
     tracks.value = lib.tracks;
     albums.value = lib.albums;
     sources.value = lib.sources;
+    if (now.value) now.value = lib.tracks.find(t => t.id === now.value?.id) ?? now.value;
     await refreshTaste();
     if (desktop)
       libraryRevision = await call<number | null>("library_revision");
@@ -452,7 +453,7 @@ export function useAwake() {
     });
   }
   async function refreshSource(source: Source) {
-    if (source.kind === "webdav" || source.kind === "plex") {
+    if (["webdav", "plex", "telegram"].includes(source.kind)) {
       busy.value = true;
       await run(async () => {
         await call("refresh_remote_source", { id: source.id });
@@ -511,7 +512,7 @@ export function useAwake() {
       });
     await checkDevice();
     await call("frontend_ready", {
-      version: "0.6.0",
+      version: "0.6.2",
       tracks: tracks.value.length,
     }).catch(() => {});
     timer = window.setInterval(() => void poll(), 350);

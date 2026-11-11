@@ -22,6 +22,8 @@ pub struct AudioTags {
     pub channels: u16,
     pub codec: String,
     pub artwork: Option<Vec<u8>>,
+    pub comment: String,
+    pub lyrics: String,
 }
 
 /// 由扩展名推断编码名，与 Swift `codecLabel` 同规则。
@@ -84,6 +86,14 @@ pub fn read_tags(path: &Path) -> AudioTags {
         tags.artist = tag.artist().map(|s| s.to_string()).unwrap_or_default();
         tags.album = tag.album().map(|s| s.to_string()).unwrap_or_default();
         tags.genre = tag.genre().map(|s| s.to_string()).unwrap_or_default();
+        tags.comment = tag
+            .get_string(&lofty::tag::ItemKey::Comment)
+            .unwrap_or("")
+            .into();
+        tags.lyrics = tag
+            .get_string(&lofty::tag::ItemKey::Lyrics)
+            .unwrap_or("")
+            .into();
         tags.year = tag.year().map(|y| y as i32);
         tags.track_number = tag.track();
         tags.disc_number = tag.disk();

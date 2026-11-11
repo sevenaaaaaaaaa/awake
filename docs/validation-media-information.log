@@ -1,0 +1,59 @@
+Awake media information — 2026-11-11 Asia/Shanghai
+Desktop 0.6.2 / iOS 0.7.5 build 12
+
+PASS: TypeScript/Vue production build (npm run build --prefix ui).
+PASS: Rust libraries: awake-app 18 passed / 0 failed / 5 ignored;
+      awake-core 36 passed / 0 failed. Total 54 passed.
+  Covers filename cleanup preserving Live/Remix/version markers, explicit review
+  licenses and album-versus-recording scope, persistence across source replacement,
+  and preventing unrelated recordings from sharing artwork when album is absent.
+  A targeted follow-up passed for artwork and .lyrics.txt added after initial scan.
+  The five existing sound-device/long-duration ignored tests were not rerun.
+
+PASS: iOS unit suite: 27 tests executed, 26 passed, 1 skipped, 0 failed.
+  The skipped test is the previous Telegram connector integration test, which
+  requires its separate fixture server and was outside this metadata acceptance.
+  New checks cover filename/version cleanup, multi-timestamp LRC with offset,
+  review author/license/scope, image validation, edit persistence and reset,
+  and preservation of original file, source ID and locator.
+PASS: Additional iOS test for same-name local image and .lyrics.txt sidecars,
+      confirming the original audio file remains untouched.
+  Unique iOS unit checks passed in this task: 27; one previous fixture test skipped.
+PASS: Targeted compound quality-marker cleanup in Swift and Rust.
+
+PASS: Signed iOS simulator UI acceptance:
+  testMediaInformationCanBeEditedWithoutChangingAudio
+  Long-press a generated QA song, open the metadata editor, edit the title,
+  save, return to the same audio ID and successfully start the original audio.
+  Captured screenshot: docs/ios-screenshots/media-information.png.
+
+PASS: ego-browser UI check using an actual generated WAV in browser preview.
+  Opened the editor from the track row; tested manual fields, cover style changes,
+  lyric text and empty-review state. At 375px: document has no horizontal overflow,
+  dialog width 359px, footer remains visible. Browser preview does not invoke
+  native scraping or write metadata, so this is UI validation only.
+
+External read-only smoke checks, with public test query, no user library data:
+  MusicBrainz recording search: HTTP 503 Service Temporarily Unavailable.
+  LRCLIB search: HTTP 200, 20 returned records (contents not shown or imported).
+  CritiqueBrainz review list: HTTP 200, 1 requested record.
+  This did not validate a complete real-album cover/lyric/review match.
+  MusicBrainz failure falls back to separately labelled lyric candidates;
+  unknown identities do not replace existing artwork or reviews.
+
+PASS: ./Tools/build_rust_app.sh (release + ad-hoc signing).
+PASS: ./Tools/build_ios_app.sh unsigned (archive, iOS 17+, requires re-signing).
+PASS: git diff --check.
+
+Delivery:
+  dist-rust/Awake.app
+  dist-rust/Awake-0.6.2-macos-arm64.zip
+  dist-ios/Awake-0.7.5-ios-arm64-unsigned.ipa
+
+Limitations:
+  Actual filenames and audio tags are not rewritten; filenames are suggestions.
+  No audio fingerprinting or recording transcription is performed.
+  Default comments are licensed CritiqueBrainz reviews, not private platform APIs.
+  Album reviews stay labelled as album reviews. Missing comments are never invented.
+  Source permissions, provider availability and content licenses remain applicable.
+  No external AI service, paid account or personal Telegram/NAS credentials were used.

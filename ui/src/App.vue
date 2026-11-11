@@ -11,6 +11,9 @@ import {
 import Icon from "./Icon.vue";
 import Appearance from "./Appearance.vue";
 import SoundChain from "./SoundChain.vue";
+import MediaInspector from "./MediaInspector.vue";
+import TelegramSource from "./TelegramSource.vue";
+import TelegramSponsored from "./TelegramSponsored.vue";
 import Artwork from "./Artwork.vue";
 import TrackList from "./TrackList.vue";
 import { useAwake } from "./useAwake";
@@ -25,6 +28,7 @@ import {
 } from "./types";
 
 const s = reactive(useAwake());
+const editingMedia = ref<Track | null>(null);
 type View =
   | "appearance"
   | "home"
@@ -150,8 +154,28 @@ const sourceLabel = (kind: string) =>
     smb: "NAS / 网盘挂载目录",
     webdav: "WebDAV",
     plex: "Plex",
+    telegram: "Telegram 个人媒体库",
   })[kind] || kind;
+const telegramReady = computed(() => /\/v1\/libraries\/[a-f0-9]{24}\/?$/.test(sourcePath.value));
+const activeTelegramSource = computed(() => s.sources.find(source => source.id === s.now?.source_id && source.kind === "telegram"));
+const sourceConfigError = ref("");
+async function importSourceConfig(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  sourceConfigError.value = "";
+  try {
+    if (file.size > 65536) throw new Error("配置文件不能超过 64 KB");
+    const config = await call<{ kind: string; name: string; url: string; username: string }>("parse_source_configuration", { text: await file.text(), format: file.name.split(".").pop()?.toLowerCase() });
+    sourceKind.value = config.kind; sourceName.value = config.name;
+    sourcePath.value = config.url; sourceUsername.value = config.username;
+    sourceSecret.value = "";
+    s.toast("配置已读取，请填写凭据后连接");
+  } catch (e) { sourceConfigError.value = String(e); }
+  finally { input.value = ""; }
+}
 async function connectSource() {
+  if (sourceKind.value === "telegram" && !telegramReady.value) { s.fault = "请先选择 Telegram 频道或收藏夹"; return; }
   if (sourceKind.value === "local" || sourceKind.value === "smb")
     await s.scan(sourcePath.value, sourceName.value, sourceKind.value);
   else if (sourceKind.value === "rss") {
@@ -437,7 +461,7 @@ watch(commandOpen, (open) => {
 });
 let analysisGeneration = 0;
 watch(
-  () => [view.value, s.now?.id],
+  () => [view.value, s.now?.id, s.now?.lyrics],
   async () => {
     if (view.value !== "stage" || !s.now) return;
     const token = ++analysisGeneration;
@@ -572,7 +596,7 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
           ><Icon name="chevron" :size="14" />
         </button>
         <div class="version-line">
-          <span>为好音乐而生</span><span>0.6 / PERSONAL</span>
+          <span>为好音乐而生</span><span>0.6.2 / PERSONAL</span>
         </div>
       </div>
     </aside>
@@ -602,6 +626,7 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
         </div>
       </header>
       <main id="main-content" class="main-content">
+      <TelegramSponsored v-if="activeTelegramSource && view !== 'sources'" :source-id="activeTelegramSource.id" />
         <Appearance v-if="view === 'appearance'" :services="s.services" />
         <template v-else-if="view === 'home'">
           <div class="page-intro">
@@ -883,6 +908,7 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
               :favorites="s.favorites"
               @play="s.start($event, filtered)"
               @favorite="s.favorite"
+              @edit="editingMedia = $event"
           /></template>
           <TrackList
             v-else
@@ -905,6 +931,7 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
               )
             "
             @favorite="s.favorite"
+              @edit="editingMedia = $event"
           />
           <div
             v-if="view === 'playlist' && activePlaylist"
@@ -1053,6 +1080,7 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
             :reasons="reasons"
             @play="s.start($event, suggested)"
             @favorite="s.favorite"
+              @edit="editingMedia = $event"
           />
           <p class="capability-note">
             <Icon name="shield" />听歌偏好保存在这台设备。云端 AI
@@ -1118,6 +1146,7 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
                 <span class="subtle-badge">{{ sourceLabel(source.kind) }}</span>
                 <h2>{{ source.name }}</h2>
                 <p class="source-path">{{ source.url }}</p>
+                <TelegramSponsored v-if="source.kind === 'telegram'" :source-id="source.id" />
                 <small
                   >{{ source.track_count }} 首音乐 ·
                   {{
@@ -1593,8 +1622,9 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
           </div>
           <section v-if="s.now" class="listening-stage">
             <div>
-              <Artwork :path="s.now.artwork_path" :seed="s.now.album" large />
+              <Artwork :path="s.now.artwork_path" :seed="s.now.album || s.now.title" :style-name="s.now.media_info?.cover_style" large />
               <div class="stage-caption">
+                <button class="text-button" @click="editingMedia = s.now">整理封面、歌词与乐评</button>
                 <h2>{{ s.now.title }}</h2>
                 <p>{{ s.now.artist }} · {{ s.now.album }}</p>
                 <small class="mono">{{ format(s.now) }}</small>
@@ -1611,6 +1641,7 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
                   {{ line.text }}
                 </button></template
               >
+              <pre v-else-if="s.now.lyrics" class="plain-lyrics">{{ s.now.lyrics }}</pre>
               <div v-else class="lyrics-empty">
                 <Icon name="wave" :size="42" />
                 <h2>有些旋律，<br />不需要文字。</h2>
@@ -1679,7 +1710,7 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
 
     <footer class="player">
       <button class="now-info" aria-label="打开沉浸播放" @click="go('stage')">
-        <Artwork :path="s.now?.artwork_path" :seed="s.now?.album" /><span
+        <Artwork :path="s.now?.artwork_path" :seed="s.now?.album || s.now?.title" :style-name="s.now?.media_info?.cover_style" /><span
           ><strong>{{ s.now?.title || "让好音乐，开始。" }}</strong
           ><small>{{
             s.now ? s.now.artist + " · " + s.now.album : "你的私人聆听空间"
@@ -1830,6 +1861,7 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
               <option value="smb">NAS / 已挂载网盘</option>
               <option value="webdav">WebDAV</option>
               <option value="plex">Plex</option>
+              <option value="telegram">Telegram 个人媒体库</option>
               <option value="rss">RSS / Atom 元数据匹配</option>
             </select></label
           >
@@ -1862,13 +1894,13 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
             <Icon name="folder" />浏览文件夹…
           </button>
           <template v-else
-            ><label v-if="sourceKind !== 'plex'"
+            ><label v-if="!['plex', 'telegram'].includes(sourceKind)"
               >账号<input
                 v-model="sourceUsername"
                 autocomplete="username"
                 placeholder="匿名访问可留空" /></label
             ><label
-              >{{ sourceKind === "plex" ? "Plex Token" : "密码"
+              >{{ sourceKind === "plex" ? "Plex Token" : sourceKind === "telegram" ? "连接器访问令牌" : "密码"
               }}<input
                 v-model="sourceSecret"
                 type="password"
@@ -1889,6 +1921,8 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
             凭据保存在系统钥匙串。音频使用 HTTP Range
             按需读取，服务器需要支持字节范围请求。
           </p>
+          <TelegramSource v-if="sourceKind === 'telegram' && !telegramReady" :url="sourcePath" :secret="sourceSecret" :disabled="s.busy" @selected="url => sourcePath = url" />
+          <p v-if="sourceKind === 'telegram' && telegramReady" class="muted">已选择个人媒体库。连接后读取所选来源最近的消息；登录会话保存在你自己的连接器设备，访问令牌保存在系统钥匙串。</p>
           <p v-if="sourceKind === 'rss'" class="muted">
             只读取 RSS / Atom
             标题并匹配自己的曲库，不读取其中的音频地址。请填写名称；有重名版本的条目不会自动匹配。
@@ -1896,7 +1930,9 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
           <p class="muted">
             请确认你有权使用这些文件。仅在授权范围内个人使用，不要制造或传播侵权内容，请支持正版。
           </p>
-          <button class="button primary" :disabled="s.busy">
+          <label v-if="desktop">导入个人连接配置（JSON / XML / TXT）<input type="file" accept=".json,.xml,.txt" :disabled="s.busy" @change="importSourceConfig" /></label>
+          <p v-if="sourceConfigError" class="job-error" role="alert">{{ sourceConfigError }}</p>
+          <button class="button primary" :disabled="s.busy || (sourceKind === 'telegram' && !telegramReady)">
             {{ s.busy ? "正在连接曲库…" : "连接曲库" }}
           </button>
         </form>
@@ -1969,4 +2005,5 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
       </section>
     </div>
   </div>
+  <MediaInspector v-if="editingMedia" :key="editingMedia.id" :track="editingMedia" @close="editingMedia = null" @saved="s.refresh()" />
 </template>

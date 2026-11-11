@@ -13,6 +13,7 @@ pub mod eq;
 pub mod feedmeta;
 pub mod library;
 pub mod lyrics;
+pub mod media_info;
 pub mod metadata;
 pub mod models;
 pub mod parametric;

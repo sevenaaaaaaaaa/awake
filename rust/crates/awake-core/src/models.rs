@@ -10,6 +10,7 @@ pub enum SourceKind {
     Smb,
     Webdav,
     Plex,
+    Telegram,
 }
 
 impl SourceKind {
@@ -19,6 +20,7 @@ impl SourceKind {
             SourceKind::Smb => "smb",
             SourceKind::Webdav => "webdav",
             SourceKind::Plex => "plex",
+            SourceKind::Telegram => "telegram",
         }
     }
 
@@ -28,6 +30,7 @@ impl SourceKind {
             SourceKind::Smb => "SMB / NAS",
             SourceKind::Webdav => "WebDAV",
             SourceKind::Plex => "Plex",
+            SourceKind::Telegram => "Telegram 个人媒体库",
         }
     }
 }
@@ -98,6 +101,15 @@ pub struct Track {
     pub last_played: Option<i64>,
     pub added_at: i64,
     pub is_remote: bool,
+    /// Original Telegram message URL; old libraries remain readable.
+    #[serde(default)]
+    pub origin_url: Option<String>,
+    #[serde(default)]
+    pub comment: String,
+    #[serde(default)]
+    pub lyrics: String,
+    #[serde(default)]
+    pub media_info: Option<crate::media_info::MediaInfo>,
 }
 
 impl Track {
@@ -289,6 +301,10 @@ mod tests {
             last_played: None,
             added_at: 0,
             is_remote: false,
+            origin_url: None,
+            comment: String::new(),
+            lyrics: String::new(),
+            media_info: None,
         }
     }
 

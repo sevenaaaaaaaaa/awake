@@ -13,7 +13,9 @@ pub struct ConnectionRequest {
     pub secret: String,
 }
 pub fn access(source: &MediaSource) -> Result<Access, String> {
-    let secret = if source.username.is_empty() && source.kind != SourceKind::Plex {
+    let secret = if source.username.is_empty()
+        && !matches!(source.kind, SourceKind::Plex | SourceKind::Telegram)
+    {
         String::new()
     } else {
         vault::get(&source.password_key)?
@@ -50,7 +52,10 @@ pub async fn connect_source(
     req: ConnectionRequest,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    if !matches!(req.kind, SourceKind::Webdav | SourceKind::Plex) {
+    if !matches!(
+        req.kind,
+        SourceKind::Webdav | SourceKind::Plex | SourceKind::Telegram
+    ) {
         return Err("NAS 与网盘请先挂载，再选择挂载目录".into());
     }
     let mut source = {
@@ -80,7 +85,8 @@ pub async fn connect_source(
         source.name = req.name.trim().into();
     }
     let secret = if req.secret.is_empty()
-        && (!source.username.is_empty() || source.kind == SourceKind::Plex)
+        && (!source.username.is_empty()
+            || matches!(source.kind, SourceKind::Plex | SourceKind::Telegram))
     {
         vault::get(&source.password_key)?
     } else {
@@ -196,8 +202,10 @@ pub fn start_refresh_worker(
                 );
                 let old_scan = source.last_scan;
                 let result = (|| {
-                    let mut tracks = if matches!(source.kind, SourceKind::Webdav | SourceKind::Plex)
-                    {
+                    let mut tracks = if matches!(
+                        source.kind,
+                        SourceKind::Webdav | SourceKind::Plex | SourceKind::Telegram
+                    ) {
                         access(&source)?.scan().map_err(|e| e.to_string())?
                     } else {
                         let existing = library.lock().tracks_by_locator(&source.id);
