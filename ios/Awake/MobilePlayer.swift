@@ -32,6 +32,9 @@ struct RouteInfo: Equatable {
   }
   var unreportedSeconds: Double { listened }
   var onListen: ((Song, Double) -> Void)?
+  var artworkResolver: ((Song) -> URL?)?
+  private var systemArtworkKey = ""
+  private var systemArtwork: MPMediaItemArtwork?
   private let engine = AVAudioEngine(), node = AVAudioPlayerNode(),
     eq = AVAudioUnitEQ(numberOfBands: 31), correction = AVAudioUnitEQ(numberOfBands: 16)
   private var queue: [(Song, URL)] = [], index = 0, generation = 0
@@ -386,17 +389,29 @@ struct RouteInfo: Equatable {
       resumeAfterInterruption = false
     }
   }
+  func refreshMetadata(_ updated: Song) {
+    if song?.id == updated.id { song = updated; nowPlaying() }
+  }
   private func nowPlaying() {
     guard let song else {
       MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
       return
     }
-    MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+    let artworkKey = song.artwork ?? ""
+    if artworkKey != systemArtworkKey {
+      systemArtworkKey = artworkKey; systemArtwork = nil
+      if let url = artworkResolver?(song), let image = UIImage(contentsOfFile: url.path) {
+        systemArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+      }
+    }
+    var information: [String: Any] = [
       MPMediaItemPropertyTitle: song.title, MPMediaItemPropertyArtist: song.artist,
-      MPMediaItemPropertyPlaybackDuration: duration,
+      MPMediaItemPropertyAlbumTitle: song.album, MPMediaItemPropertyPlaybackDuration: duration,
       MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
       MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
     ]
+    if let systemArtwork { information[MPMediaItemPropertyArtwork] = systemArtwork }
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = information
   }
   private func remoteCommands() {
     let c = MPRemoteCommandCenter.shared()

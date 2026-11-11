@@ -282,8 +282,10 @@ struct AgentView: View {
   func curate() async {
     busy = true
     defer { busy = false }
-    let candidates = Array(store.recommendations().prefix(80))
+    let telegramIDs = Set(store.state.sources.filter { $0.kind == "telegram" }.map(\.id))
+    let candidates = Array(store.recommendations().filter { !telegramIDs.contains($0.sourceID ?? "") }.prefix(80))
     do {
+      guard !candidates.isEmpty else { throw AppFailure("Telegram 媒体库仅支持本地选曲；没有可发送到云端的候选") }
       let payload: [String: Any] = [
         "intent": String(intent.prefix(4000)),
         "candidates": candidates.map {

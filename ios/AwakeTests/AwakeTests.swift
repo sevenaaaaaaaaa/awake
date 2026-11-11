@@ -4,6 +4,124 @@ import XCTest
 @testable import Awake
 
 final class AwakeTests: XCTestCase {
+  func testMediaNamesLyricsAndLicensedReviewScope() throws {
+    let name = MediaNaming.suggest(filename: "01. 王菲 - 红豆 (Live) [FLAC].flac", title: "", artist: "")
+    XCTAssertEqual(name.title, "红豆 (Live)"); XCTAssertEqual(name.artist, "王菲")
+    XCTAssertEqual(name.filename, "王菲 - 红豆 (Live).flac")
+    XCTAssertEqual(MediaNaming.suggest(filename: "Artist - Night [FLAC 24bit 96kHz].flac", title: "", artist: "").title, "Night")
+    XCTAssertEqual(MediaNaming.suggest(filename: "Artist - Night [Live FLAC].flac", title: "", artist: "").title, "Night [Live FLAC]")
+    let recording = MediaNaming.suggest(filename: "录音_2026_11_11.wav", title: "", artist: "")
+    XCTAssertEqual(recording.artist, ""); XCTAssertEqual(recording.title, "录音 2026 11 11")
+    let lines = MediaLyrics.parse("[offset:-500]\n[00:01.50][01:02.250]回声\n[00:00.20]开始\n[00:99]bad")
+    XCTAssertEqual(lines.count, 3); XCTAssertEqual(lines[0].time, 0); XCTAssertEqual(lines[1].time, 1)
+    let id = "12345678-1234-1234-1234-123456789012"
+    let object: [String: Any] = ["reviews": [["id": id, "text": "A licensed listener review", "user": ["display_name": "Listener"], "license": ["id": "CC BY-SA 3.0", "info_url": "https://creativecommons.org/licenses/by-sa/3.0/"]]]]
+    let rows = MediaLookup.reviews(object, scope: "release_group")
+    XCTAssertEqual(rows.count, 1); XCTAssertEqual(rows[0].scope, "release_group"); XCTAssertEqual(rows[0].author, "Listener")
+    XCTAssertTrue(MediaLookup.reviews(["reviews": [["id":id,"text":"restricted","license":["id":"All rights reserved"]]]], scope: "recording").isEmpty)
+  }
+
+  @MainActor func testMediaEditsPreserveOriginalAndCanBeRestoredAfterReload() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = MobileStore(root: root)
+    let original = Song(title: "raw_recording", file: "original.wav", sourceID: "source", locator: "safe.wav")
+    store.state.songs = [original]
+    var draft = original; draft.title = "My recording"; draft.lyrics = "[00:01]Text"; draft.sourceID = "untrusted"; draft.file = "other.wav"
+    draft.mediaInfo = MediaInfo(original_title: original.title, original_artist: original.artist, original_album: original.album, cover_style: "forest")
+    try store.saveMedia(draft)
+    let restored = MobileStore(root: root)
+    XCTAssertEqual(restored.state.songs[0].title, "My recording"); XCTAssertEqual(restored.state.songs[0].sourceID, "source")
+    XCTAssertEqual(restored.state.songs[0].file, "original.wav"); XCTAssertEqual(restored.state.songs[0].locator, "safe.wav")
+    try restored.resetMedia(original.id)
+    XCTAssertEqual(restored.state.songs[0].title, original.title); XCTAssertNil(restored.state.songs[0].mediaInfo)
+    XCTAssertEqual(restored.state.songs[0].file, "original.wav")
+  }
+
+  @MainActor func testArtworkImportValidatesImageAndBounds() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    XCTAssertThrowsError(try MediaArt.persist(Data("not an image".utf8), directory: root))
+    let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
+      UIColor.blue.setFill(); context.fill(CGRect(x:0,y:0,width:32,height:32))
+    }
+    let name = try MediaArt.persist(image.pngData()!, directory: root)
+    XCTAssertNotNil(UIImage(contentsOfFile: root.appendingPathComponent(name).path))
+  }
+
+  @MainActor func testLocalRecordingReadsAdjacentArtworkAndPlainLyrics() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("recording.wav")
+    try Data().write(to: file)
+    try "Local recording transcript".write(to: root.appendingPathComponent("recording.lyrics.txt"), atomically: true, encoding: .utf8)
+    let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
+      UIColor.blue.setFill(); context.fill(CGRect(x:0,y:0,width:32,height:32))
+    }
+    try image.pngData()!.write(to: root.appendingPathComponent("recording.png"))
+    var song = Song(title: "Recording")
+    MobileStore.readSidecars(from: file, song: &song, directory: root.appendingPathComponent("Artwork"))
+    XCTAssertEqual(song.lyrics, "Local recording transcript")
+    XCTAssertNotNil(song.artwork)
+    XCTAssertEqual(try Data(contentsOf: file).count, 0, "Source audio must remain untouched")
+  }
+  func testPersonalSourceConfigurationsAndCredentials() throws {
+    for (format, text) in [
+      ("json", #"{"version":1,"kind":"telegram","name":"音乐","url":"https://example.test/v1/libraries/abc/"}"#),
+      ("xml", "<awake-source><version>1</version><kind>telegram</kind><name>音乐</name><url>https://example.test/v1/libraries/abc/</url></awake-source>"),
+      ("txt", "# Personal library\nversion=1\nkind=telegram\nname=音乐\nurl=https://example.test/v1/libraries/abc/"),
+    ] {
+      let config = try SourceConfiguration.parse(text, format: format)
+      XCTAssertEqual(config.kind, "telegram")
+      XCTAssertEqual(config.name, "音乐")
+    }
+    for text in [
+      "version=1\nkind=telegram\nname=a\nurl=https://a.test/\nsecret=x",
+      "version=1\nkind=telegram\nname=a\nurl=https://a.test/?token=x",
+      "version=1\nkind=telegram\nname=a\nurl=https://a.test/\nname=b",
+    ] { XCTAssertThrowsError(try SourceConfiguration.parse(text, format: "txt")) }
+    XCTAssertThrowsError(try SourceConfiguration.parse("<!DOCTYPE x [<!ENTITY e 'test'>]><awake-source><name>&e;</name></awake-source>", format: "xml"))
+    let req = try TelegramService.request(base: "http://127.0.0.1:8766/", path: "v1/catalog", secret: "test-only-token")
+    XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer test-only-token")
+    XCTAssertNil(req.url?.query)
+    XCTAssertThrowsError(try TelegramService.request(base: "http://public.example/", path: "v1/catalog", secret: "secret"))
+    XCTAssertThrowsError(try TelegramService.request(base: "https://example.test/root/", path: "../outside", secret: "secret"))
+  }
+
+  @MainActor func testAudioFolderIgnoresSymlinksAndNonAudio() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data().write(to: root.appendingPathComponent("song.flac"))
+    try Data().write(to: root.appendingPathComponent("script.js"))
+    try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked.wav"), withDestinationURL: root.appendingPathComponent("song.flac"))
+    let files = try MobileStore.audioFiles(in: root)
+    XCTAssertEqual(files.map(\.lastPathComponent), ["song.flac"])
+  }
+
+  @MainActor func testTelegramConnectorIntegrationWhenFixtureIsRunning() async throws {
+    // Explicit opt-in: this is not counted as a real Telegram account test.
+    guard ProcessInfo.processInfo.environment["AWAKE_CONNECTOR_INTEGRATION"] == "1" else {
+      throw XCTSkip("Run the local fixture server and opt in to connector integration")
+    }
+    let base = "http://127.0.0.1:8766/", secret = "test-only-token"
+    let catalog = try await TelegramService.catalog(base: base, secret: secret)
+    XCTAssertEqual(catalog.chats.count, 2)
+    XCTAssertEqual(catalog.folders.first?.chat_ids, ["-100123"])
+    let url = try await TelegramService.collection(base: base, secret: secret, ids: ["42"], limit: 100)
+    let source = MusicSource(name: "test fixture", kind: "telegram", url: url)
+    let songs = try await SourceService.scan(source, secret: secret)
+    XCTAssertEqual(songs.count, 1)
+    XCTAssertEqual(songs[0].sampleRate, 0)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let song = try await SourceService.cache(songs[0], source: source, secret: secret, directory: root)
+    XCTAssertEqual(song.sampleRate, 48000)
+    XCTAssertEqual(song.duration, 1, accuracy: 0.01)
+    XCTAssertNotNil(song.file)
+  }
   @MainActor func testEffectStatusTracksActualEQBypassAndFailedRequests() {
     let player = MobilePlayer()
     var gains = Array(repeating: Float(0), count: 31)

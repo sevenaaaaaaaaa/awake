@@ -141,7 +141,9 @@ final class SourceXML: NSObject, XMLParserDelegate {
 enum SourceService {
   static func request(_ url: URL, source: MusicSource, secret: String) -> URLRequest {
     var r = URLRequest(url: url)
-    if source.kind == "plex" {
+    if source.kind == "telegram" {
+      r.setValue("Bearer " + secret, forHTTPHeaderField: "Authorization")
+    } else if source.kind == "plex" {
       r.setValue(secret, forHTTPHeaderField: "X-Plex-Token")
     } else if !source.username.isEmpty || !secret.isEmpty {
       r.setValue(
@@ -151,6 +153,7 @@ enum SourceService {
     return r
   }
   static func scan(_ source: MusicSource, secret: String) async throws -> [Song] {
+    if source.kind == "telegram" { return try await TelegramService.scan(source, secret: secret) }
     let base = try Network.endpoint(source.url, localHTTP: true)
     if source.kind == "plex" {
       func api(_ path: String) throws -> URL {
@@ -251,6 +254,11 @@ enum SourceService {
       try? FileManager.default.removeItem(at: dest)
       try FileManager.default.moveItem(at: partial, to: dest)
       var out = song
+      if let tags = try? await MobileStore.readSong(dest, file: name) {
+        if out.artwork == nil { out.artwork = tags.artwork }
+        if out.lyrics?.isEmpty ?? true { out.lyrics = tags.lyrics }
+        if out.comment?.isEmpty ?? true { out.comment = tags.comment }
+      }
       out.file = name
       out.duration = Double(decoded.length) / decoded.processingFormat.sampleRate
       out.sampleRate = decoded.processingFormat.sampleRate

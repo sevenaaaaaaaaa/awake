@@ -15,6 +15,12 @@ struct Song: Identifiable, Codable, Equatable {
   var sourceID: String?
   var locator = ""
   var favorite = false
+  var origin: String?
+  var originalFilename: String?
+  var artwork: String?
+  var lyrics: String?
+  var comment: String?
+  var mediaInfo: MediaInfo?
 }
 struct MusicSource: Identifiable, Codable {
   var id = UUID().uuidString
@@ -346,6 +352,32 @@ enum Secrets {
       return x == y ? a.title.localizedStandardCompare(b.title) == .orderedAscending : x > y
     }
   }
+  func importAudioFolder(_ url: URL) async {
+    let access = url.startAccessingSecurityScopedResource()
+    defer { if access { url.stopAccessingSecurityScopedResource() } }
+    do {
+      let urls: [URL] = try await Task.detached(priority: .userInitiated) {
+        try Self.audioFiles(in: url)
+      }.value
+      guard !urls.isEmpty else { throw AppFailure("文件夹内没有支持的音频文件") }
+      await importFiles(urls)
+    } catch { message = error.localizedDescription }
+  }
+  nonisolated static func audioFiles(in url: URL) throws -> [URL] {
+        guard let entries = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) else {
+          throw AppFailure("无法读取选择的文件夹")
+        }
+        var files: [URL] = []
+        for case let file as URL in entries {
+          let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+          if values.isSymbolicLink == true { entries.skipDescendants(); continue }
+          if values.isRegularFile == true && ["mp3", "m4a", "aac", "wav", "aif", "aiff", "caf", "flac", "alac"].contains(file.pathExtension.lowercased()) {
+            files.append(file)
+            guard files.count <= 20000 else { throw AppFailure("文件夹超过两万首，请选择更小的目录") }
+          }
+        }
+        return files.sorted { $0.path < $1.path }
+  }
   func importFiles(_ urls: [URL]) async {
     busy = true
     defer { busy = false }
@@ -363,6 +395,8 @@ enum Secrets {
         }.value
         do {
           var song = try await Self.readSong(dest, file: name)
+          song.originalFilename = url.lastPathComponent
+          Self.readSidecars(from: url, song: &song, directory: artworkDirectory)
           if song.title == dest.deletingPathExtension().lastPathComponent {
             song.title = url.deletingPathExtension().lastPathComponent
           }
@@ -396,7 +430,46 @@ enum Secrets {
         }
       }
     }
+    if let items = try? await asset.load(.metadata) {
+      for item in items {
+        let identifier = (item.identifier?.rawValue ?? "").lowercased()
+        if item.commonKey == .commonKeyArtwork || identifier.contains("apic") || identifier.contains("covr"),
+           song.artwork == nil, let data = try? await item.load(.dataValue) {
+          song.artwork = try? MediaArt.persist(data, directory: url.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Artwork"))
+        }
+        if identifier.contains("uslt") || identifier.contains("lyrics") || identifier.contains("lyr") {
+          song.lyrics = try? await item.load(.stringValue)
+        }
+        if identifier.contains("comment") || identifier.contains("comm") || identifier.contains("cmt") {
+          song.comment = try? await item.load(.stringValue)
+        }
+      }
+    }
     return song
+  }
+  nonisolated static func readSidecars(from url: URL, song: inout Song, directory: URL) {
+    let manager = FileManager.default
+    func bounded(_ file: URL, limit: Int) -> Data? {
+      guard let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= limit else { return nil }
+      return try? Data(contentsOf: file)
+    }
+    if song.artwork == nil {
+      let root = url.deletingLastPathComponent()
+      let names = [url.deletingPathExtension().lastPathComponent, "cover", "folder", "front", "Cover", "Folder"]
+      for name in names {
+        for ext in ["jpg", "jpeg", "png", "webp"] {
+          let file = root.appendingPathComponent(name + "." + ext)
+          if manager.fileExists(atPath: file.path), let data = bounded(file, limit: 8 * 1024 * 1024),
+             let artwork = try? MediaArt.persist(data, directory: directory) { song.artwork = artwork; break }
+        }
+        if song.artwork != nil { break }
+      }
+    }
+    if song.lyrics?.isEmpty ?? true {
+      for ext in ["lrc", "lyrics.txt"] {
+        if let data = bounded(url.deletingPathExtension().appendingPathExtension(ext), limit: 131072) { song.lyrics = String(data: data, encoding: .utf8); break }
+      }
+    }
   }
   func curatorSecret() throws -> String {
     guard state.curatorURL == state.curatorCredentialEndpoint,

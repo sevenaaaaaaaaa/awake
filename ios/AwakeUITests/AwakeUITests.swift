@@ -1,6 +1,90 @@
 import XCTest
 
 final class AwakeUITests: XCTestCase {
+  func testMediaInformationCanBeEditedWithoutChangingAudio() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--uitesting"]
+    app.launch()
+    app.tabBars.buttons["曲库"].tap()
+    let song = app.buttons["song-qa-audio"]
+    XCTAssertTrue(song.waitForExistence(timeout: 3))
+    song.press(forDuration: 1)
+    app.buttons["整理封面、歌词与乐评"].tap()
+    let title = app.textFields["mediaTitle"]
+    for _ in 0..<4 { if !title.isHittable { app.swipeUp() } }
+    XCTAssertTrue(title.waitForExistence(timeout: 3))
+    title.tap()
+    title.press(forDuration: 1)
+    if app.menuItems["全选"].exists { app.menuItems["全选"].tap(); title.typeText("Organized recording") }
+    else { title.typeText(" Organized") }
+    let capture = XCTAttachment(screenshot: app.screenshot())
+    capture.name = "Media information editor"
+    capture.lifetime = .keepAlways; add(capture)
+    let save = app.buttons["saveMedia"]
+    for _ in 0..<12 { if !save.exists || !save.isHittable { app.swipeUp() } }
+    XCTAssertTrue(save.waitForExistence(timeout: 3)); save.tap()
+    XCTAssertTrue(app.buttons["song-qa-audio"].waitForExistence(timeout: 3))
+    app.buttons["song-qa-audio"].tap()
+    XCTAssertTrue(app.buttons["打开正在播放"].waitForExistence(timeout: 3))
+  }
+  private func connectorFixtureIsRunning() -> Bool {
+    let finished = expectation(description: "Check explicit loopback fixture")
+    var available = false
+    var request = URLRequest(url: URL(string: "http://127.0.0.1:8766/v1/catalog")!)
+    request.timeoutInterval = 2
+    request.setValue("Bearer test-only-token", forHTTPHeaderField: "Authorization")
+    URLSession.shared.dataTask(with: request) { _, response, _ in
+      available = (response as? HTTPURLResponse)?.statusCode == 200
+      finished.fulfill()
+    }.resume()
+    wait(for: [finished], timeout: 3)
+    return available
+  }
+  func testTelegramSourceCanBeSelectedAndRequiresExplicitScope() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--uitesting"]
+    app.launch()
+    app.tabBars.buttons["设置"].tap()
+    let addSourceButton = app.buttons["addSource"]
+    for _ in 0..<3 { if !addSourceButton.isHittable { app.swipeUp() } }
+    addSourceButton.tap()
+    app.buttons["sourceKind"].tap()
+    app.buttons["Telegram 个人媒体库"].tap()
+    XCTAssertTrue(app.buttons["telegramBrowse"].waitForExistence(timeout: 3))
+    XCTAssertFalse(app.buttons["connectSource"].isEnabled)
+    let name = app.textFields["sourceName"]
+    name.tap(); name.typeText("Personal audio")
+    let url = app.textFields["sourceURL"]
+    url.tap(); url.typeText("http://127.0.0.1:8766/")
+    let secret = app.secureTextFields["sourceSecret"]
+    secret.tap(); secret.typeText("test-only-token")
+    app.swipeUp()
+    XCTAssertTrue(app.buttons["telegramBrowse"].isEnabled)
+    XCTAssertFalse(app.buttons["connectSource"].isEnabled)
+    let capture = XCTAttachment(screenshot: app.screenshot())
+    capture.name = "Telegram source requires an explicit collection"
+    capture.lifetime = .keepAlways
+    add(capture)
+    if connectorFixtureIsRunning() {
+      app.buttons["telegramBrowse"].tap()
+      let saved = app.switches["收藏夹"]
+      XCTAssertTrue(saved.waitForExistence(timeout: 5))
+      saved.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+      XCTAssertEqual(saved.value as? String, "1")
+      app.buttons["使用所选来源"].tap()
+      let connect = app.buttons["connectSource"]
+      for _ in 0..<3 { if !connect.exists { app.swipeUp() } }
+      XCTAssertTrue(connect.waitForExistence(timeout: 3))
+      XCTAssertTrue(connect.isEnabled)
+      connect.tap()
+      XCTAssertTrue(app.buttons["addSource"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.staticTexts["Personal audio"].exists)
+      let completed = XCTAttachment(screenshot: app.screenshot())
+      completed.name = "Telegram personal collection connected using local fixture"
+      completed.lifetime = .keepAlways
+      add(completed)
+    }
+  }
   private func revealEQSlider(_ app: XCUIApplication) -> XCUIElement {
     let slider = app.sliders["eqGainSlider"]
     for _ in 0..<6 {

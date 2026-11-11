@@ -43,11 +43,17 @@ struct RootView: View {
     } message: {
       Text(store.message.isEmpty ? player.error : store.message)
     }
+    .safeAreaInset(edge: .top) {
+      if let source = store.state.sources.first(where: { $0.id == player.song?.sourceID && $0.kind == "telegram" }) {
+        ScrollView { TelegramSponsoredView(source: source).padding(.horizontal) }.frame(maxHeight: 160)
+      }
+    }
     .overlay(alignment: .top) { EffectActivationOverlay() }
     .sensoryFeedback(.success, trigger: player.effectRevision)
     .onChange(of: player.route.uid) { _, _ in applyChain() }
     .task {
       player.onListen = { song, seconds in store.recordListen(song, seconds: seconds) }
+      player.artworkResolver = { song in store.artworkURL(song.artwork) }
       applyChain(announce: false)
     }
   }
@@ -94,17 +100,46 @@ struct Panel<Content: View>: View {
   }
 }
 struct Cover: View {
+  @EnvironmentObject var store: MobileStore
   var title: String
+  var artwork: String? = nil
+  var style = "auto"
   var size: CGFloat = 48
+  @State private var image: UIImage?
+  private var palette: [Color] {
+    let hash = title.utf8.reduce(UInt32(2166136261)) { ($0 &* 16777619) ^ UInt32($1) }
+    let choice = ["nocturne", "forest", "amber", "rose"].contains(style) ? style : ["nocturne", "forest", "amber", "rose"][Int(hash % 4)]
+    switch choice {
+    case "forest": return [Color(hex: "#809783"), Color(hex: "#385e53"), Color(hex: "#122a27")]
+    case "amber": return [Color(hex: "#c4ac75"), Color(hex: "#896a44"), Color(hex: "#302c28")]
+    case "rose": return [Color(hex: "#c69b95"), Color(hex: "#815c71"), Color(hex: "#302537")]
+    default: return [Color(hex: "#8a9db9"), Color(hex: "#465775"), Color(hex: "#172132")]
+    }
+  }
   var body: some View {
-    ZStack {
-      LinearGradient(
-        colors: [Color.indigo.opacity(0.55), Color.cyan.opacity(0.22)], startPoint: .topLeading,
-        endPoint: .bottomTrailing)
-      Image(systemName: "waveform").font(.system(size: size * 0.38, weight: .light))
-        .foregroundStyle(.white)
-    }.frame(width: size, height: size).clipShape(RoundedRectangle(cornerRadius: size * 0.18))
-      .accessibilityHidden(true)
+    ZStack(alignment: .bottomLeading) {
+      LinearGradient(colors: palette, startPoint: .topLeading, endPoint: .bottomTrailing)
+      Circle().fill(RadialGradient(colors: [Color(hex: "#ffedd2").opacity(0.9), Color(hex: "#ebcba7").opacity(0.2), .clear], center: .center, startRadius: 0, endRadius: size * 0.2))
+        .frame(width: size * 0.4, height: size * 0.4).position(x: size * 0.7, y: size * 0.32)
+      Canvas { context, bounds in
+        for i in 0..<9 {
+          let inset = Double(i) * bounds.width * 0.055
+          let rect = CGRect(x: -bounds.width * 0.3 - inset, y: bounds.height * 0.4 - inset * 0.2, width: bounds.width * 1.5 + inset * 2, height: bounds.height * 0.8 + inset)
+          context.stroke(Path(ellipseIn: rect), with: .color(.white.opacity(0.08 + Double(i % 3) * 0.025)), lineWidth: max(0.5, bounds.width / 600))
+        }
+      }
+      if size >= 150 {
+        VStack(alignment: .leading, spacing: 8) {
+          Text(String(title.prefix(32))).font(.system(size: size * 0.085, weight: .medium, design: .serif)).lineLimit(3)
+          Text("PERSONAL SOUND ARCHIVE").font(.system(size: max(6, size * 0.024), weight: .medium)).tracking(1.5)
+        }.foregroundStyle(.white.opacity(0.95)).padding(size * 0.09)
+      }
+      if let image { Image(uiImage: image).resizable().scaledToFill().frame(width: size, height: size).clipped() }
+    }.frame(width: size, height: size).clipShape(RoundedRectangle(cornerRadius: size * 0.075))
+      .accessibilityHidden(true).task(id: artwork) {
+        image = nil
+        if let url = store.artworkURL(artwork) { image = UIImage(contentsOfFile: url.path) }
+      }
   }
 }
 struct MiniPlayer: View {
@@ -117,7 +152,7 @@ struct MiniPlayer: View {
           expanded = true
         } label: {
           HStack {
-            Cover(title: song.title, size: 40)
+            Cover(title: song.title, artwork: song.artwork, style: song.mediaInfo?.cover_style ?? "auto", size: 40)
             VStack(alignment: .leading) {
               Text(song.title).font(.subheadline.weight(.semibold)).lineLimit(1)
               Text(song.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -146,16 +181,18 @@ struct NowPlayingView: View {
   @EnvironmentObject var player: MobilePlayer
   @EnvironmentObject var store: MobileStore
   @Environment(\.dismiss) var dismiss
+  @State private var editingInfo = false
   var body: some View {
     NavigationStack {
       ScrollView {
         VStack(spacing: 28) {
           if let song = player.song {
-            Cover(title: song.title, size: 240).padding(.top, 30)
+            Cover(title: song.title, artwork: song.artwork, style: song.mediaInfo?.cover_style ?? "auto", size: 240).padding(.top, 30)
             VStack(spacing: 8) {
               Text(song.title).font(.title2.bold()).multilineTextAlignment(.center)
               Text(song.artist).foregroundStyle(.secondary)
             }
+            Button("整理封面、歌词与乐评") { editingInfo = true }.accessibilityIdentifier("editPlayingMedia")
             EnhancementBadge()
             Slider(
               value: Binding(get: { player.position }, set: { player.seek($0) }),
@@ -189,6 +226,22 @@ struct NowPlayingView: View {
               Spacer()
               RoutePicker().frame(width: 40, height: 40)
             }
+            if let text = song.lyrics, !text.isEmpty {
+              GroupBox("歌词") { MediaLyricsView(text: text) }
+            }
+            if let reviews = song.mediaInfo?.reviews, !reviews.isEmpty {
+              GroupBox("听众乐评") {
+                VStack(alignment: .leading, spacing: 14) {
+                  ForEach(reviews.prefix(3)) { review in
+                    Text((review.scope == "release_group" ? "专辑乐评" : review.scope == "recording" ? "单曲乐评" : "导入评论") + " · " + review.author).font(.caption).foregroundStyle(.secondary)
+                    Text(review.text).font(.body).lineLimit(7)
+                    Text(review.source + " · " + review.license).font(.caption).foregroundStyle(.secondary)
+                    if let url = URL(string: review.url), ["https", "http"].contains(url.scheme ?? "") { Link("查看原文与署名", destination: url) }
+                  }
+                  Button("查看全部与来源") { editingInfo = true }
+                }
+              }
+            }
             Text("PCM \(Int(player.route.rate)) Hz · 无线编码由系统协商").font(.caption).foregroundStyle(
               .secondary)
           }
@@ -196,7 +249,8 @@ struct NowPlayingView: View {
       }.appSurface().navigationTitle("正在播放").navigationBarTitleDisplayMode(.inline).toolbar {
         Button("完成") { dismiss() }
       }
-    }.overlay(alignment: .top) { EffectActivationOverlay(priority: 1) }
+    }.sheet(isPresented: $editingInfo) { if let song = player.song { MediaInfoView(song: song) } }
+    .overlay(alignment: .top) { EffectActivationOverlay(priority: 1) }
   }
 }
 func clock(_ seconds: Double) -> String {
@@ -216,6 +270,9 @@ struct RoutePicker: UIViewRepresentable {
   defer { store.busy = false }
   do {
     var current = song
+    if let source = store.state.sources.first(where: { $0.id == song.sourceID && $0.kind == "telegram" }) {
+      _ = try await TelegramService.sponsored(source, secret: Secrets.get("source." + source.id))
+    }
     if store.localURL(song) == nil {
       guard let source = store.state.sources.first(where: { $0.id == song.sourceID }) else {
         throw AppFailure("找不到文件，请重新导入或刷新来源")
@@ -299,13 +356,14 @@ struct SongRow: View {
   let song: Song
   @EnvironmentObject var store: MobileStore
   @EnvironmentObject var player: MobilePlayer
+  @State private var editingInfo = false
   var body: some View {
     HStack(spacing: 12) {
       Button {
         Task { await playSong(song, store: store, player: player) }
       } label: {
         HStack(spacing: 12) {
-          Cover(title: song.title)
+          Cover(title: song.title, artwork: song.artwork, style: song.mediaInfo?.cover_style ?? "auto")
           VStack(alignment: .leading, spacing: 5) {
             Text(song.title).font(.subheadline.weight(.medium)).foregroundStyle(.primary).lineLimit(
               1)
@@ -328,7 +386,12 @@ struct SongRow: View {
       } label: {
         Image(systemName: song.favorite ? "heart.fill" : "heart").frame(width: 40, height: 44)
       }.accessibilityLabel(song.favorite ? "取消收藏" : "收藏")
-    }.padding(.vertical, 5)
+    }.padding(.vertical, 5).sheet(isPresented: $editingInfo) { MediaInfoView(song: store.state.songs.first { $0.id == song.id } ?? song) }.contextMenu {
+      Button("整理封面、歌词与乐评", systemImage: "info.circle") { editingInfo = true }
+      if let origin = song.origin, let url = URL(string: origin), url.scheme == "https", url.host == "t.me" {
+        Link("查看原始 Telegram 消息", destination: url)
+      }
+    }
   }
 }
 struct LibraryView: View {

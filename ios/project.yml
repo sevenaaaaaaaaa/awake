@@ -7,8 +7,8 @@ settings:
   base:
     SWIFT_VERSION: '5.0'
     DEVELOPMENT_TEAM: M2H88Z5S5A
-    MARKETING_VERSION: 0.7.3
-    CURRENT_PROJECT_VERSION: 10
+    MARKETING_VERSION: 0.7.5
+    CURRENT_PROJECT_VERSION: 12
     TARGETED_DEVICE_FAMILY: '1,2'
     CODE_SIGN_STYLE: Automatic
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -56,6 +56,8 @@ schemes:
       targets:
         AwakeIOS: all
     test:
+      environmentVariables:
+        AWAKE_CONNECTOR_INTEGRATION: $(AWAKE_CONNECTOR_INTEGRATION)
       targets:
         - AwakeTests
         - AwakeUITests

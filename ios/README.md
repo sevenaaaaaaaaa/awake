@@ -1,4 +1,16 @@
-# Awake iOS 0.7.3
+# Awake iOS 0.7.5
+
+长按曲目或在播放页面进入“整理封面、歌词与乐评”。支持内嵌图片/歌词、相邻资料、手动附件导入、公开 API 候选预览、乐评署名与许可、抽象配图、文件名建议和恢复原始信息。真实来源与音频路径保留，在线查询只在用户主动操作时发起。
+
+本轮未签名安装包：`dist-ios/Awake-0.7.5-ios-arm64-unsigned.ipa`，需要重签。详情见[资料整理说明](../docs/media-information.md)。
+
+## 0.7.4 · 个人媒体库接入
+
+设置 → 添加 WebDAV / Plex / Telegram，新增 Telegram 个人连接器、收藏夹/频道/聊天文件夹选择和 JSON/XML/TXT 连接配置导入。配置导入只填充表单，不自动连接，密码与令牌另存钥匙串。设置中可一次性导入本地或 Telegram 已下载的音频文件夹。
+
+Telegram 连接器由用户在自己的电脑或 NAS 运行，iPhone 使用该设备的地址；登录会话不进入 iPhone 或 Awake 服务器。远程音频首次播放先下载并校验，再进入现有 EQ 链路。支持的范围和部署方法见[连接器说明](../Tools/telegram_connector/README.md)。本版本构建产物为 `dist-ios/Awake-0.7.4-ios-arm64-unsigned.ipa`，须自行重签安装；旧发布记录保留于下方。
+
+## 历史发布：iOS 0.7.3
 
 原生 SwiftUI / AVAudioEngine iPhone 与 iPad 应用，最低 iOS 17。桌面 Rust/Tauri 主线保留。
 

@@ -8,6 +8,7 @@ struct SettingsView: View {
   @State private var musicKey = ""
   @State private var shareFile: SharedFile?
   @State private var sourceSheet = false
+  @State private var folderImport = false
   var body: some View {
     Form {
       Section("外观与皮肤") {
@@ -41,13 +42,15 @@ struct SettingsView: View {
         }
       }
       Section("自己的音乐来源") {
-        Button("添加 NAS / WebDAV / Plex", systemImage: "plus") { sourceSheet = true }
+        Button("添加 WebDAV / Plex / Telegram", systemImage: "plus") { sourceSheet = true }
           .accessibilityIdentifier("addSource")
+        Button("导入本地 / Telegram 下载文件夹", systemImage: "folder") { folderImport = true }
         ForEach(store.state.sources) { s in
           VStack(alignment: .leading, spacing: 8) {
             Text(s.name).font(.headline)
             Text("\(s.kind.uppercased()) · \(store.state.songs.filter{$0.sourceID==s.id}.count) 首")
               .font(.caption).foregroundStyle(.secondary)
+            if s.kind == "telegram" { TelegramSponsoredView(source: s) }
             Button("刷新来源") { Task { await refresh(s) } }.disabled(store.busy)
           }
         }
@@ -88,6 +91,9 @@ struct SettingsView: View {
         Text("公开测量与 AI 建议不是实物测量或全网统计。iOS 无法通过这里强制改变蓝牙编码、耳机 ANC 或接收器固件。").font(.caption)
           .foregroundStyle(.secondary)
       }
+    }.fileImporter(isPresented: $folderImport, allowedContentTypes: [.folder]) { result in
+      do { let url = try result.get(); Task { await store.importAudioFolder(url) } }
+      catch { store.message = error.localizedDescription }
     }.appSurface().navigationTitle("设置").sheet(isPresented: $sourceSheet) { SourceEditor() }.sheet(
       item: $shareFile
     ) { file in ShareView(url: file.url) }.fileImporter(
@@ -147,6 +153,14 @@ struct SettingsView: View {
           updated.id = previous.id
           updated.favorite = previous.favorite
           updated.file = previous.file
+          updated.originalFilename = previous.originalFilename
+          updated.artwork = previous.artwork
+          updated.lyrics = previous.lyrics
+          updated.comment = previous.comment
+          if let info = previous.mediaInfo {
+            updated.title = previous.title; updated.artist = previous.artist; updated.album = previous.album
+            updated.mediaInfo = info
+          }
           return updated
         }
         return row
@@ -178,6 +192,14 @@ struct SourceEditor: View {
   @State private var username = ""
   @State private var secret = ""
   @State private var busy = false
+  @State private var error = ""
+  @State private var configurationImport = false
+  @State private var catalog: TelegramCatalog?
+  @State private var selected = Set<String>()
+  @State private var limit = 1000
+  var telegramReady: Bool {
+    url.range(of: "/v1/libraries/[a-f0-9]{24}/?$", options: .regularExpression) != nil
+  }
   var body: some View {
     NavigationStack {
       Form {
@@ -185,36 +207,96 @@ struct SourceEditor: View {
           Picker("类型", selection: $kind) {
             Text("WebDAV / NAS / 网盘").tag("webdav")
             Text("Plex 音乐库").tag("plex")
-          }
-          TextField("名称", text: $name)
-          TextField("服务器或根目录 URL", text: $url).textInputAutocapitalization(.never).keyboardType(
-            .URL)
+            Text("Telegram 个人媒体库").tag("telegram")
+          }.accessibilityIdentifier("sourceKind")
+          TextField("名称", text: $name).accessibilityIdentifier("sourceName")
+          TextField(kind == "telegram" ? "个人连接器 URL" : "服务器或根目录 URL", text: $url)
+            .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+            .accessibilityIdentifier("sourceURL")
           if kind == "webdav" {
             TextField("账号（可选）", text: $username).textInputAutocapitalization(.never)
           }
-          SecureField(kind == "plex" ? "Plex Token" : "密码 / 应用密码", text: $secret)
+          SecureField(kind == "plex" ? "Plex Token" : kind == "telegram" ? "连接器访问令牌" : "密码 / 应用密码", text: $secret)
+            .accessibilityIdentifier("sourceSecret")
+        }.disabled(busy)
+        if kind == "telegram" && !telegramReady {
+          Section("选择 Telegram 音频") {
+            Text("先在你自己的电脑或 NAS 上运行连接器并登录 Telegram。iPhone 填写该设备的局域网或 HTTPS 地址，不能使用电脑的 127.0.0.1 地址。").font(.caption)
+            Button("读取频道与聊天文件夹") { Task { await browse() } }
+              .disabled(busy || url.isEmpty || secret.isEmpty).accessibilityIdentifier("telegramBrowse")
+            if let catalog {
+              ForEach(catalog.folders) { folder in
+                Button("选择文件夹：" + folder.title) { selected = Set(folder.chat_ids) }.disabled(busy)
+              }
+              ForEach(catalog.chats) { chat in
+                Toggle(chat.title, isOn: Binding(get: { selected.contains(chat.id) }, set: { enabled in
+                  if enabled { selected.insert(chat.id) } else { selected.remove(chat.id) }
+                })).disabled(busy)
+              }
+              Picker("每个来源的最近消息范围", selection: $limit) {
+                ForEach([100, 500, 1000, 2000], id: \.self) { Text("最近 \($0) 条").tag($0) }
+              }
+              Text("已选 \(selected.count) 个，最多 20 个。聊天文件夹之后新增的频道不会自动加入。").font(.caption)
+              Button("使用所选来源") { Task { await choose() } }.disabled(busy || selected.isEmpty || selected.count > 20)
+            }
+          }
         }
         Section {
-          Text("只连接你自己添加的服务器。密码和 Token 保存在钥匙串，认证不写入曲目 URL。HTTPS 用于外部服务，局域网地址可使用 HTTP。").font(
-            .caption)
+          Button("导入个人配置 · JSON / XML / TXT") { configurationImport = true }.disabled(busy)
+          Text(kind == "telegram"
+            ? "只读取你选中的频道或收藏夹。Telegram 会话保存在你自己的连接器设备；这里的访问令牌保存在钥匙串。音频首次播放先下载到本机。"
+            : "只连接你自己添加的服务器。密码和 Token 保存在钥匙串，认证不写入曲目 URL。外部服务使用 HTTPS，局域网可使用 HTTP。")
+            .font(.caption)
+          Text("请确认拥有内容及访问方式的必要授权。应用不提供公共频道或音乐源目录。").font(.caption).foregroundStyle(.secondary)
+          if !error.isEmpty { Text(error).foregroundStyle(.red).accessibilityIdentifier("sourceError") }
           if busy { ProgressView("正在读取自己的曲库…") }
-          Button("连接并扫描") { Task { await connect() } }.disabled(busy || name.isEmpty || url.isEmpty)
+          Button("连接并扫描") { Task { await connect() } }
+            .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty || url.isEmpty || (kind == "telegram" && !telegramReady))
+            .accessibilityIdentifier("connectSource")
         }
       }.appSurface().navigationTitle("添加音乐来源").toolbar { Button("完成") { dismiss() }.disabled(busy) }
+      .onChange(of: url) { _, _ in catalog = nil; selected = [] }
+      .onChange(of: secret) { _, _ in catalog = nil; selected = [] }
+      .fileImporter(isPresented: $configurationImport, allowedContentTypes: [.json, .xml, .plainText]) { result in
+        do {
+          let file = try result.get()
+          let access = file.startAccessingSecurityScopedResource()
+          defer { if access { file.stopAccessingSecurityScopedResource() } }
+          let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+          guard size <= 65536 else { throw AppFailure("配置文件不能超过 64 KB") }
+          let config = try SourceConfiguration.parse(String(contentsOf: file, encoding: .utf8), format: file.pathExtension)
+          kind = config.kind; name = config.name; url = config.url; username = config.username ?? ""
+          secret = ""; error = ""
+        } catch { self.error = error.localizedDescription }
+      }
     }
   }
+  func browse() async {
+    busy = true; error = ""
+    defer { busy = false }
+    do { catalog = try await TelegramService.catalog(base: url, secret: secret) }
+    catch { self.error = error.localizedDescription }
+  }
+  func choose() async {
+    busy = true; error = ""
+    defer { busy = false }
+    do { url = try await TelegramService.collection(base: url, secret: secret, ids: selected, limit: limit) }
+    catch { self.error = error.localizedDescription }
+  }
   func connect() async {
-    busy = true
+    busy = true; error = ""
     defer { busy = false }
     do {
       _ = try Network.endpoint(url, localHTTP: true)
-      let source = MusicSource(name: name, kind: kind, url: url, username: username)
+      let source = MusicSource(name: name.trimmingCharacters(in: .whitespaces), kind: kind, url: url, username: kind == "webdav" ? username : "")
       let songs = try await SourceService.scan(source, secret: secret)
       try Secrets.set(secret, account: "source." + source.id)
+      let previous = store.state
       store.state.sources.append(source)
       store.state.songs.append(contentsOf: songs)
-      store.save()
+      do { try store.persist() } catch { store.state = previous; throw error }
+      secret = ""
       dismiss()
-    } catch { store.message = error.localizedDescription }
+    } catch { self.error = error.localizedDescription }
   }
 }

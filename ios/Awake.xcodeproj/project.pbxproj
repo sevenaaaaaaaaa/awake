@@ -15,8 +15,11 @@
 		4B2B9E96F4274C216D84C376 /* SoundViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BFF41650CE622F89415946F /* SoundViews.swift */; };
 		4F2225AED07B39B3AFE0A874 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25772CF3D1E1165C2FC3C88 /* Models.swift */; };
 		63F16572E47029185FA00BF4 /* MobilePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C39625E967E4D9282FC678BB /* MobilePlayer.swift */; };
+		6B9BC687943CCFE3D7AD6EFA /* TelegramService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 010B6479A9D277C37E652BF4 /* TelegramService.swift */; };
 		6CA381D36D7CA1B3CDDEFFD4 /* Equipment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D022D5C4EE49F4F242D715A /* Equipment.swift */; };
+		733BB4FB46BFE7D39660EC54 /* MediaInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = B171903FC8AE4346A5AC0C83 /* MediaInfo.swift */; };
 		775D05480848FEABEF09AEEC /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBC4D62DEC457DBE5281F0A /* Views.swift */; };
+		7E206D5ACCAF7A80D855093A /* MediaInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 577909C48018E6F4BB732837 /* MediaInfoView.swift */; };
 		921E2B7981CB6F6809D5345D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3589EE509F6BA6E6F9DD71FB /* Assets.xcassets */; };
 		9E9E1D004861520B01D5E86C /* AwakeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4849CB161D29863B9E725A59 /* AwakeUITests.swift */; };
 		B2010DF4B036EE42DE9F020D /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B67216F06EEA6B1C51089A5 /* SettingsViews.swift */; };
@@ -45,6 +48,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		010B6479A9D277C37E652BF4 /* TelegramService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramService.swift; sourceTree = "<group>"; };
 		05148C82B7EE499186BB6DDB /* EffectState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectState.swift; sourceTree = "<group>"; };
 		0DBC4D62DEC457DBE5281F0A /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		24EE460B200DCEB777CB6E57 /* EquipmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentViews.swift; sourceTree = "<group>"; };
@@ -53,6 +57,7 @@
 		4849CB161D29863B9E725A59 /* AwakeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AwakeUITests.swift; sourceTree = "<group>"; };
 		4BFF41650CE622F89415946F /* SoundViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundViews.swift; sourceTree = "<group>"; };
 		4D022D5C4EE49F4F242D715A /* Equipment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Equipment.swift; sourceTree = "<group>"; };
+		577909C48018E6F4BB732837 /* MediaInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaInfoView.swift; sourceTree = "<group>"; };
 		5B67216F06EEA6B1C51089A5 /* SettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViews.swift; sourceTree = "<group>"; };
 		5FDBF46097E81A062E813ACF /* headphones-v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "headphones-v1.json"; sourceTree = "<group>"; };
 		663B242F9EA518DA6611AED2 /* AwakeTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AwakeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -60,6 +65,7 @@
 		A25772CF3D1E1165C2FC3C88 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A554254510F4AFDF55A474ED /* AwakeIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AwakeIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7700F7B34C8ED756CD34503 /* AwakeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AwakeTests.swift; sourceTree = "<group>"; };
+		B171903FC8AE4346A5AC0C83 /* MediaInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaInfo.swift; sourceTree = "<group>"; };
 		C1F7175870746206A87BB270 /* AwakeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AwakeApp.swift; sourceTree = "<group>"; };
 		C39625E967E4D9282FC678BB /* MobilePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePlayer.swift; sourceTree = "<group>"; };
 		D4DBA378C7D6D05CD323C399 /* AudioMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMath.swift; sourceTree = "<group>"; };
@@ -118,11 +124,14 @@
 				4D022D5C4EE49F4F242D715A /* Equipment.swift */,
 				24EE460B200DCEB777CB6E57 /* EquipmentViews.swift */,
 				F144CAD80E2FA1490AE8F500 /* LabViews.swift */,
+				B171903FC8AE4346A5AC0C83 /* MediaInfo.swift */,
+				577909C48018E6F4BB732837 /* MediaInfoView.swift */,
 				C39625E967E4D9282FC678BB /* MobilePlayer.swift */,
 				A25772CF3D1E1165C2FC3C88 /* Models.swift */,
 				E40E9A956315BB1CF4C1AC0C /* Services.swift */,
 				5B67216F06EEA6B1C51089A5 /* SettingsViews.swift */,
 				4BFF41650CE622F89415946F /* SoundViews.swift */,
+				010B6479A9D277C37E652BF4 /* TelegramService.swift */,
 				0DBC4D62DEC457DBE5281F0A /* Views.swift */,
 			);
 			path = Awake;
@@ -271,11 +280,14 @@
 				6CA381D36D7CA1B3CDDEFFD4 /* Equipment.swift in Sources */,
 				FAA89E83D7EC787B26770001 /* EquipmentViews.swift in Sources */,
 				BEFE026FF88841E93F33C788 /* LabViews.swift in Sources */,
+				733BB4FB46BFE7D39660EC54 /* MediaInfo.swift in Sources */,
+				7E206D5ACCAF7A80D855093A /* MediaInfoView.swift in Sources */,
 				63F16572E47029185FA00BF4 /* MobilePlayer.swift in Sources */,
 				4F2225AED07B39B3AFE0A874 /* Models.swift in Sources */,
 				3EEE4B57BC5DDD7C667C8C79 /* Services.swift in Sources */,
 				B2010DF4B036EE42DE9F020D /* SettingsViews.swift in Sources */,
 				4B2B9E96F4274C216D84C376 /* SoundViews.swift in Sources */,
+				6B9BC687943CCFE3D7AD6EFA /* TelegramService.swift in Sources */,
 				775D05480848FEABEF09AEEC /* Views.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -393,7 +405,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 12;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -414,7 +426,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.7.3;
+				MARKETING_VERSION = 0.7.5;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -516,7 +528,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 12;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -531,7 +543,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.7.3;
+				MARKETING_VERSION = 0.7.5;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
