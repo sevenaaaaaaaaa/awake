@@ -1,12 +1,31 @@
-# Awake 0.6
+# Awake 0.6.2
 
 **让好音乐，越来越合拍。** macOS 本地播放器：流式音频、后端连续队列、自有音乐来源、可解释的偏好学习，以及用户主动触发的 AI 策展和创作。
 
 当前主线：Rust / Tauri 2 / Vue 3。Swift 实现保留作历史参考。
 
-## iOS 0.7.3
+## 下载
 
-**[下载 iOS 0.7.3 测试版](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.7.3)**：iOS 17+，未签名 IPA，需自行重签安装。[发布说明](docs/releases/ios-v0.7.3.md)。
+- **[macOS 0.6.2（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.6.2)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.6.2.md)
+- **[iOS 0.7.5 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.7.5)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.7.5.md)
+
+## 0.6.2 / iOS 0.7.5 · 封面、歌词与乐评
+
+新增“整理这份声音”：读取内嵌和相邻封面/歌词，手动导入图片和评论 JSON，预览在线候选，保存显示名称、来源说明及听众乐评。缺封面的录音使用可选风格的抽象配图；没有专辑信息的录音不再错误共用其他文件的封面。
+
+在线资料通过 MusicBrainz、Cover Art Archive、LRCLIB 和 CritiqueBrainz 的公开 API 查询，用户主动触发，不上传音频或来源凭据。单曲与专辑乐评分开展示并保留署名、原链接及许可。编辑可恢复，重新扫描保留确认过的资料；文件名为整理建议，不直接重命名或回写原文件。[使用说明与边界](docs/media-information.md)。
+
+## 0.6.1 / iOS 0.7.4 · 个人媒体源
+
+桌面和 iOS 新增 Telegram 个人媒体库，通过用户自托管连接器选择收藏夹、指定频道或聊天文件夹中的频道；支持 JSON/XML/TXT 个人连接配置导入。桌面使用 HTTP Range 流式读取，iOS 首次下载到本机后进入原生 EQ。iOS 另支持一次性导入本地或 Telegram 已下载的音频文件夹。
+
+连接器在用户自己的电脑或 NAS 上登录，播放器只保存其访问令牌。只读取显式选择的最近消息范围，不提供公共频道目录，不绕过内容保护；Telegram 曲目元数据排除在云端 AI 请求外。频道文字赞助消息可展示，带照片/媒体的赞助消息尚不支持，遇到时会明确拒绝远程接入。
+
+[连接器部署、配置格式与当前限制](Tools/telegram_connector/README.md) · [本轮实现与验证](docs/telegram-media-libraries.md)。真实 Telegram 登录、用户 NAS 和频道授权仍需对应账号验收；本地协议夹具不代表真实服务验证。
+
+## 历史：iOS 0.7.3
+
+**[iOS 0.7.3 测试版发布页](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.7.3)**：iOS 17+，未签名 IPA，需自行重签安装。[发布说明](docs/releases/ios-v0.7.3.md)。
 
 原生 iPhone / iPad 工程与可重签真机 IPA 已加入，包含文件导入、系统音频、链路 EQ、社区参数、主观评分、A/B、本地软件跑分、设备参数/调音倾向/场景建议和 AI 服务接口。详情、安装与移动端边界见 [iOS 说明](ios/README.md)。桌面版本仍为 0.6，iOS 不是桌面功能全部迁移完成的声明。
 
@@ -127,6 +146,8 @@ open dist-rust/Awake.app
 密码与 API 密钥写入 macOS 系统钥匙串；不会通过查询曲库/配置接口回传到前端。曲库和档案先写临时文件再原子替换；后台来源更新失败保留旧内容。损坏的听歌档案会保留恢复副本。
 
 ## 验证
+
+0.6.2 / iOS 0.7.5 本轮：54 项 Rust 普通回归通过（awake-app 18 + awake-core 36，5 项真实声卡 / 长音轨测试按需单独运行），Vue / TypeScript 生产构建通过；iOS 27 项单元检查通过（1 项依赖连接器夹具的旧测试跳过），编辑资料后继续播放原音频的界面流程通过。详见[资料整理验证日志](docs/validation-media-information.log)与[个人媒体源验证日志](docs/validation-telegram.log)。
 
 0.6 本轮：49 项普通回归通过（含本机 9 首演示音频），另行通过本地/远程真实输出、CoreAudio UID/传输读取及公开社区参数下载解析。外观已检查黑/白/玻璃、设计导入/导出、保存与重载、非法颜色拦截和 375px 页面溢出。详见 [0.6 验证日志](docs/validation-v0.6.log)。
 
