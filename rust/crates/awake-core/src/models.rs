@@ -103,7 +103,11 @@ pub struct Track {
 impl Track {
     /// 专辑归并键：album_artist（空则 artist）| album，全小写。
     pub fn album_key(&self) -> String {
-        let aa = if self.album_artist.is_empty() { &self.artist } else { &self.album_artist };
+        let aa = if self.album_artist.is_empty() {
+            &self.artist
+        } else {
+            &self.album_artist
+        };
         format!("{}|{}", aa.to_lowercase(), self.album.to_lowercase())
     }
 
@@ -138,7 +142,11 @@ impl Track {
         } else {
             self.sample_rate.to_string()
         };
-        let codec = if self.codec.is_empty() { "PCM" } else { &self.codec };
+        let codec = if self.codec.is_empty() {
+            "PCM"
+        } else {
+            &self.codec
+        };
         let mut label = format!("{codec} {}-bit / {khz} kHz", self.bit_depth);
         if self.channels > 2 {
             label.push_str(&format!(" {}ch", self.channels));
@@ -185,31 +193,9 @@ pub struct LibrarySnapshot {
     pub scanned_at: Option<i64>,
 }
 
-/// 生成 UUID v4（无外部依赖版）。
+/// 生成 UUID v4。使用系统随机源，避免并发任务依赖墙上时钟产生相同 ID。
 pub fn new_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let pid = std::process::id();
-    let mix = (nanos as u64) ^ ((pid as u64) << 32) ^ (nanos >> 64) as u64;
-    let mut state = mix | 1;
-    let mut bytes = [0u8; 16];
-    for chunk in bytes.chunks_mut(8) {
-        // xorshift64
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        chunk.copy_from_slice(&state.to_le_bytes());
-    }
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-        bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
-    )
+    uuid::Uuid::new_v4().to_string()
 }
 
 /// 当前 Unix 毫秒。
@@ -258,7 +244,10 @@ pub fn group_albums(tracks: &[Track]) -> Vec<Album> {
                         }
                     })
                     .unwrap_or_else(|| "未命名专辑".into()),
-                artist: first.as_ref().map(|t| t.album_artist.clone()).unwrap_or_default(),
+                artist: first
+                    .as_ref()
+                    .map(|t| t.album_artist.clone())
+                    .unwrap_or_default(),
                 year: first.as_ref().and_then(|t| t.year),
                 artwork_path: list.iter().find_map(|t| t.artwork_path.clone()),
                 tracks: list,

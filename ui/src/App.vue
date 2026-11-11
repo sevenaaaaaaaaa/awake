@@ -1,585 +1,1972 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
 import Icon from "./Icon.vue";
+import Appearance from "./Appearance.vue";
+import SoundChain from "./SoundChain.vue";
+import Artwork from "./Artwork.vue";
+import TrackList from "./TrackList.vue";
+import { useAwake } from "./useAwake";
+import { call, desktop } from "./bridge";
+import {
+  duration,
+  format,
+  frequencies,
+  type Track,
+  type Album,
+  type Playlist,
+} from "./types";
 
-interface Track {
-  id: string;
-  title: string;
-  artist: string;
-  album_artist: string;
-  album: string;
-  genre: string;
-  year: number | null;
-  track_number: number | null;
-  disc_number: number | null;
-  duration: number;
-  sample_rate: number;
-  bit_depth: number;
-  channels: number;
-  codec: string;
-  source_id: string;
-  locator: string;
-  file_size: number;
-  artwork_path: string | null;
-  play_count: number;
-  favorite: boolean;
-  is_remote: boolean;
-}
-
-interface Album {
-  id: string;
-  title: string;
-  artist: string;
-  year: number | null;
-  artwork_path: string | null;
-  tracks: Track[];
-}
-
-interface MediaSource {
-  id: string;
-  kind: string;
-  name: string;
-  url: string;
-  track_count: number;
-}
-
-type View = "albums" | "songs";
-
-const tracks = ref<Track[]>([]);
-const albums = ref<Album[]>([]);
-const sources = ref<MediaSource[]>([]);
-const view = ref<View>("albums");
-const openAlbum = ref<Album | null>(null);
-const scanning = ref(false);
-const scanMsg = ref("");
-const status = ref("");
-const playing = ref(false);
-const nowPlaying = ref<Track | null>(null);
-const eqOpen = ref(false);
-const gains = ref<number[]>(new Array(31).fill(0));
-/* 封面回声：低饱和，只用于「正在播放」标记与进度 */
-const tint = ref("217, 162, 74");
-
-const BAND_FREQS = [
-  20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160,
-  200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
-  2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000,
-];
-
-const DEMO_PATH = "../DemoMusic";
-
-function artUrl(path: string | null): string | null {
-  if (!path) return null;
-  return convertFileSrc(path);
-}
-
-function fmtDuration(secs: number): string {
-  if (!secs || secs <= 0) return "–:––";
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-/* 规格铭牌的零件：等宽、右对齐成一列，像设备面板上的丝印 */
-function specParts(t: Track | null | undefined): string[] {
-  if (!t) return [];
-  const codec = (t.codec || "PCM").toUpperCase();
-  if (codec === "DSD") {
-    return [codec, `${Math.round(t.sample_rate / 44100)}`, `${(t.sample_rate / 1000000).toFixed(1)} MHz`, `${t.channels} ch`];
-  }
-  return [
-    codec,
-    `${t.bit_depth}-bit`,
-    `${(t.sample_rate / 1000).toFixed(1)} kHz`,
-    `${t.channels} ch`,
-  ];
-}
-
-/* 列表里用短格式，长格式只出现在详情页的铭牌上 */
-function fmtOf(t: Track): string {
-  const codec = (t.codec || "PCM").toUpperCase();
-  if (codec === "DSD") return `DSD ${Math.round(t.sample_rate / 44100)}`;
-  return `${codec} ${t.bit_depth}/${Math.round(t.sample_rate / 1000)}`;
-}
-
-function isHires(t: Track): boolean {
-  return t.sample_rate > 48000 || t.bit_depth > 16;
-}
-
-function shortSpec(a: Album): string {
-  const t = a.tracks.find(isHires) ?? a.tracks[0];
-  if (!t) return "";
-  const codec = (t.codec || "").toUpperCase();
-  if (codec === "DSD") return `DSD${Math.round(t.sample_rate / 44100)}`;
-  if (!isHires(t)) return "";
-  return `${t.bit_depth}/${Math.round(t.sample_rate / 1000)}`;
-}
-
-async function refresh() {
-  const lib = await invoke<{ tracks: Track[]; albums: Album[]; sources: MediaSource[] }>(
-    "load_library"
-  );
-  tracks.value = lib.tracks;
-  albums.value = lib.albums;
-  sources.value = lib.sources;
-}
-
-async function doScan(path = DEMO_PATH) {
-  scanning.value = true;
-  scanMsg.value = "正在扫描…";
-  try {
-    const res = await invoke<{ tracks: Track[]; albums: Album[]; elapsed_ms: number }>(
-      "scan_library",
-      { req: { path, name: "演示曲库" } }
-    );
-    tracks.value = res.tracks;
-    albums.value = res.albums;
-    scanMsg.value = `扫描完成：${res.tracks.length} 首 / ${res.albums.length} 张专辑 · ${res.elapsed_ms} ms`;
-    await refresh();
-  } catch (e) {
-    scanMsg.value = String(e);
-  } finally {
-    scanning.value = false;
-  }
-}
-
-/* 已播时间：后端 play_track 每次都从 0 开始，所以这里如实累计，不做假进度 */
-const elapsed = ref(0);
-let clock: number | undefined;
-
-function stopClock() {
-  if (clock !== undefined) {
-    window.clearInterval(clock);
-    clock = undefined;
-  }
-}
-
-function startClock() {
-  stopClock();
-  clock = window.setInterval(() => {
-    const total = nowPlaying.value?.duration ?? 0;
-    elapsed.value = Math.min(elapsed.value + 0.5, total);
-  }, 500);
-}
-
-async function play(t: Track) {
-  status.value = "正在解码…";
-  nowPlaying.value = t;
-  elapsed.value = 0;
-  try {
-    await invoke("play_track", {
-      req: { source_id: t.source_id, locator: t.locator, gains: gains.value },
-    });
-    playing.value = true;
-    startClock();
-    status.value = "播放中";
-  } catch (e) {
-    playing.value = false;
-    stopClock();
-    status.value = String(e);
-  }
-}
-
-async function stop() {
-  await invoke("stop_playback");
-  playing.value = false;
-  stopClock();
-  status.value = "已停止";
-}
-
-async function togglePlay() {
-  if (playing.value) await stop();
-  else if (nowPlaying.value) await play(nowPlaying.value);
-}
-
-const progress = computed(() => {
-  const total = nowPlaying.value?.duration ?? 0;
-  if (!total) return 0;
-  return Math.min(100, (elapsed.value / total) * 100);
-});
-
-function selectAlbum(a: Album) {
-  openAlbum.value = a;
-  if (a.tracks[0]?.artwork_path) void applyTint(a.tracks[0].artwork_path);
-}
-
-/* 从封面取色，钳制到低饱和，让它只是封面的一点回声，不会变成霓虹 */
-async function applyTint(artPath: string) {
-  try {
-    const src = convertFileSrc(artPath);
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error("load fail"));
-      img.src = src;
-    });
-    const canvas = document.createElement("canvas");
-    canvas.width = 24;
-    canvas.height = 24;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(img, 0, 0, 24, 24);
-    const data = ctx.getImageData(0, 0, 24, 24).data;
-    let r = 0, g = 0, b = 0, n = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const rr = data[i], gg = data[i + 1], bb = data[i + 2];
-      const max = Math.max(rr, gg, bb), min = Math.min(rr, gg, bb);
-      if (max - min < 24) continue;
-      r += rr; g += gg; b += bb; n++;
+const s = reactive(useAwake());
+type View =
+  | "appearance"
+  | "home"
+  | "library"
+  | "favorites"
+  | "agent"
+  | "sources"
+  | "sound"
+  | "studio"
+  | "stage"
+  | "playlist";
+const view = ref<View>("home"),
+  libraryMode = ref("albums"),
+  query = ref("");
+const album = ref<Album | null>(null),
+  playlistId = ref(""),
+  queueOpen = ref(false),
+  commandOpen = ref(false),
+  sourceOpen = ref(false);
+const sourcePath = ref(""),
+  saveOpen = ref(false),
+  playlistName = ref(""),
+  saveSmart = ref(true);
+const useCloud = ref(false),
+  curatorEndpoint = ref("https://api.openai.com/v1"),
+  curatorModel = ref(""),
+  curatorKey = ref("");
+const musicEndpoint = ref("https://api.elevenlabs.io/v1/music"),
+  musicModel = ref("music_v1"),
+  musicKey = ref("");
+watch(
+  () => s.services,
+  (settings) => {
+    if (settings.curator) {
+      curatorEndpoint.value = settings.curator.endpoint;
+      curatorModel.value = settings.curator.model;
     }
-    if (n === 0) {
-      tint.value = "217, 162, 74";
+    if (settings.music) {
+      musicEndpoint.value = settings.music.endpoint;
+      musicModel.value = settings.music.model;
+    }
+  },
+  { deep: true },
+);
+const generationDuration = ref(30),
+  instrumental = ref(true),
+  usePreferences = ref(true);
+async function saveAIService(kind: "curator" | "music") {
+  await s.run(async () => {
+    s.services = await call("save_service", {
+      req: {
+        kind,
+        endpoint:
+          kind === "curator" ? curatorEndpoint.value : musicEndpoint.value,
+        model: kind === "curator" ? curatorModel.value : musicModel.value,
+        api_key: kind === "curator" ? curatorKey.value : musicKey.value,
+      },
+    });
+    curatorKey.value = "";
+    musicKey.value = "";
+    s.toast("服务配置已保存，密钥保存在系统钥匙串");
+  });
+}
+async function generateTrack() {
+  await s.run(async () => {
+    await call("start_generation", {
+      prompt: studioPrompt.value,
+      durationSeconds: generationDuration.value,
+      instrumental: instrumental.value,
+      usePreferences: usePreferences.value,
+    });
+    await s.refreshTaste();
+    s.toast("已提交创作任务，完成后自动保存到曲库");
+  });
+}
+async function cancelGeneration(id: string) {
+  await s.run(async () => {
+    await call("cancel_generation", { id });
+    s.toast("已请求停止接收；已发出的服务请求可能仍产生费用");
+  });
+}
+function playGeneration(id: string | null) {
+  const track = s.tracks.find((t) => t.id === id);
+  if (track) void s.start(track, [track]);
+}
+async function revealGeneration(id: string) {
+  await s.run(async () => {
+    await call("reveal_generation", { id });
+  });
+}
+const jobLabel = (state: string) =>
+  ({
+    queued: "等待提交",
+    running: "正在生成",
+    completed: "作品已保存",
+    failed: "生成失败",
+    cancelled: "已停止",
+    interrupted: "任务中断",
+  })[state] || state;
+const sourceKind = ref("local"),
+  sourceName = ref(""),
+  sourceUsername = ref(""),
+  sourceSecret = ref("");
+const correctionName = ref(""),
+  measurementSource = ref(""),
+  correctionTarget = ref(""),
+  correctionText = ref("");
+const activeCorrection = computed(() =>
+  s.taste.headphone_profiles.find(
+    (p) => p.id === s.taste.active_corrections[s.deviceKey || s.device],
+  ),
+);
+const processing = computed(
+  () => s.gains.some((g) => g !== 0) || !!activeCorrection.value,
+);
+async function resetSound() {
+  if (desktop) await selectCorrection("");
+  await s.preset("flat");
+}
+const sourceLabel = (kind: string) =>
+  ({
+    local: "本地文件夹",
+    smb: "NAS / 网盘挂载目录",
+    webdav: "WebDAV",
+    plex: "Plex",
+  })[kind] || kind;
+async function connectSource() {
+  if (sourceKind.value === "local" || sourceKind.value === "smb")
+    await s.scan(sourcePath.value, sourceName.value, sourceKind.value);
+  else if (sourceKind.value === "rss") {
+    s.busy = true;
+    await s.run(async () => {
+      await call("subscribe_feed", {
+        req: {
+          name: sourceName.value,
+          url: sourcePath.value,
+          username: sourceUsername.value,
+          secret: sourceSecret.value,
+          source_ids: [...s.sourceFilter],
+        },
+      });
+      sourceSecret.value = "";
+      await s.refreshTaste();
+      s.toast("订阅已保存，匹配到的曲目已生成歌单");
+    });
+    s.busy = false;
+  } else {
+    s.busy = true;
+    await s.run(async () => {
+      await call("connect_source", {
+        req: {
+          kind: sourceKind.value,
+          name: sourceName.value,
+          url: sourcePath.value,
+          username: sourceUsername.value,
+          secret: sourceSecret.value,
+        },
+      });
+      sourceSecret.value = "";
+      await s.refresh();
+      s.toast("音乐来源已连接");
+    });
+    s.busy = false;
+  }
+  if (!s.fault) sourceOpen.value = false;
+}
+async function importCorrection() {
+  await s.run(async () => {
+    await call("import_headphone_profile", {
+      name: correctionName.value,
+      measurementSource: measurementSource.value,
+      target: correctionTarget.value,
+      text: correctionText.value,
+      device: s.deviceKey || s.device,
+    });
+    await s.refreshTaste();
+    s.toast("已启用参数校正，并绑定当前设备");
+  });
+}
+async function selectCorrection(id: string) {
+  await s.run(async () => {
+    const curve = await call<{ preamp: number }>("select_correction", {
+      device: s.deviceKey || s.device,
+      profileId: id || null,
+    });
+    s.preamp = curve.preamp;
+    await s.refreshTaste();
+  });
+}
+async function readCorrection(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (file) {
+    if (file.size > 65536) {
+      s.fault = "参数文件超过 64 KB";
       return;
     }
-    /* 与暖石墨混合 45%，并压低亮度上限，避免高饱和封面把界面染色 */
-    const mix = (v: number) => Math.round((v / n) * 0.55 + 90 * 0.45);
-    tint.value = `${mix(r)}, ${mix(g)}, ${mix(b)}`;
-  } catch {
-    /* 取色失败不影响界面 */
+    correctionText.value = await file.text();
   }
 }
-
-function resetEq() {
-  gains.value = new Array(31).fill(0);
-  void invoke("set_eq_curve", { req: { gains: gains.value, preamp: 0 } });
-}
-
-function applyEqPreset(kind: "low" | "vocal" | "flat") {
-  const g = new Array(31).fill(0);
-  if (kind === "low") {
-    for (let i = 0; i < 31; i++) {
-      if (BAND_FREQS[i] <= 120) g[i] = 4;
-      else if (BAND_FREQS[i] >= 8000) g[i] = -2;
-    }
-  } else if (kind === "vocal") {
-    for (let i = 0; i < 31; i++) {
-      if (BAND_FREQS[i] >= 1000 && BAND_FREQS[i] <= 4000) g[i] = 3;
-      else if (BAND_FREQS[i] >= 10000) g[i] = -3;
-    }
-  }
-  gains.value = g;
-  void invoke("set_eq_curve", { req: { gains: g, preamp: 0 } });
-}
-
-const currentList = computed<Track[]>(() =>
-  openAlbum.value ? openAlbum.value.tracks : tracks.value
+const studioPrompt = ref(""),
+  briefBusy = ref(false),
+  fileInput = ref<HTMLInputElement | null>(null),
+  commandInput = ref<HTMLInputElement | null>(null);
+const analysis = ref<number[]>([]),
+  analysisNote = ref(""),
+  lyrics = ref<{ time: number; text: string }[]>([]);
+const activePlaylist = computed(() =>
+  s.taste.playlists.find((p) => p.id === playlistId.value),
 );
-
-const totalDuration = computed(() =>
-  currentList.value.reduce((sum, t) => sum + (t.duration || 0), 0)
+const currentLyric = computed(() =>
+  lyrics.value.reduce(
+    (found, l, i) => (l.time <= s.playback.position ? i : found),
+    -1,
+  ),
 );
-
-const albumSpec = computed(() => {
-  const a = openAlbum.value;
-  if (!a) return [];
-  const t = a.tracks[0];
-  return specParts(t);
-});
-
-// 交通灯默认隐去，鼠标进入窗口顶部 56px 时浮现，离开即收回。
-// 这样顶栏不占任何视觉空间，又能随时拿到窗口控制。
-let lightsVisible = false;
-async function syncTrafficLights(visible: boolean) {
-  if (visible === lightsVisible) return;
-  lightsVisible = visible;
-  await invoke("set_traffic_lights", { visible }).catch(() => {});
+const suggested = computed(() => s.recommendations.map((r) => r.track));
+const reasons = computed(() =>
+  Object.fromEntries(s.recommendations.map((r) => [r.track.id, r.reason])),
+);
+const filtered = computed(() =>
+  s.tracks.filter((t) =>
+    `${t.title} ${t.artist} ${t.album}`
+      .toLowerCase()
+      .includes(query.value.toLowerCase()),
+  ),
+);
+const favoriteTracks = computed(() =>
+  s.tracks.filter((t) => s.favorites.has(t.id)),
+);
+const playlistTracks = computed(
+  () =>
+    activePlaylist.value?.track_ids.flatMap(
+      (id) => s.tracks.find((t) => t.id === id) || [],
+    ) || [],
+);
+const title = computed(
+  () =>
+    album.value?.title ||
+    {
+      appearance: "外观与皮肤",
+      home: "为你而鸣",
+      library: "你的音乐",
+      favorites: "喜欢的音乐",
+      agent: "你的听歌搭子",
+      sources: "音乐来源",
+      sound: "声音实验室",
+      studio: "灵感工作室",
+      stage: "此刻，沉浸",
+      playlist: activePlaylist.value?.name || "我的歌单",
+    }[view.value],
+);
+const heroAlbum = computed(
+  () =>
+    s.albums.find((a) =>
+      a.tracks.some((t) => t.id === suggested.value[0]?.id),
+    ) || s.albums[0],
+);
+const eqPoints = computed(() =>
+  s.gains.map((g, i) => `${(i * 600) / 30},${80 - g * 4}`).join(" "),
+);
+const totalMinutes = computed(() =>
+  Math.round(s.tracks.reduce((n, t) => n + t.duration, 0) / 60),
+);
+const nav = [
+  { id: "home", icon: "home", name: "为你而鸣" },
+  { id: "library", icon: "disc", name: "音乐资料库" },
+  { id: "favorites", icon: "heart", name: "喜欢的音乐" },
+  { id: "agent", icon: "spark", name: "听歌搭子" },
+] as const;
+function go(v: View) {
+  view.value = v;
+  album.value = null;
+  query.value = "";
 }
-
-function onWindowMouseMove(e: MouseEvent) {
-  void syncTrafficLights(e.clientY <= 56);
+function openAlbum(a: Album) {
+  album.value = a;
+  view.value = "library";
 }
-
-onMounted(async () => {
-  await invoke("frontend_ready", { version: "0.3.0", tracks: 0 }).catch(() => {});
-  await invoke("set_traffic_lights", { visible: false }).catch(() => {});
-  window.addEventListener("mousemove", onWindowMouseMove);
-  await refresh();
-  if (tracks.value.length === 0) {
-    await doScan();
+function openPlaylist(p: Playlist) {
+  playlistId.value = p.id;
+  go("playlist");
+}
+async function importChange(e: Event) {
+  const files = (e.target as HTMLInputElement).files;
+  if (files) await s.importFiles(files);
+  (e.target as HTMLInputElement).value = "";
+}
+function addMusic() {
+  if (desktop) sourceOpen.value = true;
+  else fileInput.value?.click();
+}
+async function pickFolder() {
+  await s.run(async () => {
+    const path = await call<string | null>("pick_music_folder");
+    if (path) sourcePath.value = path;
+  });
+}
+watch([sourceOpen, saveOpen], async ([source, save]) => {
+  if (source || save) {
+    await nextTick();
+    document.getElementById(source ? "source-path" : "playlist-name")?.focus();
   }
 });
-
-onUnmounted(() => {
-  window.removeEventListener("mousemove", onWindowMouseMove);
-  stopClock();
+async function generate(text?: string) {
+  if (text !== undefined) s.prompt = text;
+  await s.generateRecommendations(view.value === "agent" && useCloud.value);
+  go("agent");
+}
+async function saveList() {
+  const saved = await s.savePlaylist(
+    playlistName.value,
+    saveSmart.value,
+    suggested.value,
+  );
+  if (saved) {
+    saveOpen.value = false;
+    openPlaylist(saved);
+  }
+}
+function openSave() {
+  saveSmart.value = s.curationMode !== "cloud";
+  playlistName.value = s.prompt.trim().slice(0, 24) || "我的每日声景";
+  saveOpen.value = true;
+}
+async function saveBrief() {
+  briefBusy.value = true;
+  await s.run(async () => {
+    await call("save_creation_brief", { prompt: studioPrompt.value });
+    await s.refreshTaste();
+    studioPrompt.value = "";
+    s.toast("创作灵感已保存，连接音乐生成服务后可继续");
+  });
+  briefBusy.value = false;
+}
+function exportBrief(prompt: string) {
+  const blob = new Blob(
+    [
+      JSON.stringify(
+        {
+          version: 1,
+          prompt,
+          provider: null,
+          status: "draft",
+          output: { kind: "audio", original: true },
+          created_at: new Date().toISOString(),
+        },
+        null,
+        2,
+      ),
+    ],
+    { type: "application/json" },
+  );
+  const url = URL.createObjectURL(blob),
+    a = document.createElement("a");
+  a.href = url;
+  a.download = "awake-creation-brief.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function trapFocus(e: KeyboardEvent) {
+  const nodes = Array.from(
+    (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>(
+      "button:not(:disabled),input,select,textarea",
+    ),
+  );
+  const first = nodes[0],
+    last = nodes[nodes.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last?.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first?.focus();
+  }
+}
+function keydown(e: KeyboardEvent) {
+  const target = e.target as HTMLElement;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    commandOpen.value = !commandOpen.value;
+    return;
+  }
+  if (e.key === "Escape") {
+    commandOpen.value = false;
+    sourceOpen.value = false;
+    saveOpen.value = false;
+    queueOpen.value = false;
+    return;
+  }
+  if (
+    ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName) ||
+    target.isContentEditable
+  )
+    return;
+  if (e.code === "Space") {
+    e.preventDefault();
+    void s.toggle();
+  }
+  if (e.metaKey && e.key === "ArrowRight") {
+    e.preventDefault();
+    void s.next();
+  }
+  if (e.metaKey && e.key === "ArrowLeft") {
+    e.preventDefault();
+    void s.previous();
+  }
+}
+watch(commandOpen, (open) => {
+  if (open) setTimeout(() => commandInput.value?.focus(), 0);
 });
-
-watch(eqOpen, (v) => {
-  if (v) void invoke("set_eq_curve", { req: { gains: gains.value, preamp: 0 } });
-});
+let analysisGeneration = 0;
+watch(
+  () => [view.value, s.now?.id],
+  async () => {
+    if (view.value !== "stage" || !s.now) return;
+    const token = ++analysisGeneration;
+    analysis.value = [];
+    lyrics.value = [];
+    analysisNote.value = "正在读取曲目…";
+    if (!desktop) {
+      analysisNote.value = "频谱画像与本地 LRC 歌词可在桌面版查看";
+      return;
+    }
+    const track = s.now;
+    const results = await Promise.allSettled([
+      call<{ bands: number[] }>("analyze_track", {
+        sourceId: track.source_id,
+        locator: track.locator,
+      }),
+      call<{ time: number; text: string }[]>("load_lyrics", {
+        sourceId: track.source_id,
+        locator: track.locator,
+      }),
+    ]);
+    if (token !== analysisGeneration) return;
+    if (results[0].status === "fulfilled") {
+      analysis.value = results[0].value.bands;
+      analysisNote.value = "抽样频谱画像 · 3 个片段";
+    } else analysisNote.value = "频谱分析暂不可用";
+    if (results[1].status === "fulfilled") lyrics.value = results[1].value;
+  },
+);
+onMounted(() => window.addEventListener("keydown", keydown));
+onUnmounted(() => window.removeEventListener("keydown", keydown));
 </script>
 
 <template>
-  <div class="app" :style="{ '--tint': tint }">
-    <div class="main-drag" data-tauri-drag-region />
-
-    <!-- 侧栏 -->
+  <div class="app-shell">
+    <input
+      ref="fileInput"
+      class="sr-only"
+      type="file"
+      multiple
+      accept="audio/*,.flac,.aiff,.alac,.ogg"
+      aria-label="导入本地音乐"
+      @change="importChange"
+    />
     <aside class="sidebar">
-      <div
-        class="sidebar-head"
-        data-tauri-drag-region
-        @mouseenter="syncTrafficLights(true)"
-        @mouseleave="syncTrafficLights(false)"
-      />
-
-      <div class="brand">
-        <Icon name="wave" :size="18" class="brand-mark" :stroke="1.75" />
-        <span class="brand-name">Awake</span>
+      <div class="brand" data-tauri-drag-region>
+        <Icon name="wave" :size="30" /><span
+          >awake<span class="brand-dot">.</span></span
+        >
       </div>
-
-      <nav class="nav">
-        <div class="nav-section">曲库</div>
+      <button class="search-launch" @click="commandOpen = true">
+        <Icon name="search" /><span>找一首音乐</span><kbd>⌘ K</kbd>
+      </button>
+      <div class="nav-caption">聆听</div>
+      <nav aria-label="主导航">
         <button
+          v-for="item in nav"
+          :key="item.id"
+          :aria-label="item.name"
           class="nav-item"
-          :class="{ active: view === 'albums' && !openAlbum }"
-          @click="(view = 'albums'), (openAlbum = null)"
+          :class="{ active: view === item.id }"
+          :aria-current="view === item.id ? 'page' : undefined"
+          @click="go(item.id)"
         >
-          <Icon name="disc" />
-          专辑
-          <span class="count">{{ albums.length }}</span>
-        </button>
-        <button
-          class="nav-item"
-          :class="{ active: view === 'songs' && !openAlbum }"
-          @click="(view = 'songs'), (openAlbum = null)"
-        >
-          <Icon name="list" />
-          歌曲
-          <span class="count">{{ tracks.length }}</span>
-        </button>
-
-        <div class="nav-section">来源</div>
-        <button v-for="s in sources" :key="s.id" class="nav-item">
-          <Icon name="database" />
-          {{ s.name }}
-          <span class="count">{{ s.track_count }}</span>
-        </button>
-        <button class="nav-item" :disabled="scanning" @click="doScan(DEMO_PATH)">
-          <span v-if="scanning" class="spin" />
-          <Icon v-else name="plus" />
-          扫描演示曲库
-        </button>
-
-        <div class="nav-section">声音</div>
-        <button class="nav-item" :class="{ active: eqOpen }" @click="eqOpen = !eqOpen">
-          <Icon name="sliders" />
-          31 段 EQ
+          <Icon :name="item.icon" :size="19" /><span>{{ item.name }}</span
+          ><span v-if="item.id === 'agent'" class="local-dot" />
         </button>
       </nav>
-
-      <div class="sidebar-foot">
-        <span class="plate">v0.3.0</span>
-        <span class="plate">{{ tracks.length }} 首</span>
+      <div class="nav-caption between">
+        <span>我的歌单</span
+        ><button
+          class="tiny-button"
+          aria-label="创建歌单"
+          @click="
+            go('agent');
+            openSave();
+          "
+        >
+          <Icon name="plus" :size="15" />
+        </button>
+      </div>
+      <div class="playlist-nav">
+        <button
+          v-for="p in s.taste.playlists"
+          :key="p.id"
+          class="nav-item playlist-link"
+          :class="{ active: view === 'playlist' && playlistId === p.id }"
+          @click="openPlaylist(p)"
+        >
+          <Icon :name="p.smart ? 'spark' : 'list'" /><span>{{ p.name }}</span>
+        </button>
+        <div v-if="!s.taste.playlists.length" class="nav-empty">
+          把喜欢的此刻，存成歌单。
+        </div>
+      </div>
+      <div class="nav-caption">探索更多</div>
+      <button
+        class="nav-item"
+        aria-label="灵感工作室"
+        :class="{ active: view === 'studio' }"
+        @click="go('studio')"
+      >
+        <Icon name="orbit" :size="19" /><span>灵感工作室</span
+        ><span class="small-tag">LAB</span>
+      </button>
+      <button
+        class="nav-item"
+        aria-label="音乐来源"
+        :class="{ active: view === 'sources' }"
+        @click="go('sources')"
+      >
+        <Icon name="database" :size="19" /><span>音乐来源</span>
+      </button>
+      <button
+        class="nav-item"
+        aria-label="外观与皮肤"
+        :class="{ active: view === 'appearance' }"
+        @click="go('appearance')"
+      >
+        <Icon name="sliders" :size="19" /><span>外观与皮肤</span>
+      </button>
+      <div class="sidebar-bottom">
+        <button class="device-card" @click="go('sound')">
+          <span class="device-icon"><Icon name="headphones" :size="22" /></span
+          ><span
+            ><strong>{{ s.device }}</strong
+            ><small
+              ><span class="status-dot" />{{
+                processing ? "个性听感已开启" : "EQ 直通"
+              }}</small
+            ></span
+          ><Icon name="chevron" :size="14" />
+        </button>
+        <div class="version-line">
+          <span>为好音乐而生</span><span>0.6 / PERSONAL</span>
+        </div>
       </div>
     </aside>
 
-    <!-- 主区 -->
-    <main class="main">
-      <!-- 专辑详情 -->
-      <template v-if="openAlbum">
-        <button class="back-link" @click="openAlbum = null">
-          <Icon name="back" :size="14" />
-          专辑
-        </button>
-
-        <div class="album-hero">
-          <div class="art">
-            <img
-              v-if="artUrl(openAlbum.artwork_path)"
-              :src="artUrl(openAlbum.artwork_path)!"
-              alt=""
-            />
-            <Icon v-else name="music" :size="32" />
+    <div class="workspace">
+      <header class="topbar" data-tauri-drag-region>
+        <div class="breadcrumb">
+          你的聆听空间<span>/</span><strong>{{ title }}</strong>
+        </div>
+        <div class="top-actions">
+          <span class="private-label"
+            ><span class="status-dot" />本地个性化</span
+          ><button
+            class="icon-btn"
+            :class="{ selected: view === 'sound' }"
+            aria-label="声音设置"
+            @click="go('sound')"
+          >
+            <Icon name="sliders" :size="19" /></button
+          ><button
+            class="avatar"
+            aria-label="查看听歌偏好"
+            @click="go('agent')"
+          >
+            我
+          </button>
+        </div>
+      </header>
+      <main id="main-content" class="main-content">
+        <Appearance v-if="view === 'appearance'" :services="s.services" />
+        <template v-else-if="view === 'home'">
+          <div class="page-intro">
+            <div>
+              <p class="eyebrow">YOUR DAILY RESONANCE</p>
+              <h1>好音乐，<span class="serif">刚好懂你。</span></h1>
+              <p>从熟悉的旋律，到下一次心动。让耳朵带路。</p>
+            </div>
+            <button class="text-button" @click="go('agent')">
+              我的聆听偏好 <Icon name="arrow" />
+            </button>
           </div>
-          <div class="body">
-            <div class="page-title">{{ openAlbum.title }}</div>
-            <div class="page-sub">
-              {{ openAlbum.artist }}
-              <template v-if="openAlbum.year"> · {{ openAlbum.year }}</template>
-              · {{ openAlbum.tracks.length }} 首 ·
-              {{ Math.round(openAlbum.tracks.reduce((s, t) => s + t.duration, 0) / 60) }} 分钟
+          <section class="daily-hero">
+            <div class="hero-copy">
+              <span class="hero-label"
+                ><Icon name="spark" :size="14" />{{
+                  s.learned ? "从你的聆听中发现" : "从你的音乐开始"
+                }}</span
+              >
+              <h2>
+                {{
+                  s.learned
+                    ? "属于你的，\n下一段频率。"
+                    : "让今天，\n有自己的声场。"
+                }}
+              </h2>
+              <p>
+                {{
+                  s.tracks.length
+                    ? `从 ${s.tracks.length} 首音乐里，找到适合此刻的旋律。收藏和跳过，都会让下次更合拍。`
+                    : "把你的音乐带进来。每一次播放、收藏与跳过，都会成为下一次推荐的线索。"
+                }}
+              </p>
+              <div class="hero-actions">
+                <button
+                  class="button primary"
+                  @click="
+                    s.tracks.length
+                      ? s.start(suggested[0], suggested)
+                      : addMusic()
+                  "
+                >
+                  <Icon
+                    :name="s.tracks.length ? 'play' : 'plus'"
+                    :size="17"
+                  />{{
+                    s.tracks.length ? "开始我的电台" : "添加我的音乐"
+                  }}</button
+                ><button class="hero-secondary" @click="generate('探索 新鲜')">
+                  换一点新鲜感 <Icon name="arrow" :size="16" />
+                </button>
+              </div>
+              <div class="hero-footer">
+                <span class="mini-wave"><i /><i /><i /><i /><i /></span
+                ><span>{{
+                  s.learned ? `${s.learned} 次聆听，正在认识你` : "越听，越合拍"
+                }}</span
+                ><span class="hero-rule" /><span>ONLY YOUR VIBE</span>
+              </div>
             </div>
-            <div class="spec-plate">
-              <span v-for="p in albumSpec" :key="p">{{ p }}</span>
+            <div class="hero-visual">
+              <div class="vinyl">
+                <div class="vinyl-label">
+                  <Artwork
+                    :path="heroAlbum?.artwork_path"
+                    seed="daily-resonance"
+                  /><span>AWAKE<br />DAILY MIX</span>
+                </div>
+              </div>
+              <div class="floating-cover">
+                <Artwork
+                  :path="heroAlbum?.artwork_path"
+                  seed="daily-resonance"
+                /><span>{{ heroAlbum?.title || "YOUR NEXT FAVORITE" }}</span>
+              </div>
+              <span class="hero-index"
+                >01 — ∞<br /><small>A LITTLE CLOSER TO YOU</small></span
+              >
             </div>
-            <div class="btn-row">
-              <button class="btn primary lg" @click="play(openAlbum.tracks[0])">
-                <Icon name="play" :size="14" />
-                播放全部
+          </section>
+          <div class="section-heading">
+            <div>
+              <h2>为此刻，选一种心情<span class="heading-dot">.</span></h2>
+              <p>告诉搭子你想怎么听。</p>
+            </div>
+          </div>
+          <div class="mood-grid">
+            <button
+              class="mood-card mood-focus"
+              @click="generate('专注 ambient instrumental')"
+            >
+              <span class="mood-art focus-art" /><span class="mood-caption"
+                ><strong>进入心流</strong><small>把世界调小声</small></span
+              ><Icon name="arrow" /></button
+            ><button
+              class="mood-card mood-explore"
+              @click="generate('探索 新鲜')"
+            >
+              <span class="mood-art explore-art" /><span class="mood-caption"
+                ><strong>偶遇新频率</strong><small>给耳朵一点意外</small></span
+              ><Icon name="arrow" /></button
+            ><button class="mood-card mood-favorites" @click="go('favorites')">
+              <span class="mood-art favorite-art" /><span class="mood-caption"
+                ><strong>回到喜欢</strong
+                ><small>那些反复心动的旋律</small></span
+              ><Icon name="arrow" />
+            </button>
+          </div>
+          <div class="section-heading">
+            <div>
+              <h2>你与音乐的交集</h2>
+              <p>
+                {{
+                  s.albums.length
+                    ? `${s.albums.length} 张专辑，等你重新发现。`
+                    : "你的私人音乐档案，从这里开始。"
+                }}
+              </p>
+            </div>
+            <button class="text-button" @click="go('library')">
+              全部音乐 <Icon name="arrow" />
+            </button>
+          </div>
+          <div v-if="s.albums.length" class="album-grid">
+            <button
+              v-for="a in s.albums.slice(0, 5)"
+              :key="a.id"
+              class="album-card"
+              @click="openAlbum(a)"
+            >
+              <Artwork :path="a.artwork_path" :seed="a.title" /><strong>{{
+                a.title
+              }}</strong
+              ><small
+                >{{ a.artist || "未知艺人" }} · {{ a.tracks.length }} 首</small
+              >
+            </button>
+          </div>
+          <button v-else class="import-strip" @click="addMusic()">
+            <span class="import-icon"><Icon name="plus" :size="24" /></span
+            ><span
+              ><strong>音乐在你那里，体验从这里开始。</strong
+              ><small>{{
+                desktop
+                  ? "添加本地音乐文件夹，保留你的目录与文件。"
+                  : "导入音频即可试听；浏览器内的音频仅保留在本次会话。"
+              }}</small></span
+            ><Icon name="arrow" :size="20" />
+          </button>
+        </template>
+
+        <template
+          v-else-if="
+            view === 'library' || view === 'favorites' || view === 'playlist'
+          "
+        >
+          <button
+            v-if="album"
+            class="text-button back-link"
+            @click="album = null"
+          >
+            <Icon name="back" />返回资料库
+          </button>
+          <div v-if="album" class="album-detail">
+            <Artwork :path="album.artwork_path" :seed="album.title" />
+            <div>
+              <p class="eyebrow">ALBUM / {{ album.year || "你的收藏" }}</p>
+              <h1>{{ album.title }}</h1>
+              <p>
+                {{ album.artist }} · {{ album.tracks.length }} 首 ·
+                {{
+                  Math.round(
+                    album.tracks.reduce((sum, t) => sum + t.duration, 0) / 60,
+                  )
+                }}
+                分钟
+              </p>
+              <button
+                class="button primary"
+                @click="s.start(album.tracks[0], album.tracks)"
+              >
+                <Icon name="play" />播放专辑
               </button>
             </div>
           </div>
-        </div>
-
-        <div class="track-head">
-          <span class="num">#</span>
-          <span>曲目</span>
-          <span class="time">时长</span>
-          <span class="fmt">格式</span>
-        </div>
-        <div
-          v-for="(t, i) in openAlbum.tracks"
-          :key="t.id"
-          class="track-row"
-          :class="{ playing: nowPlaying?.id === t.id }"
-          @dblclick="play(t)"
-        >
-          <span class="num">{{ t.track_number ?? i + 1 }}</span>
-          <span class="title">{{ t.title }}</span>
-          <span class="time">{{ fmtDuration(t.duration) }}</span>
-          <span class="fmt">{{ fmtOf(t) }}</span>
-        </div>
-      </template>
-
-      <!-- 专辑网格 -->
-      <template v-else-if="view === 'albums'">
-        <div class="page-head">
-          <div class="page-title">专辑</div>
-          <div class="page-sub">
-            {{ albums.length }} 张专辑 · {{ tracks.length }} 首曲目
-            <template v-if="scanMsg"> · {{ scanMsg }}</template>
-          </div>
-        </div>
-
-        <div class="album-grid">
-          <button
-            v-for="a in albums"
-            :key="a.id"
-            class="album-card"
-            @click="selectAlbum(a)"
-          >
-            <div class="album-art">
-              <img v-if="artUrl(a.artwork_path)" :src="artUrl(a.artwork_path)!" alt="" />
-              <Icon v-else name="music" :size="28" />
+          <div v-else class="page-intro">
+            <div>
+              <p class="eyebrow">
+                {{
+                  view === "favorites"
+                    ? "CLOSE TO YOUR HEART"
+                    : view === "playlist"
+                      ? "YOUR PERSONAL MIX"
+                      : "YOUR SOUND ARCHIVE"
+                }}
+              </p>
+              <h1>{{ title }}</h1>
+              <p>
+                {{
+                  view === "favorites"
+                    ? `${favoriteTracks.length} 首，每一次喜欢都算数。`
+                    : view === "playlist"
+                      ? activePlaylist?.smart
+                        ? "动态歌单 · 曲库与听歌偏好变化时自动更新"
+                        : "静态歌单 · 保留此刻的选择"
+                      : `${s.albums.length} 张专辑 · ${s.tracks.length} 首 · ${totalMinutes} 分钟`
+                }}
+              </p>
             </div>
-            <div class="album-title">{{ a.title }}</div>
-            <div class="album-meta">
-              <span class="album-artist">{{ a.artist }}</span>
-              <span v-if="shortSpec(a)" class="album-spec">{{ shortSpec(a) }}</span>
+            <button
+              v-if="view === 'library'"
+              class="button"
+              @click="addMusic()"
+            >
+              <Icon name="plus" />添加音乐</button
+            ><button
+              v-if="view === 'playlist'"
+              class="button"
+              :disabled="!playlistTracks.length"
+              @click="s.start(playlistTracks[0], playlistTracks)"
+            >
+              <Icon name="play" />播放歌单
+            </button>
+          </div>
+          <template v-if="view === 'library' && !album"
+            ><div class="library-toolbar">
+              <div class="segmented">
+                <button
+                  :class="{ active: libraryMode === 'albums' }"
+                  @click="libraryMode = 'albums'"
+                >
+                  专辑</button
+                ><button
+                  :class="{ active: libraryMode === 'songs' }"
+                  @click="libraryMode = 'songs'"
+                >
+                  歌曲
+                </button>
+              </div>
+              <label class="inline-search"
+                ><Icon name="search" /><input
+                  v-model="query"
+                  placeholder="搜索音乐、艺人或专辑"
+                  aria-label="搜索曲库"
+              /></label>
             </div>
-          </button>
-        </div>
-
-        <div v-if="albums.length === 0" class="empty">
-          <Icon name="disc" :size="32" />
-          <div class="empty-title">曲库还是空的</div>
-          <div class="empty-desc">
-            点左侧「扫描演示曲库」把 DemoMusic 里的 9 首 24-bit / 96 kHz 样例收进来。
-          </div>
-        </div>
-      </template>
-
-      <!-- 歌曲表 -->
-      <template v-else>
-        <div class="page-head">
-          <div class="page-title">歌曲</div>
-          <div class="page-sub">
-            {{ tracks.length }} 首 · 共 {{ fmtDuration(totalDuration) }}
-          </div>
-        </div>
-
-        <div class="track-head">
-          <span class="num">#</span>
-          <span>曲目</span>
-          <span class="time">时长</span>
-          <span class="fmt">格式</span>
-        </div>
-        <div
-          v-for="(t, i) in tracks"
-          :key="t.id"
-          class="track-row"
-          :class="{ playing: nowPlaying?.id === t.id }"
-          @dblclick="play(t)"
-        >
-          <span class="num">{{ i + 1 }}</span>
-          <span class="title">{{ t.title }} <small>· {{ t.album }}</small></span>
-          <span class="time">{{ fmtDuration(t.duration) }}</span>
-          <span class="fmt">{{ fmtOf(t) }}</span>
-        </div>
-      </template>
-    </main>
-
-    <!-- EQ 面板 -->
-    <div class="eq-panel" :class="{ open: eqOpen }">
-      <div class="eq-head">
-        <div class="eq-title">31 段 EQ</div>
-        <button class="btn" @click="eqOpen = false">收起</button>
-      </div>
-      <div class="eq-sub">ISO 1/3 倍频程 · Q ≈ 4.32 · 自动余量保护</div>
-
-      <div class="eq-bands">
-        <div v-for="(f, i) in BAND_FREQS" :key="i" class="eq-band">
-          <span class="val">{{ gains[i] > 0 ? "+" : "" }}{{ gains[i].toFixed(0) }}</span>
-          <input
-            type="range"
-            min="-12"
-            max="12"
-            step="0.5"
-            v-model.number="gains[i]"
-            :aria-label="`${f >= 1000 ? f / 1000 + 'k' : f} Hz`"
-            @change="invoke('set_eq_curve', { req: { gains, preamp: 0 } })"
+            <div v-if="libraryMode === 'albums'" class="album-grid">
+              <button
+                v-for="a in s.albums.filter((a) =>
+                  `${a.title} ${a.artist}`
+                    .toLowerCase()
+                    .includes(query.toLowerCase()),
+                )"
+                :key="a.id"
+                class="album-card"
+                @click="openAlbum(a)"
+              >
+                <Artwork :path="a.artwork_path" :seed="a.title" /><strong>{{
+                  a.title
+                }}</strong
+                ><small
+                  >{{ a.artist || "未知艺人" }} ·
+                  {{ a.tracks.length }} 首</small
+                >
+              </button>
+              <div v-if="!s.albums.length" class="empty-state">
+                <Icon name="disc" :size="40" />
+                <h2>留一个位置，给你的音乐。</h2>
+                <p>连接本地曲库，开始你的私人聆听空间。</p>
+                <button class="button primary" @click="addMusic()">
+                  添加音乐
+                </button>
+              </div>
+            </div>
+            <TrackList
+              v-else
+              :tracks="filtered"
+              :current-id="s.now?.id"
+              :favorites="s.favorites"
+              @play="s.start($event, filtered)"
+              @favorite="s.favorite"
+          /></template>
+          <TrackList
+            v-else
+            :tracks="
+              album?.tracks ||
+              (view === 'favorites' ? favoriteTracks : playlistTracks)
+            "
+            :current-id="s.now?.id"
+            :favorites="s.favorites"
+            :empty="
+              view === 'favorites'
+                ? '遇到喜欢的音乐，点一下爱心。搭子会记得。'
+                : undefined
+            "
+            @play="
+              s.start(
+                $event,
+                album?.tracks ||
+                  (view === 'favorites' ? favoriteTracks : playlistTracks),
+              )
+            "
+            @favorite="s.favorite"
           />
-          <span class="freq">{{ f >= 1000 ? f / 1000 + "k" : f }}</span>
-        </div>
-      </div>
+          <div
+            v-if="view === 'playlist' && activePlaylist"
+            class="playlist-footer"
+          >
+            <span class="muted">{{
+              activePlaylist.prompt || "从你的曲库创建"
+            }}</span
+            ><button
+              class="text-button danger"
+              @click="
+                s.removePlaylist(activePlaylist.id);
+                go('library');
+              "
+            >
+              删除歌单
+            </button>
+          </div>
+        </template>
 
-      <div class="eq-actions">
-        <button class="btn" @click="applyEqPreset('flat')">平坦</button>
-        <button class="btn" @click="applyEqPreset('low')">低频</button>
-        <button class="btn" @click="applyEqPreset('vocal')">人声</button>
-        <button class="btn" @click="resetEq">重置</button>
-      </div>
+        <template v-else-if="view === 'agent'">
+          <div class="page-intro">
+            <div>
+              <p class="eyebrow">A LITTLE MORE YOU, EVERY DAY</p>
+              <h1>音乐很多，<span class="serif">我陪你挑。</span></h1>
+              <p>把此刻的心情交给搭子，把选择留给耳朵。</p>
+            </div>
+            <span class="subtle-badge"
+              ><span class="status-dot" />本地个性化已启用</span
+            >
+          </div>
+          <div class="agent-composer">
+            <div class="agent-avatar"><Icon name="spark" :size="26" /></div>
+            <form @submit.prevent="generate()">
+              <label for="music-intent">这会儿，想听些什么？</label>
+              <div class="intent-input">
+                <input
+                  id="music-intent"
+                  v-model="s.prompt"
+                  placeholder="试试：想听一点 ambient，安静地工作一会儿"
+                /><button
+                  class="button primary"
+                  type="submit"
+                  :disabled="s.curating"
+                >
+                  <Icon name="spark" />{{
+                    s.curating ? "正在选曲…" : "为我选曲"
+                  }}
+                </button>
+              </div>
+              <label class="cloud-option"
+                ><input
+                  v-model="useCloud"
+                  type="checkbox"
+                  :disabled="!desktop || !s.services.curator"
+                />本次使用云端策展<span
+                  >仅在点击选曲时，将候选曲目信息和精简偏好发送到已配置服务。</span
+                ></label
+              >
+              <div class="suggestion-chips">
+                <button
+                  type="button"
+                  @click="generate('专注 ambient instrumental')"
+                >
+                  进入心流</button
+                ><button type="button" @click="generate('探索 新鲜')">
+                  来点没听过的</button
+                ><button type="button" @click="generate('')">
+                  跟着我的喜好走
+                </button>
+              </div>
+            </form>
+          </div>
+          <div class="agent-context">
+            <div>
+              <Icon name="heart" /><strong>{{
+                s.taste.favorites.length
+              }}</strong
+              ><span>首喜欢</span>
+            </div>
+            <div>
+              <Icon name="wave" /><strong>{{ s.learned }}</strong
+              ><span>次有效聆听</span>
+            </div>
+            <div>
+              <Icon name="database" /><strong>{{ s.sources.length }}</strong
+              ><span>个音乐来源</span>
+            </div>
+            <p>
+              {{
+                s.learned
+                  ? "你的喜欢、完整收听与主动跳过，会影响下一次选曲。"
+                  : "还在认识你。先听几首、收藏几首，让推荐有迹可循。"
+              }}
+            </p>
+          </div>
+          <div class="source-filter">
+            <span>从哪里选</span
+            ><button
+              :class="{ active: !s.sourceFilter.length }"
+              @click="
+                s.sourceFilter = [];
+                s.generateRecommendations(false);
+              "
+            >
+              全部曲库</button
+            ><button
+              v-for="source in s.sources"
+              :key="source.id"
+              :class="{ active: s.sourceFilter.includes(source.id) }"
+              @click="
+                s.sourceFilter = s.sourceFilter.includes(source.id)
+                  ? s.sourceFilter.filter((id) => id !== source.id)
+                  : [...s.sourceFilter, source.id];
+                s.generateRecommendations(false);
+              "
+            >
+              {{ source.name }}
+            </button>
+          </div>
+          <div class="section-heading">
+            <div>
+              <h2>给你的下一段旋律</h2>
+              <p>每一首都有原因。描述会匹配曲名、艺人、专辑与风格标签。</p>
+            </div>
+            <div class="button-row">
+              <button
+                class="button"
+                :disabled="!suggested.length"
+                @click="openSave()"
+              >
+                <Icon name="plus" />存为歌单</button
+              ><button
+                class="button primary"
+                :disabled="!suggested.length"
+                @click="s.start(suggested[0], suggested)"
+              >
+                <Icon name="play" />全部播放
+              </button>
+            </div>
+          </div>
+          <TrackList
+            :tracks="suggested"
+            :current-id="s.now?.id"
+            :favorites="s.favorites"
+            :reasons="reasons"
+            @play="s.start($event, suggested)"
+            @favorite="s.favorite"
+          />
+          <p class="capability-note">
+            <Icon name="shield" />听歌偏好保存在这台设备。云端 AI
+            尚未连接；当前选曲来自本地标签和听歌习惯。
+          </p>
+          <details class="eq-card">
+            <summary>
+              云端策展服务 · {{ s.services.curator ? "已配置" : "未配置" }}
+            </summary>
+            <form
+              class="connection-form"
+              @submit.prevent="saveAIService('curator')"
+            >
+              <label
+                >兼容 API 的 Base URL<input
+                  v-model="curatorEndpoint"
+                  type="url"
+                  required /></label
+              ><label
+                >模型名称<input
+                  v-model="curatorModel"
+                  required
+                  placeholder="服务商支持的模型 ID" /></label
+              ><label
+                >API 密钥<input
+                  v-model="curatorKey"
+                  type="password"
+                  autocomplete="off"
+                  placeholder="仅写入系统钥匙串；留空保留原密钥"
+              /></label>
+              <p>
+                支持 Chat Completions 与 JSON
+                输出的服务。配置后仍由你主动选择是否使用云端，日常反馈更新继续使用本地引擎。
+              </p>
+              <button class="button" :disabled="!desktop">保存策展服务</button>
+            </form>
+          </details>
+        </template>
+
+        <template v-else-if="view === 'sources'">
+          <div class="page-intro">
+            <div>
+              <p class="eyebrow">ALL YOUR MUSIC, ONE PLACE</p>
+              <h1>让音乐，汇集于此。</h1>
+              <p>用你的音乐来源，养成自己的聆听空间。</p>
+            </div>
+            <button
+              class="button primary"
+              :disabled="s.busy"
+              @click="addMusic()"
+            >
+              <Icon name="plus" />添加音乐来源
+            </button>
+          </div>
+          <div class="source-cards">
+            <article
+              v-for="source in s.sources"
+              :key="source.id"
+              class="source-card"
+            >
+              <span class="source-icon"><Icon name="folder" :size="28" /></span>
+              <div>
+                <span class="subtle-badge">{{ sourceLabel(source.kind) }}</span>
+                <h2>{{ source.name }}</h2>
+                <p class="source-path">{{ source.url }}</p>
+                <small
+                  >{{ source.track_count }} 首音乐 ·
+                  {{
+                    source.last_scan
+                      ? new Date(source.last_scan).toLocaleString("zh-CN")
+                      : "尚未扫描"
+                  }}</small
+                >
+                <p v-if="s.sourceStatuses[source.id]?.error" class="job-error">
+                  更新失败，保留上次曲库：{{
+                    s.sourceStatuses[source.id].error
+                  }}
+                </p>
+                <label class="cloud-option"
+                  ><input
+                    type="checkbox"
+                    :checked="source.enabled !== false"
+                    :disabled="!desktop"
+                    @change="
+                      s.setSourceAuto(
+                        source,
+                        ($event.target as HTMLInputElement).checked,
+                      )
+                    "
+                  />每 15 分钟自动更新</label
+                >
+              </div>
+              <button
+                class="button"
+                :disabled="s.busy || !desktop"
+                @click="s.refreshSource(source)"
+              >
+                <Icon name="refresh" />{{ s.busy ? "扫描中…" : "更新曲库" }}
+              </button>
+            </article>
+            <div v-if="!s.sources.length" class="empty-state">
+              <Icon name="database" :size="40" />
+              <h2>好音乐，值得一个好住处。</h2>
+              <p>先添加本地音乐文件夹。</p>
+              <button class="button primary" @click="addMusic()">
+                添加音乐
+              </button>
+            </div>
+          </div>
+          <section class="info-panel">
+            <Icon name="spark" :size="24" />
+            <div>
+              <h3>把来源，变成会生长的歌单。</h3>
+              <p>
+                在听歌搭子中选定曲库来源，保存为动态歌单。来源更新和听歌偏好会一起影响选曲。
+              </p>
+              <button class="text-button" @click="go('agent')">
+                创建动态歌单 <Icon name="arrow" />
+              </button>
+            </div>
+          </section>
+          <div v-if="s.taste.feeds.length" class="section-heading">
+            <div>
+              <h2>我的元数据订阅</h2>
+              <p>
+                每 15
+                分钟读取标题，并只匹配自己的曲库；不会读取或传播订阅中的音频链接。
+              </p>
+            </div>
+          </div>
+          <article
+            v-for="feed in s.taste.feeds"
+            :key="feed.id"
+            class="source-card"
+          >
+            <Icon name="list" :size="24" />
+            <div>
+              <h2>{{ feed.name }}</h2>
+              <p>
+                {{ feed.matched }} / {{ feed.total }} 条已匹配 ·
+                {{
+                  feed.refreshed_at
+                    ? new Date(feed.refreshed_at).toLocaleString("zh-CN")
+                    : "等待更新"
+                }}
+              </p>
+              <p v-if="feed.error" class="job-error">{{ feed.error }}</p>
+            </div>
+            <button
+              class="button"
+              @click="
+                playlistId = feed.playlist_id;
+                go('playlist');
+              "
+            >
+              打开歌单
+            </button>
+          </article>
+          <div class="info-panel">
+            <Icon name="shield" />
+            <div>
+              <h3>连接你自己的音乐</h3>
+              <p>
+                NAS 与网盘可通过系统挂载目录或服务商提供的 WebDAV 连接，Plex
+                使用自己的服务器与访问令牌。播放器不提供公共音乐源目录或分享入口。
+              </p>
+              <p>
+                请确认你拥有来源与内容的使用权限，在授权范围内个人使用。不要制造、上传或传播侵权内容，请支持正版音乐。
+              </p>
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="view === 'sound'">
+          <div class="page-intro">
+            <div>
+              <p class="eyebrow">MAKE IT SOUND LIKE YOU</p>
+              <h1>好声音，<span class="serif">也有你的偏好。</span></h1>
+              <p>听感没有标准答案。找到舒服的那个位置。</p>
+            </div>
+            <button class="button primary" @click="s.rememberSound()">
+              <Icon name="heart" />记住这个声音
+            </button>
+          </div>
+          <SoundChain
+            :context="s.listeningContext"
+            :chains="s.taste.listening_chains"
+            :services="s.services"
+            :device="s.device"
+            :output-rate="s.playback.output_rate || s.deviceRate"
+            @changed="
+              async () => {
+                await s.refreshTaste();
+                await s.checkDevice(true);
+              }
+            "
+          />
+          <div class="signal-path">
+            <div>
+              <span>音乐文件</span
+              ><strong>{{ s.now ? format(s.now) : "等待播放" }}</strong>
+            </div>
+            <Icon name="arrow" />
+            <div>
+              <span>听感处理</span
+              ><strong>{{
+                processing
+                  ? activeCorrection
+                    ? "参数校正 + 听感曲线"
+                    : "31 段 EQ 已开启"
+                  : "EQ 直通"
+              }}</strong>
+            </div>
+            <Icon name="arrow" />
+            <div>
+              <span>输出设备</span><strong>{{ s.device }}</strong
+              ><small>{{
+                s.playback.output_rate || s.deviceRate
+                  ? `${((s.playback.output_rate || s.deviceRate) / 1000).toFixed(1)} kHz`
+                  : "由系统管理"
+              }}</small>
+            </div>
+          </div>
+          <section class="eq-card">
+            <div class="section-heading">
+              <div>
+                <h2>你的声音曲线</h2>
+                <p>
+                  {{
+                    processing
+                      ? `前级 ${s.preamp.toFixed(1)} dB · 自动预留叠加增益余量`
+                      : "EQ 平直 · 前级 0 dB"
+                  }}
+                </p>
+              </div>
+              <button class="text-button" @click="resetSound">
+                恢复原声 <Icon name="refresh" />
+              </button>
+            </div>
+            <div class="eq-chart" aria-hidden="true">
+              <span>+12 dB</span><span class="zero-label">0 dB</span
+              ><span class="bottom-label">−12 dB</span
+              ><svg viewBox="0 0 600 160" preserveAspectRatio="none">
+                <line x1="0" x2="600" y1="80" y2="80" />
+                <polyline :points="eqPoints" />
+              </svg>
+            </div>
+            <div class="eq-sliders">
+              <label v-for="(f, i) in frequencies" :key="f"
+                ><span class="sr-only">{{ f }} Hz</span
+                ><input
+                  v-model.number="s.gains[i]"
+                  type="range"
+                  min="-12"
+                  max="12"
+                  step="0.5"
+                  :aria-label="`${f} Hz 均衡增益`"
+                  @change="s.applyEq()"
+                /><small>{{ f >= 1000 ? f / 1000 + "k" : f }}</small></label
+              >
+            </div>
+            <div class="preset-row">
+              <span>从一种听感开始</span
+              ><button @click="s.preset('warm')">温暖低频</button
+              ><button @click="s.preset('vocal')">清晰人声</button
+              ><button @click="s.preset('soft')">柔和耐听</button
+              ><button @click="resetSound">原声</button>
+            </div>
+          </section>
+          <section class="eq-card correction-panel">
+            <div class="section-heading">
+              <div>
+                <h2>耳机测量校正</h2>
+                <p>
+                  导入你选择的 AutoEQ / Equalizer APO 参数文件。保留原始 PK / LS
+                  / HS 滤波器与测量来源。
+                </p>
+              </div>
+            </div>
+            <label class="field-label"
+              >当前设备的校正<select
+                :value="
+                  s.taste.active_corrections[s.deviceKey || s.device] || ''
+                "
+                :disabled="!desktop"
+                @change="
+                  selectCorrection(($event.target as HTMLSelectElement).value)
+                "
+              >
+                <option value="">不应用测量校正</option>
+                <option
+                  v-for="profile in s.taste.headphone_profiles"
+                  :key="profile.id"
+                  :value="profile.id"
+                >
+                  {{ profile.name }} · {{ profile.target }}
+                </option>
+              </select></label
+            >
+            <p v-if="activeCorrection">
+              测量来源（用户提供）：{{ activeCorrection.measurement_source }} ·
+              {{ activeCorrection.filters.length }} 个参数滤波器
+            </p>
+            <details>
+              <summary>导入参数校正</summary>
+              <form class="connection-form" @submit.prevent="importCorrection">
+                <label
+                  >耳机名称<input
+                    v-model="correctionName"
+                    required
+                    placeholder="与测量对应的型号" /></label
+                ><label
+                  >测量来源<input
+                    v-model="measurementSource"
+                    required
+                    placeholder="测量者、数据集或出处链接" /></label
+                ><label
+                  >目标曲线<input
+                    v-model="correctionTarget"
+                    required
+                    placeholder="与该配置对应的目标曲线" /></label
+                ><label
+                  >参数文件<input
+                    type="file"
+                    accept=".txt"
+                    @change="readCorrection" /></label
+                ><label
+                  >参数内容<textarea
+                    v-model="correctionText"
+                    rows="5"
+                    required
+                    placeholder="Preamp: -5 dB&#10;Filter 1: ON PK Fc 1000 Hz Gain -2 dB Q 1"
+                  /></label
+                ><button class="button primary" :disabled="!desktop">
+                  导入并应用
+                </button>
+              </form>
+            </details>
+            <p class="capability-note">
+              配置只代表用户提供的数据；播放器不会把设备名称匹配或主观预设标为实测校正。
+            </p>
+          </section>
+          <section class="info-panel">
+            <Icon name="headphones" :size="25" />
+            <div>
+              <h3>每个设备，都能有自己的声音。</h3>
+              <p>
+                点击“记住这个声音”保存当前聆听链路的曲线。相同耳机的蓝牙、有线、小尾巴等配置分别记忆。
+              </p>
+              <p class="muted">
+                根据系统设备 UID 和传输方式恢复链路；模拟耳机、2.4GHz
+                接收器的具体型号由你确认。蓝牙编码由系统或接收器协商，界面不会把偏好当作实测编码。
+              </p>
+            </div>
+          </section>
+        </template>
+
+        <template v-else-if="view === 'studio'">
+          <div class="page-intro">
+            <div>
+              <p class="eyebrow">SOMETHING ONLY YOU COULD IMAGINE</p>
+              <h1>下一首，<span class="serif">从你的灵感开始。</span></h1>
+              <p>把此刻的灵感与听歌偏好，变成可以试听、保存的音乐。</p>
+            </div>
+            <span class="subtle-badge"
+              >音乐生成服务 · {{ s.services.music ? "已配置" : "未配置" }}</span
+            >
+          </div>
+          <section class="studio-panel">
+            <div class="studio-orbit"><Icon name="orbit" :size="72" /></div>
+            <form @submit.prevent="saveBrief">
+              <label for="creation-intent"
+                >如果此刻是一首歌，它会是什么样？</label
+              ><textarea
+                id="creation-intent"
+                v-model="studioPrompt"
+                rows="5"
+                placeholder="一首没有人声的夜间电子乐，温暖的模拟合成器、缓慢的鼓点，像雨夜驶过一座陌生城市……"
+                required
+              />
+              <div class="generation-options">
+                <label
+                  >时长<select v-model.number="generationDuration">
+                    <option :value="30">30 秒</option>
+                    <option :value="60">60 秒</option>
+                    <option :value="120">120 秒</option>
+                    <option :value="180">180 秒</option>
+                  </select></label
+                ><label
+                  ><input v-model="instrumental" type="checkbox" />纯音乐</label
+                ><label
+                  ><input
+                    v-model="usePreferences"
+                    type="checkbox"
+                  />参考实际听歌风格标签</label
+                >
+              </div>
+              <p class="muted">
+                点击生成会把描述及所选偏好标签发送到已配置服务，并可能按服务商规则计费。不会自动重试生成请求。
+              </p>
+              <div class="between">
+                <span class="muted">灵感可先保存；生成作品会自动加入曲库。</span
+                ><button
+                  class="button primary"
+                  :disabled="briefBusy || !studioPrompt.trim()"
+                >
+                  <Icon name="plus" />保存灵感</button
+                ><button
+                  class="button primary"
+                  type="button"
+                  :disabled="
+                    !desktop ||
+                    !s.services.music ||
+                    !studioPrompt.trim() ||
+                    s.taste.generations.some((g) =>
+                      ['queued', 'running'].includes(g.state),
+                    )
+                  "
+                  @click="generateTrack"
+                >
+                  <Icon name="spark" />生成并保存音乐
+                </button>
+              </div>
+            </form>
+          </section>
+          <details class="eq-card">
+            <summary>音乐生成服务 · ElevenLabs</summary>
+            <form
+              class="connection-form"
+              @submit.prevent="saveAIService('music')"
+            >
+              <label
+                >服务地址<input
+                  v-model="musicEndpoint"
+                  type="url"
+                  required /></label
+              ><label
+                >音乐模型<select v-model="musicModel">
+                  <option value="music_v1">music_v1</option>
+                  <option value="music_v2">music_v2</option>
+                  <option value="music_v2_5">music_v2_5</option>
+                </select></label
+              ><label
+                >API 密钥<input
+                  v-model="musicKey"
+                  type="password"
+                  autocomplete="off"
+                  placeholder="仅保存在系统钥匙串"
+              /></label>
+              <p>
+                账号需具有对应音乐 API
+                权限。这里只保存配置，不会开始生成或自动产生请求。
+              </p>
+              <button class="button" :disabled="!desktop">保存音乐服务</button>
+            </form>
+          </details>
+          <div class="section-heading">
+            <div>
+              <h2>我的 AI 作品</h2>
+              <p>真实音频完成解码校验后，自动保存并加入音乐资料库。</p>
+            </div>
+          </div>
+          <div v-if="!s.taste.generations.length" class="list-empty">
+            还没有生成任务。
+          </div>
+          <article
+            v-for="job in [...s.taste.generations].reverse()"
+            :key="job.id"
+            class="brief-card"
+          >
+            <Icon name="music" />
+            <div>
+              <strong>{{ job.prompt }}</strong
+              ><small
+                >{{ jobLabel(job.state) }} · {{ job.provider }} /
+                {{ job.model }}</small
+              >
+              <p v-if="job.error" class="job-error">{{ job.error }}</p>
+            </div>
+            <button
+              v-if="job.state === 'completed'"
+              class="button"
+              :disabled="!job.track_id"
+              @click="playGeneration(job.track_id)"
+            >
+              <Icon name="play" />播放作品</button
+            ><button
+              v-if="job.state === 'completed' && desktop"
+              class="button"
+              @click="revealGeneration(job.id)"
+            >
+              显示文件</button
+            ><button
+              v-if="['running', 'queued'].includes(job.state)"
+              class="button"
+              @click="cancelGeneration(job.id)"
+            >
+              停止接收
+            </button>
+          </article>
+          <div class="section-heading">
+            <div>
+              <h2>灵感档案</h2>
+              <p>保存好想法，随时继续创作；已生成的音乐保存在上方作品列表。</p>
+            </div>
+          </div>
+          <div v-if="!s.taste.briefs.length" class="list-empty">
+            第一段旋律，先从一个念头开始。
+          </div>
+          <article
+            v-for="brief in [...s.taste.briefs].reverse()"
+            :key="brief.id"
+            class="brief-card"
+          >
+            <Icon name="orbit" :size="23" />
+            <div>
+              <strong>{{ brief.prompt }}</strong
+              ><small
+                >{{ new Date(brief.created_at).toLocaleDateString("zh-CN") }} ·
+                灵感草稿</small
+              >
+            </div>
+            <button class="button" @click="exportBrief(brief.prompt)">
+              导出简报 <Icon name="arrow" />
+            </button>
+          </article>
+        </template>
+
+        <template v-else-if="view === 'stage'">
+          <div class="page-intro">
+            <div>
+              <p class="eyebrow">HERE. NOW. NOTHING ELSE.</p>
+              <h1>把这一刻，留给音乐。</h1>
+            </div>
+            <button class="text-button" @click="queueOpen = !queueOpen">
+              播放队列 <Icon name="list" />
+            </button>
+          </div>
+          <section v-if="s.now" class="listening-stage">
+            <div>
+              <Artwork :path="s.now.artwork_path" :seed="s.now.album" large />
+              <div class="stage-caption">
+                <h2>{{ s.now.title }}</h2>
+                <p>{{ s.now.artist }} · {{ s.now.album }}</p>
+                <small class="mono">{{ format(s.now) }}</small>
+              </div>
+            </div>
+            <div class="stage-lyrics">
+              <template v-if="lyrics.length"
+                ><button
+                  v-for="(line, i) in lyrics"
+                  :key="i"
+                  :class="{ active: i === currentLyric }"
+                  @click="s.seek(line.time)"
+                >
+                  {{ line.text }}
+                </button></template
+              >
+              <div v-else class="lyrics-empty">
+                <Icon name="wave" :size="42" />
+                <h2>有些旋律，<br />不需要文字。</h2>
+                <p>未找到这首歌的同步歌词。</p>
+                <small>桌面版支持与音频同名的 .lrc 文件。</small>
+              </div>
+            </div>
+          </section>
+          <div v-else class="empty-state">
+            <Icon name="music" :size="42" />
+            <h2>先放一首喜欢的音乐。</h2>
+            <button class="button primary" @click="go('library')">
+              去音乐资料库
+            </button>
+          </div>
+          <div v-if="s.now" class="spectrum-section">
+            <div class="between">
+              <span>曲目频谱画像</span><small>{{ analysisNote }}</small>
+            </div>
+            <div class="spectrum-bars">
+              <span
+                v-for="(band, i) in analysis"
+                :key="i"
+                :style="{
+                  height:
+                    Math.max(2, Math.min(100, ((band + 90) / 90) * 100)) + '%',
+                }"
+              />
+            </div>
+          </div>
+        </template>
+      </main>
     </div>
 
-    <!-- 播放条 -->
-    <footer class="playbar">
-      <div class="now-info">
-        <div class="now-art">
-          <img
-            v-if="nowPlaying && artUrl(nowPlaying.artwork_path)"
-            :src="artUrl(nowPlaying.artwork_path!)!"
-            alt=""
-          />
-          <Icon v-else name="music" :size="18" />
+    <aside v-if="queueOpen" class="queue-panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">UP NEXT</p>
+          <h2>接下来，继续心动。</h2>
         </div>
-        <div class="now-text">
-          <div class="now-title">{{ nowPlaying?.title ?? "未在播放" }}</div>
-          <div class="now-artist">
-            {{ nowPlaying ? nowPlaying.artist + " · " + nowPlaying.album : "双击曲目开始播放" }}
-          </div>
-        </div>
+        <button
+          class="icon-btn"
+          aria-label="关闭队列"
+          @click="queueOpen = false"
+        >
+          <Icon name="close" />
+        </button>
       </div>
+      <p class="muted">{{ s.queue.length }} 首音乐</p>
+      <button
+        v-for="(t, i) in s.queue"
+        :key="`${t.id}-${i}`"
+        class="queue-track"
+        :class="{ active: i === s.queueIndex }"
+        @click="s.start(t)"
+      >
+        <Artwork :path="t.artwork_path" :seed="t.album" /><span
+          ><strong>{{ t.title }}</strong
+          ><small>{{ t.artist }}</small></span
+        ><Icon :name="i === s.queueIndex ? 'wave' : 'play'" />
+      </button>
+      <p v-if="!s.queue.length" class="list-empty">
+        播放一首音乐，队列就从这里开始。
+      </p>
+    </aside>
 
-      <div class="transport-block">
+    <footer class="player">
+      <button class="now-info" aria-label="打开沉浸播放" @click="go('stage')">
+        <Artwork :path="s.now?.artwork_path" :seed="s.now?.album" /><span
+          ><strong>{{ s.now?.title || "让好音乐，开始。" }}</strong
+          ><small>{{
+            s.now ? s.now.artist + " · " + s.now.album : "你的私人聆听空间"
+          }}</small></span
+        ></button
+      ><button
+        class="icon-btn favorite-now"
+        :class="{ loved: s.now && s.favorites.has(s.now.id) }"
+        :disabled="!s.now"
+        :aria-label="
+          s.now && s.favorites.has(s.now.id)
+            ? '取消收藏当前歌曲'
+            : '收藏当前歌曲'
+        "
+        @click="s.now && s.favorite(s.now)"
+      >
+        <Icon name="heart" :size="19" />
+      </button>
+      <div class="player-center">
         <div class="transport">
-          <button class="icon-btn" disabled aria-label="上一首">
-            <Icon name="prev" :size="16" />
-          </button>
-          <button class="play-btn" :disabled="!nowPlaying" aria-label="播放或停止" @click="togglePlay">
-            <Icon :name="playing ? 'pause' : 'play'" :size="18" />
-          </button>
-          <button class="icon-btn" disabled aria-label="下一首">
-            <Icon name="next" :size="16" />
+          <button
+            class="icon-btn"
+            :disabled="s.queueIndex <= 0 && !s.now"
+            aria-label="上一首"
+            @click="s.previous()"
+          >
+            <Icon name="prev" :size="18" /></button
+          ><button
+            class="play-button"
+            :disabled="(!s.now && !s.tracks.length) || s.loading"
+            :aria-label="s.playing ? '暂停' : '播放'"
+            @click="s.toggle()"
+          >
+            <span v-if="s.loading" class="spinner" /><Icon
+              v-else
+              :name="s.playing ? 'pause' : 'play'"
+              :size="20"
+            /></button
+          ><button
+            class="icon-btn"
+            :disabled="s.queueIndex >= s.queue.length - 1"
+            aria-label="下一首"
+            @click="s.next()"
+          >
+            <Icon name="next" :size="18" />
           </button>
         </div>
-
         <div class="timeline">
-          <span class="t">{{ fmtDuration(elapsed) }}</span>
-          <div class="rail">
-            <div class="fill" :style="{ width: progress + '%' }" />
-          </div>
-          <span class="t right">{{ fmtDuration(nowPlaying?.duration ?? 0) }}</span>
+          <span>{{ duration(s.playback.position) }}</span
+          ><input
+            type="range"
+            min="0"
+            :max="s.playback.duration || s.now?.duration || 0"
+            :value="s.playback.position"
+            step="0.1"
+            :disabled="!s.now || s.loading"
+            aria-label="播放进度"
+            @change="s.seek(Number(($event.target as HTMLInputElement).value))"
+          /><span>{{
+            duration(s.playback.duration || s.now?.duration || 0)
+          }}</span>
         </div>
       </div>
-
-      <div class="playbar-right">
-        <div class="spec-plate" v-if="nowPlaying">
-          <span v-for="p in specParts(nowPlaying)" :key="p">{{ p }}</span>
-        </div>
-        <div class="status-line">{{ status }}</div>
+      <div class="player-right">
+        <button
+          class="icon-btn"
+          :class="{ selected: queueOpen }"
+          aria-label="播放队列"
+          :aria-expanded="queueOpen"
+          @click="queueOpen = !queueOpen"
+        >
+          <Icon name="list" :size="20" /></button
+        ><button class="icon-btn" aria-label="声音实验室" @click="go('sound')">
+          <Icon name="sliders" :size="19" /></button
+        ><label class="volume-control"
+          ><Icon name="volume" /><input
+            v-model.number="s.volume"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            aria-label="音量"
+            @input="s.setVolume()" /></label
+        ><span v-if="s.now" class="player-quality">{{
+          s.now.codec.toUpperCase()
+        }}</span>
       </div>
     </footer>
+
+    <div v-if="s.notice" class="toast" role="status">
+      <Icon name="check" />{{ s.notice }}
+    </div>
+    <div v-if="s.fault" class="error-toast" role="alert">
+      <Icon name="info" /><span>{{ s.fault }}</span
+      ><button class="icon-btn" aria-label="关闭错误提示" @click="s.fault = ''">
+        <Icon name="close" />
+      </button>
+    </div>
+
+    <div
+      v-if="sourceOpen || saveOpen || commandOpen"
+      class="modal-backdrop"
+      @click.self="
+        sourceOpen = false;
+        saveOpen = false;
+        commandOpen = false;
+      "
+    >
+      <section
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="
+          sourceOpen ? '添加音乐来源' : saveOpen ? '保存歌单' : '搜索与快捷操作'
+        "
+        @keydown.tab="trapFocus"
+      >
+        <div class="modal-heading">
+          <h2>
+            {{
+              sourceOpen
+                ? "把你的音乐带进来"
+                : saveOpen
+                  ? "留住这段频率"
+                  : "想听的，就在这里。"
+            }}
+          </h2>
+          <button
+            class="icon-btn"
+            aria-label="关闭对话框"
+            @click="
+              sourceOpen = false;
+              saveOpen = false;
+              commandOpen = false;
+            "
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+        <form
+          v-if="sourceOpen"
+          class="connection-form"
+          @submit.prevent="connectSource"
+        >
+          <label
+            >来源类型<select v-model="sourceKind">
+              <option value="local">本地文件夹</option>
+              <option value="smb">NAS / 已挂载网盘</option>
+              <option value="webdav">WebDAV</option>
+              <option value="plex">Plex</option>
+              <option value="rss">RSS / Atom 元数据匹配</option>
+            </select></label
+          >
+          <label
+            >来源名称<input
+              v-model="sourceName"
+              placeholder="可选，给它一个好认的名字"
+          /></label>
+          <label for="source-path">{{
+            ["local", "smb"].includes(sourceKind)
+              ? "音乐文件夹完整路径"
+              : "服务器地址"
+          }}</label>
+          <input
+            id="source-path"
+            v-model="sourcePath"
+            :placeholder="
+              ['local', 'smb'].includes(sourceKind)
+                ? '/Volumes/我的音乐'
+                : 'https://你的服务器/音乐目录/'
+            "
+            required
+          />
+          <button
+            v-if="['local', 'smb'].includes(sourceKind)"
+            class="text-button"
+            type="button"
+            @click="pickFolder"
+          >
+            <Icon name="folder" />浏览文件夹…
+          </button>
+          <template v-else
+            ><label v-if="sourceKind !== 'plex'"
+              >账号<input
+                v-model="sourceUsername"
+                autocomplete="username"
+                placeholder="匿名访问可留空" /></label
+            ><label
+              >{{ sourceKind === "plex" ? "Plex Token" : "密码"
+              }}<input
+                v-model="sourceSecret"
+                type="password"
+                autocomplete="off"
+                :placeholder="
+                  sourceKind === 'plex' ? '服务器访问令牌' : '仅存入系统钥匙串'
+                " /></label
+          ></template>
+          <p v-if="sourceKind === 'smb'" class="muted">
+            先在 Finder
+            或网盘客户端挂载，再选择目录。未挂载网盘可使用服务商提供的
+            WebDAV；当前不解析网盘分享链接。
+          </p>
+          <p
+            v-else-if="sourceKind === 'webdav' || sourceKind === 'plex'"
+            class="muted"
+          >
+            凭据保存在系统钥匙串。音频使用 HTTP Range
+            按需读取，服务器需要支持字节范围请求。
+          </p>
+          <p v-if="sourceKind === 'rss'" class="muted">
+            只读取 RSS / Atom
+            标题并匹配自己的曲库，不读取其中的音频地址。请填写名称；有重名版本的条目不会自动匹配。
+          </p>
+          <p class="muted">
+            请确认你有权使用这些文件。仅在授权范围内个人使用，不要制造或传播侵权内容，请支持正版。
+          </p>
+          <button class="button primary" :disabled="s.busy">
+            {{ s.busy ? "正在连接曲库…" : "连接曲库" }}
+          </button>
+        </form>
+        <form v-else-if="saveOpen" @submit.prevent="saveList">
+          <label for="playlist-name">歌单名字</label
+          ><input
+            id="playlist-name"
+            v-model="playlistName"
+            required
+            autofocus
+          /><label class="checkbox-label"
+            ><input
+              v-model="saveSmart"
+              type="checkbox"
+            />自动更新这份歌单</label
+          >
+          <p class="muted">
+            {{
+              saveSmart
+                ? "保留选曲描述和来源，跟随新音乐与你的偏好更新。"
+                : "保存目前的曲目顺序。"
+            }}
+          </p>
+          <button class="button primary" :disabled="!playlistName.trim()">
+            保存歌单
+          </button>
+        </form>
+        <template v-else
+          ><label class="command-search"
+            ><Icon name="search" :size="20" /><input
+              ref="commandInput"
+              v-model="query"
+              placeholder="搜索歌曲、艺人、专辑…"
+              aria-label="命令搜索"
+          /></label>
+          <div class="command-results">
+            <button
+              v-for="t in filtered.slice(0, 8)"
+              :key="t.id"
+              @click="
+                s.start(t, filtered);
+                commandOpen = false;
+              "
+            >
+              <Icon name="music" /><span
+                >{{ t.title }}<small>{{ t.artist }}</small></span
+              ><Icon name="play" />
+            </button>
+            <p v-if="query && !filtered.length" class="list-empty">
+              没有找到“{{ query }}”。
+            </p>
+            <button
+              @click="
+                go('sound');
+                commandOpen = false;
+              "
+            >
+              <Icon name="sliders" /><span>调整声音</span
+              ><kbd>声音实验室</kbd></button
+            ><button
+              @click="
+                go('agent');
+                commandOpen = false;
+              "
+            >
+              <Icon name="spark" /><span>让搭子为我选曲</span
+              ><Icon name="arrow" />
+            </button></div
+        ></template>
+      </section>
+    </div>
   </div>
 </template>

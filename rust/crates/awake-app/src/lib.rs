@@ -15,14 +15,30 @@ use awake_core::{
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Manager, State};
+
+mod connections;
+mod devices;
+mod experience;
+mod feeds;
+mod headphone_catalog;
+mod intelligence;
+mod playback;
+mod remote;
+mod vault;
 
 /// 全局状态。
 pub struct AppState {
-    pub library: Mutex<Library>,
-    pub player: Arc<PlayerHandle>,
+    pub library: Arc<Mutex<Library>>,
+    pub services: Mutex<intelligence::Services>,
+    pub source_status: Arc<Mutex<std::collections::HashMap<String, connections::RefreshStatus>>>,
+    pub alive: Arc<std::sync::atomic::AtomicBool>,
+    pub generation_running: Arc<std::sync::atomic::AtomicBool>,
+    pub generation_cancels:
+        Arc<Mutex<std::collections::HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>,
+    pub player: Arc<playback::Player>,
+    pub taste: Arc<Mutex<awake_core::taste::Taste>>,
     pub data_dir: PathBuf,
 }
 
@@ -32,8 +48,14 @@ impl AppState {
         let store = data_dir.join("library.json");
         std::fs::create_dir_all(&data_dir).ok();
         Self {
-            library: Mutex::new(Library::open(store)),
-            player: Arc::new(PlayerHandle::new()),
+            library: Arc::new(Mutex::new(Library::open(store))),
+            services: Mutex::new(intelligence::load(&data_dir)),
+            source_status: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            alive: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            generation_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            generation_cancels: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            player: Arc::new(playback::Player::new()),
+            taste: Arc::new(Mutex::new(experience::load(&data_dir))),
             data_dir,
         }
     }
@@ -49,29 +71,6 @@ fn default_data_dir() -> PathBuf {
     PathBuf::from(home).join("Library/Application Support/com.seven.awake")
 }
 
-/// 播放控制句柄。
-pub struct PlayerHandle {
-    stop_flag: Arc<AtomicBool>,
-    playing: Arc<AtomicBool>,
-    current_id: Arc<Mutex<Option<String>>>,
-    started_at: Arc<AtomicU64>,
-}
-
-impl PlayerHandle {
-    fn new() -> Self {
-        Self {
-            stop_flag: Arc::new(AtomicBool::new(false)),
-            playing: Arc::new(AtomicBool::new(false)),
-            current_id: Arc::new(Mutex::new(None)),
-            started_at: Arc::new(AtomicU64::new(0)),
-        }
-    }
-
-    fn stop(&self) {
-        self.stop_flag.store(true, Ordering::SeqCst);
-    }
-}
-
 /// 扫描结果，直接给前端用。
 #[derive(Serialize)]
 pub struct ScanResult {
@@ -84,10 +83,11 @@ pub struct ScanResult {
 pub struct ScanRequest {
     pub path: String,
     pub name: Option<String>,
+    pub kind: Option<SourceKind>,
 }
 
 #[tauri::command]
-fn scan_library(req: ScanRequest, state: State<'_, AppState>) -> Result<ScanResult, String> {
+async fn scan_library(req: ScanRequest, state: State<'_, AppState>) -> Result<ScanResult, String> {
     let started = std::time::Instant::now();
     let root = PathBuf::from(&req.path);
 
@@ -108,38 +108,49 @@ fn scan_library(req: ScanRequest, state: State<'_, AppState>) -> Result<ScanResu
     };
 
     let artwork_dir = state.data_dir.join("artwork");
-    let tracks = library::scan_local_source(
-        &root,
-        &source_id,
-        &existing,
-        Some(&artwork_dir),
-        |_, _, _| {},
-    )
-    .map_err(|e| e.to_string())?;
+    let scan_root = root.clone();
+    let scan_id = source_id.clone();
+    let tracks = tauri::async_runtime::spawn_blocking(move || {
+        library::scan_local_source(
+            &scan_root,
+            &scan_id,
+            &existing,
+            Some(&artwork_dir),
+            |_, _, _| {},
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
     let albums = group_albums(&tracks);
 
     {
         let mut lib = state.library.lock();
+        let previous = lib.snapshot.clone();
         lib.replace_source_tracks(&source_id, tracks.clone());
 
         let name = req
             .name
             .clone()
-            .or_else(|| {
-                root.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-            })
+            .or_else(|| root.file_name().map(|n| n.to_string_lossy().to_string()))
             .unwrap_or_else(|| "曲库".into());
 
-        let mut source = MediaSource::new(SourceKind::Local, name, req.path.clone());
+        let mut source = MediaSource::new(
+            req.kind.unwrap_or(SourceKind::Local),
+            name,
+            req.path.clone(),
+        );
         source.id = source_id;
         source.track_count = tracks.len();
         source.last_scan = Some(awake_core::models::now_ms());
         lib.snapshot.sources.retain(|s| s.id != source.id);
         lib.add_source(source);
         lib.snapshot.scanned_at = Some(awake_core::models::now_ms());
-        lib.save().map_err(|e| e.to_string())?;
+        if let Err(e) = lib.save() {
+            lib.snapshot = previous;
+            return Err(e.to_string());
+        }
     }
 
     Ok(ScanResult {
@@ -211,7 +222,16 @@ fn load_library(state: State<'_, AppState>) -> LibraryView {
     LibraryView {
         tracks: lib.snapshot.tracks.clone(),
         albums: lib.albums(),
-        sources: lib.snapshot.sources.clone(),
+        sources: lib
+            .snapshot
+            .sources
+            .iter()
+            .cloned()
+            .map(|mut source| {
+                source.token.clear();
+                source
+            })
+            .collect(),
     }
 }
 
@@ -221,74 +241,171 @@ pub struct PlayRequest {
     pub locator: String,
     /// 31 段增益（dB），空则用平坦曲线
     pub gains: Option<Vec<f32>>,
+    #[serde(default)]
+    pub continuation: bool,
+    #[serde(default)]
+    pub queue: Vec<QueueReference>,
+}
+#[derive(Deserialize)]
+pub struct QueueReference {
+    pub source_id: String,
+    pub locator: String,
 }
 
 #[tauri::command]
 fn play_track(req: PlayRequest, state: State<'_, AppState>) -> Result<String, String> {
-    let player = state.player.clone();
-    player.stop();
-    std::thread::sleep(std::time::Duration::from_millis(80));
-
-    let source_root = {
+    if let Some(gains) = req.gains {
+        let current = state.player.curve.lock().clone();
+        let curve = experience::with_correction(
+            &gains,
+            &current,
+            match state.player.status().output_rate {
+                0 => 48000,
+                rate => rate,
+            },
+        )?;
+        *state.player.curve.lock() = curve;
+    }
+    let mut references = vec![QueueReference {
+        source_id: req.source_id.clone(),
+        locator: req.locator.clone(),
+    }];
+    references.extend(req.queue.into_iter().take(9999));
+    let queued = {
         let lib = state.library.lock();
-        lib.snapshot
-            .sources
-            .iter()
-            .find(|s| s.id == req.source_id)
-            .map(|s| s.url.clone())
-            .ok_or_else(|| "找不到曲目来源".to_string())?
+        let mut access_cache = std::collections::HashMap::new();
+        references
+            .into_iter()
+            .map(|r| {
+                let track = lib
+                    .snapshot
+                    .tracks
+                    .iter()
+                    .find(|t| t.source_id == r.source_id && t.locator == r.locator)
+                    .ok_or("队列曲目不存在")?;
+                let source = lib
+                    .snapshot
+                    .sources
+                    .iter()
+                    .find(|s| s.id == r.source_id)
+                    .ok_or("队列来源不存在")?;
+                let remote = matches!(source.kind, SourceKind::Webdav | SourceKind::Plex);
+                let path = if remote {
+                    PathBuf::new()
+                } else {
+                    PathBuf::from(&source.url).join(&track.locator)
+                };
+                if !remote && !path.is_file() {
+                    return Err(format!("文件不存在：{}", path.display()));
+                }
+                let opener = if remote {
+                    if !access_cache.contains_key(&source.id) {
+                        access_cache.insert(source.id.clone(), connections::access(source)?);
+                    }
+                    Some(
+                        access_cache
+                            .get(&source.id)
+                            .unwrap()
+                            .factory(track.locator.clone()),
+                    )
+                } else {
+                    None
+                };
+                Ok(playback::QueueTrack {
+                    id: track.id.clone(),
+                    path,
+                    opener,
+                    duration: track.duration,
+                    sample_rate: track.sample_rate,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?
     };
-
-    let full_path = PathBuf::from(&source_root).join(&req.locator);
-    if !full_path.is_file() {
-        return Err(format!("文件不存在: {}", full_path.display()));
-    }
-
-    let gains = req.gains.unwrap_or_else(|| vec![0.0; 31]);
-    let stopped = Arc::new(AtomicBool::new(false));
-    let playing = Arc::new(AtomicBool::new(false));
-
-    // 更新句柄，让 stop 能打到这条流
-    {
-        let mut guard = state.player.current_id.lock();
-        *guard = Some(req.locator.clone());
-    }
-    state.player.stop_flag.store(false, Ordering::SeqCst);
-
-    let path = full_path.clone();
-    let stop_clone = stopped.clone();
-    let playing_clone = playing.clone();
-    let parent_stop = state.player.stop_flag.clone();
-    let parent_playing = state.player.playing.clone();
-
-    std::thread::spawn(move || {
-        match play_audio(&path, &gains, stop_clone.clone(), playing_clone.clone(), &parent_stop, &parent_playing) {
-            Ok(()) => log::info!("播放结束: {}", path.display()),
-            Err(e) => log::error!("播放失败: {e}"),
-        }
-    });
-
+    let taste = state.taste.clone();
+    let data_dir = state.data_dir.clone();
+    state.player.play_queue(
+        queued,
+        !req.continuation,
+        move |id, seconds, completed, skipped| {
+            if let Err(e) =
+                experience::record_session(&taste, &data_dir, id, seconds, completed, skipped)
+            {
+                log::error!("收听历史保存失败：{e}");
+            }
+        },
+    )?;
     Ok(req.locator)
 }
 
 #[tauri::command]
 fn stop_playback(state: State<'_, AppState>) {
     state.player.stop();
-    state.player.playing.store(false, Ordering::SeqCst);
-}
-
-#[derive(Serialize)]
-pub struct PlaybackStatus {
-    pub playing: bool,
-    pub current: Option<String>,
 }
 
 #[tauri::command]
-fn playback_status(state: State<'_, AppState>) -> PlaybackStatus {
-    PlaybackStatus {
-        playing: state.player.playing.load(Ordering::SeqCst),
-        current: state.player.current_id.lock().clone(),
+fn pause_playback(paused: bool, state: State<'_, AppState>) {
+    state.player.pause(paused);
+}
+
+#[tauri::command]
+fn seek_playback(seconds: f64, state: State<'_, AppState>) -> Result<(), String> {
+    state.player.seek(seconds)
+}
+
+#[tauri::command]
+fn set_volume(volume: f32, state: State<'_, AppState>) -> Result<(), String> {
+    if !volume.is_finite() {
+        return Err("无效的音量".into());
     }
+    *state.player.volume.lock() = volume.clamp(0.0, 1.0);
+    Ok(())
+}
+
+#[tauri::command]
+fn playback_status(state: State<'_, AppState>) -> playback::Status {
+    let status = state.player.status();
+    if status.source_rate > 0 && status.duration > 0.0 {
+        if let Some(id) = &status.current {
+            let mut lib = state.library.lock();
+            let changed = if let Some(track) = lib.snapshot.tracks.iter_mut().find(|t| t.id == *id)
+            {
+                let mut changed = false;
+                if track.duration <= 0.0 || track.sample_rate == 0 {
+                    track.duration = status.duration;
+                    track.sample_rate = status.source_rate;
+                    changed = true;
+                }
+                if track.is_remote {
+                    for (value, incoming) in [
+                        (&mut track.title, &status.tags.title),
+                        (&mut track.artist, &status.tags.artist),
+                        (&mut track.album, &status.tags.album),
+                        (&mut track.album_artist, &status.tags.album_artist),
+                        (&mut track.genre, &status.tags.genre),
+                    ] {
+                        if !incoming.is_empty() && *value != *incoming {
+                            *value = incoming.clone();
+                            changed = true;
+                        }
+                    }
+                    if status.source_bits > 0 && track.bit_depth != status.source_bits {
+                        track.bit_depth = status.source_bits;
+                        changed = true;
+                    }
+                }
+                changed
+            } else {
+                false
+            };
+            if changed {
+                lib.snapshot.scanned_at = Some(awake_core::models::now_ms());
+                if let Err(e) = lib.save() {
+                    log::warn!("曲目规格缓存未保存：{e}");
+                }
+            }
+        }
+    }
+    status
 }
 
 #[derive(Deserialize)]
@@ -298,18 +415,22 @@ pub struct EqRequest {
 }
 
 #[tauri::command]
-fn set_eq_curve(req: EqRequest, state: State<'_, AppState>) -> String {
-    // 曲线在播放时应用；这里只校验并回报归一化结果
-    let curve = eq::EqCurve::new(&req.gains, req.preamp).headroom(1.0);
-    {
-        let guard = state.player.current_id.lock();
-        let _ = &guard;
+fn set_eq_curve(req: EqRequest, state: State<'_, AppState>) -> Result<eq::EqCurve, String> {
+    if !req.preamp.is_finite() {
+        return Err("无效的前级增益".into());
     }
-    format!(
-        "曲线已接受：preamp {:.1} dB，最大提升 {:.1} dB",
-        curve.preamp,
-        curve.max_gain()
-    )
+    let current = state.player.curve.lock().clone();
+    let mut curve = experience::with_correction(
+        &req.gains,
+        &current,
+        match state.player.status().output_rate {
+            0 => 48000,
+            rate => rate,
+        },
+    )?;
+    curve.preamp = curve.preamp.min(req.preamp.clamp(-40.0, 0.0));
+    *state.player.curve.lock() = curve.clone();
+    Ok(curve)
 }
 
 #[derive(Serialize)]
@@ -321,7 +442,11 @@ pub struct Analysis {
 }
 
 #[tauri::command]
-fn analyze_track(source_id: String, locator: String, state: State<'_, AppState>) -> Result<Analysis, String> {
+async fn analyze_track(
+    source_id: String,
+    locator: String,
+    state: State<'_, AppState>,
+) -> Result<Analysis, String> {
     let root = {
         let lib = state.library.lock();
         lib.snapshot
@@ -332,115 +457,109 @@ fn analyze_track(source_id: String, locator: String, state: State<'_, AppState>)
             .ok_or_else(|| "找不到来源".to_string())?
     };
     let path = PathBuf::from(root).join(&locator);
-    let audio = decode::decode_file(&path).map_err(|e| e.to_string())?;
-    let mono = awake_core::to_mono(&audio.samples, audio.format.channels);
-    let mut analyzer = awake_core::SpectrumAnalyzer::new(8192, audio.format.sample_rate as f32);
-    let profile = analyzer.profile(&mono, audio.format.sample_rate as f32);
-    Ok(Analysis {
-        bands: profile.bands.to_vec(),
-        peak: audio.peak(),
-        duration: audio.duration_secs(),
-        sample_rate: audio.format.sample_rate,
-    })
-}
-
-/// 实际播放：解码 → EQ → cpal 输出（自动重采样到设备格式）。
-fn play_audio(
-    path: &std::path::Path,
-    gains: &[f32],
-    stopped: Arc<AtomicBool>,
-    playing: Arc<AtomicBool>,
-    parent_stop: &Arc<AtomicBool>,
-    parent_playing: &Arc<AtomicBool>,
-) -> anyhow::Result<()> {
-    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-
-    let mut audio = decode::decode_file(path)?;
-    let src_rate = audio.format.sample_rate;
-    let channels = audio.format.channels;
-
-    let curve = eq::EqCurve::new(gains, 0.0).headroom(1.0);
-    let mut equalizer = eq::Equalizer::new(src_rate as f32, channels);
-    equalizer.apply_curve(&curve);
-    equalizer.process_interleaved(&mut audio.samples);
-
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| anyhow::anyhow!("没有可用的音频输出设备"))?;
-
-    // 优先原生采样率
-    let mut chosen = None;
-    if let Ok(configs) = device.supported_output_configs() {
-        for range in configs {
-            if range.channels() as usize == channels
-                && range.min_sample_rate().0 <= src_rate
-                && src_rate <= range.max_sample_rate().0
-            {
-                chosen = Some(range.with_sample_rate(cpal::SampleRate(src_rate)));
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut decoder = decode::StreamDecoder::open(&path).map_err(|e| e.to_string())?;
+        let rate = decoder.format.sample_rate;
+        let channels = decoder.format.channels;
+        let duration = decoder.format.duration_secs.unwrap_or(0.0);
+        let mut analyzer = awake_core::SpectrumAnalyzer::new(8192, rate as f32);
+        let mut bands = [0.0_f32; 32];
+        let mut peak = 0.0_f32;
+        let mut count = 0;
+        for fraction in [0.15, 0.45, 0.75] {
+            if duration > 0.0 {
+                decoder
+                    .seek(duration * fraction)
+                    .map_err(|e| e.to_string())?;
+            }
+            let mut mono = Vec::new();
+            while mono.len() < (rate as usize * 2) {
+                let Some(packet) = decoder.next_packet().map_err(|e| e.to_string())? else {
+                    break;
+                };
+                peak = packet.iter().fold(peak, |a, b| a.max(b.abs()));
+                mono.extend(awake_core::to_mono(&packet, channels));
+            }
+            if !mono.is_empty() {
+                let profile = analyzer.profile(&mono, rate as f32);
+                for i in 0..32 {
+                    bands[i] += profile.bands[i];
+                }
+                count += 1;
+            }
+            if duration == 0.0 {
                 break;
             }
         }
-    }
-    let config = match chosen {
-        Some(c) => c,
-        None => device.default_output_config()?,
-    };
-    let out_rate = config.sample_rate().0;
-    let out_channels = config.channels() as usize;
-
-    let data = if out_rate != src_rate {
-        awake_core::resample_interleaved(&audio.samples, channels, src_rate, out_rate)?
-    } else {
-        audio.samples.clone()
-    };
-
-    let total = data.len() / channels.max(1);
-    let mut pos = 0usize;
-    playing.store(true, Ordering::SeqCst);
-    parent_playing.store(true, Ordering::SeqCst);
-
-    let data_arc = Arc::new(data);
-    let data_ref = data_arc.clone();
-    let stopped_flag = stopped.clone();
-
-    let stream = device.build_output_stream(
-        &config.config(),
-        move |output: &mut [f32], _| {
-            output.fill(0.0);
-            if stopped_flag.load(Ordering::SeqCst) {
-                return;
+        if count > 0 {
+            for b in &mut bands {
+                *b /= count as f32;
             }
-            let frames = output.len() / out_channels;
-            for f in 0..frames {
-                if pos >= total {
-                    return;
-                }
-                for c in 0..out_channels {
-                    let src_c = c.min(channels - 1);
-                    output[f * out_channels + c] = data_ref[pos * channels + src_c];
-                }
-                pos += 1;
-            }
-        },
-        move |err| log::error!("音频流错误: {err}"),
-        None,
-    )?;
-
-    stream.play()?;
-
-    // 等播放结束或被外部停止
-    while pos < total {
-        if parent_stop.load(Ordering::SeqCst) {
-            break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
+        Ok(Analysis {
+            bands: bands.to_vec(),
+            peak,
+            duration,
+            sample_rate: rate,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
-    playing.store(false, Ordering::SeqCst);
-    parent_playing.store(false, Ordering::SeqCst);
-    drop(stream);
-    Ok(())
+#[tauri::command]
+fn load_lyrics(
+    source_id: String,
+    locator: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<awake_core::lyrics::Line>, String> {
+    let root = state
+        .library
+        .lock()
+        .snapshot
+        .sources
+        .iter()
+        .find(|s| s.id == source_id)
+        .map(|s| s.url.clone())
+        .ok_or("找不到来源")?;
+    let path = PathBuf::from(root).join(locator).with_extension("lrc");
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let input = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    Ok(awake_core::lyrics::parse(&input))
+}
+
+#[tauri::command]
+async fn pick_music_folder() -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        #[cfg(target_os = "macos")]
+        {
+            let output = std::process::Command::new("osascript")
+                .args([
+                    "-e",
+                    "POSIX path of (choose folder with prompt \"选择你的音乐文件夹\")",
+                ])
+                .output()
+                .map_err(|e| e.to_string())?;
+            if !output.status.success() {
+                let error = String::from_utf8_lossy(&output.stderr);
+                if error.contains("-128") {
+                    return Ok(None);
+                }
+                return Err(error.into_owned());
+            }
+            Ok(Some(
+                String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            ))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Err("请直接填写音乐文件夹路径".into())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 pub fn run() {
@@ -448,6 +567,14 @@ pub fn run() {
 
     tauri::Builder::default()
         .setup(|app| {
+            let state = app.state::<AppState>();
+            connections::start_refresh_worker(
+                state.library.clone(),
+                state.source_status.clone(),
+                state.alive.clone(),
+                state.data_dir.clone(),
+                state.taste.clone(),
+            );
             // 诊断：打印窗口实际加载的 URL 与前端资源解析结果
             tauri::Manager::get_webview_window(app, "main").map(|w| {
                 println!("[awake] WINDOW_URL={:?}", w.url());
@@ -455,18 +582,78 @@ pub fn run() {
             });
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                window.state::<AppState>().player.stop_and_flush();
+            }
+        })
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             scan_library,
+            intelligence::get_services,
+            intelligence::generate_skin,
+            intelligence::save_service,
+            intelligence::curate_music,
+            intelligence::start_generation,
+            intelligence::cancel_generation,
+            intelligence::reveal_generation,
+            feeds::subscribe_feed,
+            connections::connect_source,
+            connections::refresh_remote_source,
+            connections::source_refresh_status,
+            connections::set_source_auto_refresh,
+            connections::library_revision,
             set_traffic_lights,
             frontend_ready,
             load_library,
             play_track,
             stop_playback,
+            pause_playback,
+            seek_playback,
+            set_volume,
+            experience::get_taste,
+            experience::import_headphone_profile,
+            experience::select_correction,
+            experience::restore_correction,
+            experience::record_listen,
+            experience::toggle_favorite,
+            experience::recommend,
+            experience::save_playlist,
+            experience::delete_playlist,
+            experience::save_sound_profile,
+            experience::save_creation_brief,
+            experience::output_device,
+            devices::listening_context,
+            devices::save_listening_chain,
+            devices::activate_listening_chain,
+            headphone_catalog::search_headphones,
+            headphone_catalog::ai_match_headphone,
+            headphone_catalog::preview_headphone_eq,
             playback_status,
             set_eq_curve,
-            analyze_track
+            analyze_track,
+            load_lyrics,
+            pick_music_folder
         ])
-        .run(tauri::generate_context!())
-        .expect("启动 Awake 失败");
+        .build(tauri::generate_context!())
+        .expect("启动 Awake 失败")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                let state = app.state::<AppState>();
+                state
+                    .alive
+                    .store(false, std::sync::atomic::Ordering::Release);
+                state.player.stop_and_flush();
+            }
+        });
 }
+
+#[cfg(test)]
+#[path = "../../awake-core/src/test_audio.rs"]
+pub(crate) mod test_audio;
+
+#[cfg(test)]
+mod allocation_audit;
+#[cfg(test)]
+#[global_allocator]
+static TEST_ALLOCATOR: allocation_audit::Audited = allocation_audit::Audited;

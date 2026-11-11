@@ -1,0 +1,57 @@
+Awake iOS 0.7.3 — Effect animation and playback indicator — 2026-11-11
+Xcode 27.2; iPhoneOS ARM64 Release; deployment iOS 17
+Simulator: Awake iOS QA / iPhone 17 Pro / iOS 26.5
+
+Acceptance: 21 native tests and 6 distinct UI flows passed.
+Native tests passed in the broad regression; existing UI flows and reduced-motion passed there and in the focused run.
+The final player/overlay flow passed in Tests-Effects-Player-Accepted.xcresult after replacing the modal bypass control with explicit restore/original buttons and checking the player after the transient HUD closes.
+
+Test Case '-[AwakeTests.AwakeTests testAPORejectsInvalidAndRetainsCenterShelfQ]' passed (0.003 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testChainForkPersistenceAndFeedbackAdvice]' passed (0.007 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testCompatibleQueuePauseAndCompletion]' passed (2.943 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testEffectPresentationUsesTopSheetAndSingleAnnouncement]' passed (0.005 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testEffectProvenanceAndSilentSliderCoalescing]' passed (0.010 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testEffectStatusTracksActualEQBypassAndFailedRequests]' passed (0.010 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testEquipmentLegacyDecodeAndModeForkPersistence]' passed (0.007 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testEquipmentOutputRequiresModelModeAndAnalogPath]' passed (0.001 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testEquipmentUnitsAndUnknownsAreNotInterchangeable]' passed (0.002 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testGenerationsAreNotImplicitlyInterchangeable]' passed (0.001 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testImportUsesRealMetadataAndKeepsOriginalFilename]' passed (0.034 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testInterruptedJobsDoNotAutoRetryAndCredentialDestinationMustMatch]' passed (0.003 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testMainstreamCatalogBrandsAliasesAndSourceIntegrity]' passed (0.012 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testMainstreamMeasurementMappingAndConditionIsolation]' passed (0.004 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testModelSelectionResetsConditionsAndPreservesSameModelOverrides]' passed (0.001 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testOfflineBenchReportsActualFramesAndFiniteSignal]' passed (0.104 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testPlaybackSeekDoesNotLearnSkippedTime]' passed (1.011 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testSkinInteroperabilityAndInjectionRejection]' passed (0.001 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testSourceBoundaryAndPlaintextRules]' passed (0.001 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testTwoHourSparseTrackSeeksWithoutFullDecode]' passed (1.103 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeTests.AwakeTests testWebDAVNamespacesAndPlexSections]' passed (0.001 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeUITests.AwakeUITests testEffectAnimationAndPlayerBadgeFollowBypass]' passed (28.217 seconds). [awake-ios-effects-player-accepted-tests.log]
+Test Case '-[AwakeUITests.AwakeUITests testEquipmentGoalsAndSourcesCanBeSaved]' passed (34.286 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeUITests.AwakeUITests testListeningFeedbackAndSoftwareBench]' passed (19.025 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeUITests.AwakeUITests testMainstreamCatalogBrandFilterAndSelection]' passed (18.526 seconds). [awake-ios-effects-final-tests.log]
+Test Case '-[AwakeUITests.AwakeUITests testReducedMotionUsesStaticEffectConfirmation]' passed (14.020 seconds). [awake-ios-effects-acceptance-tests.log]
+Test Case '-[AwakeUITests.AwakeUITests testRouteConfigurationAndNativeThemes]' passed (21.065 seconds). [awake-ios-effects-final-tests.log]
+
+Final device archive: ** ARCHIVE SUCCEEDED **
+{
+  "version": "0.7.3",
+  "build": "10",
+  "platforms": [
+    "iPhoneOS"
+  ],
+  "minimumOS": "17.0",
+  "catalogModels": 75,
+  "privacyManifest": true,
+  "appIcon": true,
+  "containsProvisioningProfile": false,
+  "qaFixtureInRelease": false,
+  "reducedMotionTestFlagInRelease": false,
+  "sizeBytes": 2390138,
+  "sha256": "af6a146c0c0b1b7869a45ed18b49c0eab2e2f9f2ca99a4707671b8e0c78438a7"
+}
+
+UI evidence uses Debug QA audio and test configuration, not a physical headphone measurement. Release excludes the QA fixture and reduced-motion launch override.
+No physical iPhone/haptic or paid AI calls were tested. Existing AI feedback is advisory text; AI EQ provenance is supported without falsely enabling it for manual/measurement curves.
+Unsigned package requires user signing. Strict swift-format lint and git diff --check passed.

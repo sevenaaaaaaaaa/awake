@@ -1,5 +1,7 @@
 # Design System Master File
 
+> **Current application:** v0.6 uses the semantic skin tokens in `ui/src/themes.ts` and `ui/src/themes.css`, with the import/export schema in `design.md`. The old olive/gold palette and generated marketing-page defaults below are historical references.
+
 > **LOGIC:** When building a specific page, first check `design-system/pages/[page-name].md`.
 > If that file exists, its rules **override** this Master file.
 > If not, strictly follow the rules below.

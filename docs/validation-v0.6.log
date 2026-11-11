@@ -1,0 +1,154 @@
+Awake 0.6.0 — 2026-11-11 本机验证
+没有调用付费 AI 服务。没有强制切换无线编码。五分钟连续输出是 0.5 的验收，本轮未重跑。
+
+
+普通回归：49 项，包含本机九首演示音频
+   Compiling awake-app v0.6.0 (/Users/seveno/Awake/rust/crates/awake-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.32s
+     Running unittests src/lib.rs (rust/target/debug/deps/awake_app_lib-db3ec892404fde04)
+
+running 20 tests
+test devices::tests::reads_coreaudio_uid_and_transport ... ignored, reads the real default CoreAudio output
+test headphone_catalog::live_tests::real_community_parameters_for_user_headphones ... ignored, downloads the real public index and three model-specific parameter files
+test playback::soak_tests::five_minute_long_track_memory_and_underruns ... ignored, five-minute silent CoreAudio soak; generates a sparse two-hour WAV
+test playback::tests::invalid_requests_do_not_start_an_output_stream ... ok
+test playback::tests::real_output_streaming_queue_pause_seek_and_eof ... ignored, uses the real default CoreAudio output, at zero volume
+test playback::callback_tests::seek_discards_old_audio_and_waits_for_prebuffer_without_losing_new_frames ... ok
+test experience::tests::overlapping_filters_have_enough_headroom_and_flat_is_unmodified ... ok
+test playback::callback_tests::eof_padding_is_not_starvation_but_interrupted_audio_is_counted ... ok
+test remote::tests::real_output_remote_range_seek ... ignored, uses default CoreAudio silently with a loopback Range server
+test headphone_catalog::tests::index_preserves_provenance_and_does_not_substitute_generations ... ok
+test playback::callback_tests::callback_has_no_allocations_or_gap_at_track_boundary_and_eq_change ... ok
+test experience::tests::profile_persists_and_failed_save_does_not_change_memory ... ok
+test feeds::tests::rss_and_atom_match_metadata_without_following_links ... ok
+test intelligence::tests::cloud_proposal_is_bounded_by_real_candidates_and_contains_no_paths ... ok
+test remote::tests::plex_pages_music_only_and_keeps_token_in_header ... ok
+test remote::tests::rejects_auth_failure_cross_origin_and_non_range_servers ... ok
+test remote::tests::authenticated_webdav_ranges_and_seek_are_bounded ... ok
+test intelligence::tests::invalid_audio_is_never_committed_and_cancelled_requests_are_not_sent ... ok
+test intelligence::tests::binary_music_is_validated_saved_and_can_be_streamed_again ... ok
+test connections::tests::background_scan_updates_revision_and_failure_preserves_old_library ... ok
+
+test result: ok. 15 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src/lib.rs (rust/target/debug/deps/awake_core-cb9c0bb912c81908)
+
+running 34 tests
+test eq::tests::headroom_prevents_clipping ... ok
+test eq::tests::all_bands_sum_to_target_curve ... ok
+test eq::tests::boost_is_centered_on_band_frequency ... ok
+test eq::tests::flat_curve_is_transparent ... ok
+test chain::tests::chains_remain_independent_on_the_same_dac_and_require_reference_evidence ... ok
+test library::tests::finds_all_nine_demo_tracks ... ok
+test models::tests::album_key_falls_back_to_artist ... ok
+test lyrics::tests::multi_timestamps_offset_and_metadata ... ok
+test models::tests::quality_label_matches_swift ... ok
+test models::tests::groups_albums_and_sorts_tracks ... ok
+test models::tests::track_id_is_stable_and_short ... ok
+test parametric::tests::apo_import_has_exact_peaking_response_and_shelf_asymptotes ... ok
+test parametric::tests::autoeq_center_shelves_keep_their_q_and_response ... ok
+test library::tests::locator_is_relative_and_unique ... ok
+test metadata::tests::reads_title_and_audio_properties ... ok
+test metadata::tests::reads_embedded_artwork ... ok
+test analyze::tests::detects_1khz_tone_in_correct_band ... ok
+test analyze::tests::silence_is_floor ... ok
+test decode::tests::probes_demo_flac ... ok
+test library::tests::library_roundtrips_through_json ... ok
+test taste::tests::rejects_bad_events_and_handles_empty_library ... ok
+test taste::tests::learns_artist_from_qualified_listen_and_respects_source ... ok
+test taste::tests::seeking_to_eof_does_not_count_as_a_qualified_listen ... ok
+test taste::tests::skip_lowers_rank_and_history_round_trips ... ok
+test resample::tests::exact_length_and_last_samples_survive_filter_latency ... ok
+test library::tests::scans_and_groups_into_three_albums ... ok
+test library::tests::incremental_scan_reuses_cached_entries ... ok
+test resample::tests::stereo_channels_stay_separate ... ok
+test pipeline::tests::format_change_has_correct_counts_and_channel_mapping ... ok
+test resample::tests::preserves_frequency_not_just_length ... ok
+test resample::tests::halves_frame_count_when_downsampling ... ok
+test pipeline::tests::two_hour_file_starts_with_bounded_blocks_and_seeks_to_end ... ok
+test decode::tests::decodes_demo_flac_to_pcm ... ok
+test pipeline::tests::split_wav_is_sample_exact_and_has_no_inserted_silence ... ok
+
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.46s
+
+
+
+真实 CoreAudio 本地/远程音频输出
+   Compiling awake-app v0.6.0 (/Users/seveno/Awake/rust/crates/awake-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.99s
+     Running unittests src/lib.rs (rust/target/debug/deps/awake_app_lib-db3ec892404fde04)
+
+running 2 tests
+test playback::tests::real_output_streaming_queue_pause_seek_and_eof ... streaming startup=564ms capacity=24000frames underruns=0 position=2s
+ok
+test remote::tests::real_output_remote_range_seek ... REMOTE_STREAM_PASS startup=199ms buffer=96000 frames
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 4.17s
+
+
+
+公开社区测量参数下载与解析
+   Compiling awake-core v0.6.0 (/Users/seveno/Awake/rust/crates/awake-core)
+   Compiling awake-app v0.6.0 (/Users/seveno/Awake/rust/crates/awake-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.47s
+     Running unittests src/lib.rs (rust/target/debug/deps/awake_app_lib-db3ec892404fde04)
+
+running 1 test
+Apple AirPods Pro 2: 18 candidates
+validated 10 filters from crinacle on 711
+Apple AirPods Pro 3: 8 candidates
+validated 9 filters from kunkun9527 · 5128 多测量拟合 · MIT
+Apple AirPods Max 2: 0 candidates
+Samsung Galaxy Buds2 Pro: 8 candidates
+validated 10 filters from crinacle on 711
+test headphone_catalog::live_tests::real_community_parameters_for_user_headphones ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 3.42s
+
+
+
+真实 CoreAudio 设备 UID 与传输读取
+   Compiling awake-app v0.6.0 (/Users/seveno/Awake/rust/crates/awake-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.51s
+     Running unittests src/lib.rs (rust/target/debug/deps/awake_app_lib-db3ec892404fde04)
+
+running 1 test
+CoreAudio transport=bluetooth
+test devices::tests::reads_coreaudio_uid_and_transport ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.16s
+
+
+
+最终发布构建
+
+> awake-ui@0.6.0 build
+> vue-tsc --noEmit && vite build
+
+vite v6.4.6 building for production...
+transforming...
+✓ 29 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.39 kB │ gzip:  0.27 kB
+dist/assets/index-BSHM-yZD.css   45.95 kB │ gzip: 10.25 kB
+dist/assets/index-CPHNnhta.js   164.03 kB │ gzip: 60.71 kB
+✓ built in 699ms
+    Blocking waiting for file lock on build directory
+   Compiling awake-app v0.6.0 (/Users/seveno/Awake/rust/crates/awake-app)
+    Finished `release` profile [optimized] target(s) in 1m 23s
+/Users/seveno/Awake/dist-rust/Awake.app: replacing existing signature
+Built: /Users/seveno/Awake/dist-rust/Awake.app
+
+
+界面验收（浏览器与最终原生应用）
+黑/白/玻璃主题切换；自定义设计预览、保存、刷新后恢复；移除本轮测试皮肤。
+design.md 文件导入、导出；非法 URL 颜色被拒绝，当前主题保留。
+系统未配置 AI 时，AI 操作禁用；本轮未做真实付费 AI 请求。
+375px 声音页：main-content scrollWidth == clientWidth == 304，无页面横向溢出；EQ 滑杆在局部滚动。
+内置主题正文/卡片对比度：dark 16.76；light 17.36；glass 15.00。
+实际 AirPods Max 2 识别为蓝牙，PCM 输出 48kHz，无线编码显示系统未公开。
+保存“AirPods Max 2 · 蓝牙”，型号 Apple AirPods Max 2，ANC/耳垫待确认；未套用其他型号校正。
+原生界面搜索到 8 份 Pro 3 社区拟合，预览 9 段参数；因当前型号为 Max 2，应用按钮禁用。
+原生白色、玻璃、黑色主题切换成功，最终保留黑色主题。

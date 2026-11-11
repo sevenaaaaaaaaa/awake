@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --sans:-apple-system,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --s1:#f6f6f4; --s2:#ffffff;
+  --bd:rgba(0,0,0,.14); --bds:rgba(0,0,0,.32);
+  --tx:#1f2328; --tx-soft:#5c6470;
+  --am-bg:#fff6e6; --am-bd:#dfae55; --am-tx:#8a5a00; --am-sub:#a67c2e;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --s1:#242424; --s2:#2b2b2b;
+    --bd:rgba(255,255,255,.16); --bds:rgba(255,255,255,.40);
+    --tx:#ececec; --tx-soft:#9aa0a8;
+    --am-bg:#2c2412; --am-bd:#8a6a2a; --am-tx:#f0c264; --am-sub:#c9a35a;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--sans);font-size:16px;line-height:1.7;color:var(--tx)}
+main.wrap{max-width:680px;margin:0 auto;padding:1rem 0}
+header.head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+h2{margin:0;font-size:18px;font-weight:500;color:var(--tx)}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--tx-soft)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:5px}
+.sw.a{background:var(--am-bg);border:1px solid var(--am-bd)}
+.sw.g{background:var(--s2);border:1px solid var(--bd)}
+svg{width:100%;height:auto;display:block}
+.th{font:500 13px var(--sans);fill:var(--tx)}
+.tha{font:500 13px var(--sans);fill:var(--am-tx)}
+.ts{font:400 11px var(--sans);fill:var(--tx-soft)}
+.tsa{font:400 11px var(--sans);fill:var(--am-sub)}
+.cap{font:400 11px var(--mono);fill:var(--tx-soft)}
+.gl{font:500 12px var(--sans);fill:var(--tx)}
+rect.graph{fill:var(--s2);stroke:var(--bd);stroke-width:1}
+rect.amber{fill:var(--am-bg);stroke:var(--am-bd);stroke-width:1}
+rect.grp{fill:var(--s1);stroke:var(--bd);stroke-width:1}
+.arr-g{stroke:var(--bds);stroke-width:1.2;fill:none}
+.arr-a{stroke:var(--am-bd);stroke-width:1.6;fill:none}
+.dot{stroke:var(--tx-soft);stroke-width:1;stroke-dasharray:3 3;fill:none}
+.fa{fill:var(--am-bd)} .fg{fill:var(--bds)}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="head">
+    <h2>Awake 0.3.0 模块结构</h2>
+    <div class="legend"><span><span class="sw a"></span>实时音频链路</span><span><span class="sw g"></span>界面 / 数据 / 基建</span></div>
+  </header>
+  <svg viewBox="0 0 680 590" role="img" aria-label="Awake 0.3.0 架构：Vue UI 经 Tauri 命令调用 awake-core，音频经解码、重采样、EQ 到 cpal 输出">
+    <defs>
+      <marker id="ma" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="fa"/></marker>
+      <marker id="mg" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="fg"/></marker>
+    </defs>
+    <rect x="170" y="20" width="340" height="58" rx="10" class="graph"/>
+    <text x="340" y="44" text-anchor="middle" class="th">UI · Vue 3 + Vite</text>
+    <text x="340" y="62" text-anchor="middle" class="ts">App.vue 单组件 · @tauri-apps/api</text>
+    <line x1="340" y1="78" x2="340" y2="96" class="arr-g" marker-end="url(#mg)"/>
+    <text x="350" y="91" class="ts">invoke ×9</text>
+    <rect x="140" y="100" width="400" height="90" rx="10" class="graph"/>
+    <text x="340" y="122" text-anchor="middle" class="th">awake-app · Tauri 2 外壳</text>
+    <text x="340" y="138" text-anchor="middle" class="ts">窗口 · 状态桥 · 命令注册</text>
+    <text x="340" y="156" text-anchor="middle" class="cap">scan_library · load_library · play_track · stop_playback</text>
+    <text x="340" y="170" text-anchor="middle" class="cap">playback_status · set_eq_curve · analyze_track</text>
+    <text x="340" y="184" text-anchor="middle" class="cap">set_traffic_lights · frontend_ready</text>
+    <line x1="340" y1="190" x2="340" y2="206" class="arr-g" marker-end="url(#mg)"/>
+    <rect x="40" y="210" width="600" height="240" rx="12" class="grp"/>
+    <text x="56" y="234" class="gl">awake-core · 音频核心</text>
+    <rect x="45" y="252" width="136" height="56" rx="8" class="amber"/>
+    <text x="113" y="275" text-anchor="middle" class="tha">解码 · symphonia</text>
+    <text x="113" y="293" text-anchor="middle" class="tsa">10 种解码格式</text>
+    <rect x="196" y="252" width="136" height="56" rx="8" class="amber"/>
+    <text x="264" y="275" text-anchor="middle" class="tha">重采样 · resample</text>
+    <text x="264" y="293" text-anchor="middle" class="tsa">对齐设备采样率</text>
+    <rect x="347" y="252" width="136" height="56" rx="8" class="amber"/>
+    <text x="415" y="275" text-anchor="middle" class="tha">EQ · eq</text>
+    <text x="415" y="293" text-anchor="middle" class="tsa">set_eq_curve 下发</text>
+    <line x1="181" y1="280" x2="192" y2="280" class="arr-a" marker-end="url(#ma)"/>
+    <line x1="332" y1="280" x2="343" y2="280" class="arr-a" marker-end="url(#ma)"/>
+    <rect x="45" y="360" width="136" height="52" rx="8" class="amber"/>
+    <text x="113" y="381" text-anchor="middle" class="tha">频谱 · analyze</text>
+    <text x="113" y="399" text-anchor="middle" class="tsa">rustfft 抽头</text>
+    <rect x="196" y="360" width="136" height="52" rx="8" class="graph"/>
+    <text x="264" y="381" text-anchor="middle" class="th">曲库 · library</text>
+    <text x="264" y="399" text-anchor="middle" class="ts">扫描与索引</text>
+    <rect x="347" y="360" width="136" height="52" rx="8" class="graph"/>
+    <text x="415" y="381" text-anchor="middle" class="th">元数据 · metadata</text>
+    <text x="415" y="399" text-anchor="middle" class="ts">lofty 标签封面</text>
+    <line x1="113" y1="308" x2="113" y2="356" class="arr-a" marker-end="url(#ma)"/>
+    <text x="121" y="336" class="tsa">抽头</text>
+    <path d="M415,308 V470 H340 V506" class="arr-a" marker-end="url(#ma)"/>
+    <path d="M264,412 V470 H135 V506" class="arr-g" marker-end="url(#mg)"/>
+    <path d="M640,430 H660 V536 H638" class="dot" marker-end="url(#mg)"/>
+    <rect x="50" y="510" width="170" height="64" rx="8" class="amber"/>
+    <text x="135" y="536" text-anchor="middle" class="tha">输出设备 · cpal</text>
+    <text x="135" y="556" text-anchor="middle" class="tsa">设备播放</text>
+    <rect x="255" y="510" width="170" height="64" rx="8" class="graph"/>
+    <text x="340" y="536" text-anchor="middle" class="th">library.json · 数据</text>
+    <text x="340" y="556" text-anchor="middle" class="ts">应用数据目录</text>
+    <rect x="460" y="510" width="170" height="64" rx="8" class="graph"/>
+    <text x="545" y="536" text-anchor="middle" class="th">awake-cli · 验证器</text>
+    <text x="545" y="556" text-anchor="middle" class="ts">解码 EQ 频谱自检</text>
+  </svg>
+</main>
+</body>
+</html>

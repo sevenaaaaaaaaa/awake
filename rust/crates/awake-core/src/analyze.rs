@@ -31,7 +31,8 @@ impl SpectrumAnalyzer {
         // Hann 窗，压低泄漏
         let window = (0..fft_size)
             .map(|i| {
-                let x = 2.0 * std::f32::consts::PI * i as f32 / (fft_size.saturating_sub(1)).max(1) as f32;
+                let x = 2.0 * std::f32::consts::PI * i as f32
+                    / (fft_size.saturating_sub(1)).max(1) as f32;
                 0.5 - 0.5 * x.cos()
             })
             .collect::<Vec<_>>();
@@ -138,9 +139,7 @@ mod tests {
         let fft = 4096usize;
         let mut analyzer = SpectrumAnalyzer::new(fft, sr);
         let mono: Vec<f32> = (0..fft)
-            .map(|i| {
-                (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr).sin() * 0.8
-            })
+            .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr).sin() * 0.8)
             .collect();
 
         let spec = analyzer.analyze(&mono);

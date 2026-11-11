@@ -1,0 +1,66 @@
+Awake iOS 0.7.1 — 2026-11-11
+Simulator: Awake iOS QA / iPhone 17 Pro / iOS 26.5
+Xcode 27.2; minimum iOS 17; native SwiftUI / AVAudioEngine
+
+Full regression: 15 native tests + 3 UI tests
+Test Case '-[AwakeTests.AwakeTests testAPORejectsInvalidAndRetainsCenterShelfQ]' passed (0.002 seconds).
+Test Case '-[AwakeTests.AwakeTests testChainForkPersistenceAndFeedbackAdvice]' passed (0.005 seconds).
+Test Case '-[AwakeTests.AwakeTests testCompatibleQueuePauseAndCompletion]' passed (3.035 seconds).
+Test Case '-[AwakeTests.AwakeTests testEquipmentLegacyDecodeAndModeForkPersistence]' passed (0.005 seconds).
+Test Case '-[AwakeTests.AwakeTests testEquipmentOutputRequiresModelModeAndAnalogPath]' passed (0.001 seconds).
+Test Case '-[AwakeTests.AwakeTests testEquipmentUnitsAndUnknownsAreNotInterchangeable]' passed (0.001 seconds).
+Test Case '-[AwakeTests.AwakeTests testGenerationsAreNotImplicitlyInterchangeable]' passed (0.001 seconds).
+Test Case '-[AwakeTests.AwakeTests testImportUsesRealMetadataAndKeepsOriginalFilename]' passed (0.038 seconds).
+Test Case '-[AwakeTests.AwakeTests testInterruptedJobsDoNotAutoRetryAndCredentialDestinationMustMatch]' passed (0.003 seconds).
+Test Case '-[AwakeTests.AwakeTests testOfflineBenchReportsActualFramesAndFiniteSignal]' passed (0.100 seconds).
+Test Case '-[AwakeTests.AwakeTests testPlaybackSeekDoesNotLearnSkippedTime]' passed (1.012 seconds).
+Test Case '-[AwakeTests.AwakeTests testSkinInteroperabilityAndInjectionRejection]' passed (0.002 seconds).
+Test Case '-[AwakeTests.AwakeTests testSourceBoundaryAndPlaintextRules]' passed (0.001 seconds).
+Test Case '-[AwakeTests.AwakeTests testTwoHourSparseTrackSeeksWithoutFullDecode]' passed (1.066 seconds).
+Test Case '-[AwakeTests.AwakeTests testWebDAVNamespacesAndPlexSections]' passed (0.001 seconds).
+Test Suite 'AwakeTests' passed at 2026-11-11 16:26:39.159.
+	 Executed 15 tests, with 0 failures (0 unexpected) in 5.273 (5.278) seconds
+Test Suite 'AwakeTests.xctest' passed at 2026-11-11 16:26:39.159.
+	 Executed 15 tests, with 0 failures (0 unexpected) in 5.273 (5.279) seconds
+Test Suite 'All tests' passed at 2026-11-11 16:26:39.160.
+	 Executed 15 tests, with 0 failures (0 unexpected) in 5.273 (5.279) seconds
+Test Case '-[AwakeUITests.AwakeUITests testEquipmentGoalsAndSourcesCanBeSaved]' passed (23.366 seconds).
+Test Case '-[AwakeUITests.AwakeUITests testListeningFeedbackAndSoftwareBench]' passed (19.079 seconds).
+Test Case '-[AwakeUITests.AwakeUITests testRouteConfigurationAndNativeThemes]' passed (21.100 seconds).
+Test Suite 'AwakeUITests' passed at 2026-11-11 16:27:45.327.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 63.545 (63.549) seconds
+Test Suite 'AwakeUITests.xctest' passed at 2026-11-11 16:27:45.328.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 63.545 (63.550) seconds
+Test Suite 'All tests' passed at 2026-11-11 16:27:45.329.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 63.545 (63.552) seconds
+** TEST SUCCEEDED **
+
+Final targeted regression after custom-model selector adjustment:
+Test Case '-[AwakeUITests.AwakeUITests testEquipmentGoalsAndSourcesCanBeSaved]' passed (32.414 seconds).
+Test Suite 'AwakeUITests' passed at 2026-11-11 16:29:02.086.
+	 Executed 1 test, with 0 failures (0 unexpected) in 32.414 (32.415) seconds
+Test Suite 'AwakeUITests.xctest' passed at 2026-11-11 16:29:02.087.
+	 Executed 1 test, with 0 failures (0 unexpected) in 32.414 (32.416) seconds
+Test Suite 'Selected tests' passed at 2026-11-11 16:29:02.087.
+	 Executed 1 test, with 0 failures (0 unexpected) in 32.414 (32.417) seconds
+** TEST SUCCEEDED **
+
+Release device archive: ** ARCHIVE SUCCEEDED **
+{
+  "version": "0.7.1",
+  "build": "8",
+  "platforms": [
+    "iPhoneOS"
+  ],
+  "minimumOS": "17.0",
+  "privacyManifest": true,
+  "appIcon": true,
+  "signed": false,
+  "qaFixtureInRelease": false,
+  "sizeBytes": 2293009,
+  "sha256": "063900ca7671fcc92d6920d50e3959927c8760a795571e073b2459a4c39fea8a"
+}
+
+Device tuning evidence is model-specific and source-tagged. Seed catalog: 3 headphones, 2 frontends / 6 output modes. Not comprehensive.
+No physical iPhone, acoustic bench or paid cloud AI was tested. Unsigned IPA needs user signing.
+Swift-format strict lint, shell syntax and git diff --check passed.

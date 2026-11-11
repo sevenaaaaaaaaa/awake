@@ -18,6 +18,7 @@ use symphonia::core::probe::Hint;
 /// 一首曲目的格式描述。
 #[derive(Debug, Clone)]
 pub struct TrackFormat {
+    pub tags: StreamTags,
     pub path: PathBuf,
     pub sample_rate: u32,
     pub channels: usize,
@@ -31,6 +32,36 @@ impl TrackFormat {
     pub fn is_hires(&self) -> bool {
         self.sample_rate > 48_000 || self.bits_per_sample.map(|b| b > 16).unwrap_or(false)
     }
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct StreamTags {
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub album_artist: String,
+    pub genre: String,
+}
+fn stream_tags(reader: &mut dyn symphonia::core::formats::FormatReader) -> StreamTags {
+    use symphonia::core::meta::StandardTagKey;
+    let mut tags = StreamTags::default();
+    let metadata = reader.metadata();
+    if let Some(revision) = metadata.current() {
+        for tag in revision.tags() {
+            let target = match tag.std_key {
+                Some(StandardTagKey::TrackTitle) => &mut tags.title,
+                Some(StandardTagKey::Artist) => &mut tags.artist,
+                Some(StandardTagKey::Album) => &mut tags.album,
+                Some(StandardTagKey::AlbumArtist) => &mut tags.album_artist,
+                Some(StandardTagKey::Genre) => &mut tags.genre,
+                _ => continue,
+            };
+            if target.is_empty() {
+                *target = tag.value.to_string().chars().take(2000).collect();
+            }
+        }
+    }
+    tags
 }
 
 /// 已解码的一整首歌（内存版，便于 EQ 与频谱分析）。
@@ -68,17 +99,30 @@ fn open_probe(path: &Path) -> Result<Box<dyn symphonia::core::formats::FormatRea
         hint.with_extension(ext);
     }
 
+    probe_stream(mss, hint)
+}
+fn probe_stream(
+    mss: MediaSourceStream,
+    hint: Hint,
+) -> Result<Box<dyn symphonia::core::formats::FormatReader>> {
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
-        .context("无法识别音频格式（可能是不受支持的编码）")?;
-
+        .format(
+            &hint,
+            mss,
+            &FormatOptions {
+                enable_gapless: true,
+                ..FormatOptions::default()
+            },
+            &MetadataOptions::default(),
+        )
+        .context("无法识别音频格式")?;
     Ok(probed.format)
 }
 
 /// 只读文件头，拿到格式信息，不解码全部音频。
 pub fn probe_format(path: impl AsRef<Path>) -> Result<TrackFormat> {
     let path = path.as_ref();
-    let mut reader = open_probe(path)?;
+    let reader = open_probe(path)?;
 
     let track = reader
         .tracks()
@@ -107,6 +151,7 @@ pub fn probe_format(path: impl AsRef<Path>) -> Result<TrackFormat> {
         .unwrap_or_else(|| "unknown".to_string());
 
     Ok(TrackFormat {
+        tags: StreamTags::default(),
         path: path.to_path_buf(),
         sample_rate,
         channels,
@@ -177,6 +222,7 @@ pub fn decode_file(path: impl AsRef<Path>) -> Result<DecodedAudio> {
     }
 
     let format = TrackFormat {
+        tags: StreamTags::default(),
         path: path.to_path_buf(),
         sample_rate,
         channels,
@@ -206,7 +252,10 @@ impl TrackFormat {
     /// 是否属于需要 ffmpeg 兜底的格式（DSD / APE）。
     pub fn needs_fallback(path: &Path) -> bool {
         matches!(
-            path.extension().and_then(|e| e.to_str()).map(|s| s.to_ascii_lowercase()).as_deref(),
+            path.extension()
+                .and_then(|e| e.to_str())
+                .map(|s| s.to_ascii_lowercase())
+                .as_deref(),
             Some("dsf") | Some("dff") | Some("ape") | Some("wv")
         )
     }
@@ -218,14 +267,9 @@ mod tests {
 
     fn demo_file() -> Option<PathBuf> {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../DemoMusic");
-        let entries = std::fs::read_dir(dir).ok()?;
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.extension().and_then(|x| x.to_str()) == Some("flac") {
-                return Some(p);
-            }
-        }
-        None
+        crate::library::collect_audio_files(&dir)
+            .into_iter()
+            .find(|p| p.extension().and_then(|x| x.to_str()) == Some("flac"))
     }
 
     #[test]
@@ -236,7 +280,11 @@ mod tests {
         };
         let fmt = probe_format(&path).expect("应能读出格式");
         assert_eq!(fmt.channels, 2, "演示曲应为立体声");
-        assert_eq!(fmt.sample_rate, 96_000, "演示曲为 96 kHz，实测 {}", fmt.sample_rate);
+        assert_eq!(
+            fmt.sample_rate, 96_000,
+            "演示曲为 96 kHz，实测 {}",
+            fmt.sample_rate
+        );
         assert!(fmt.is_hires(), "24bit/96k 应判定为 hires");
     }
 
@@ -247,8 +295,139 @@ mod tests {
             return;
         };
         let audio = decode_file(&path).expect("应能解码");
-        assert!(audio.frames() > 96_000, "至少 1 秒音频，实测 {} 帧", audio.frames());
+        assert!(
+            audio.frames() > 96_000,
+            "至少 1 秒音频，实测 {} 帧",
+            audio.frames()
+        );
         assert_eq!(audio.samples.len(), audio.frames() * audio.format.channels);
         assert!(audio.peak() > 0.001, "不应全是静音");
+    }
+}
+
+/// Packet-at-a-time decoder. Memory is bounded by the container/codec packet size.
+pub struct StreamDecoder {
+    pub format: TrackFormat,
+    reader: Box<dyn symphonia::core::formats::FormatReader>,
+    decoder: Box<dyn symphonia::core::codecs::Decoder>,
+    track_id: u32,
+    time_base: symphonia::core::units::TimeBase,
+    skip_until: u64,
+}
+
+impl StreamDecoder {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        Self::from_reader(path, open_probe(path)?)
+    }
+    pub fn open_source(
+        source: Box<dyn symphonia::core::io::MediaSource>,
+        extension: &str,
+    ) -> Result<Self> {
+        let mut hint = Hint::new();
+        hint.with_extension(extension);
+        let reader = probe_stream(MediaSourceStream::new(source, Default::default()), hint)?;
+        Self::from_reader(Path::new("remote"), reader)
+    }
+    fn from_reader(
+        path: &Path,
+        mut reader: Box<dyn symphonia::core::formats::FormatReader>,
+    ) -> Result<Self> {
+        let tags = stream_tags(reader.as_mut());
+        let track = reader
+            .tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .ok_or_else(|| anyhow!("文件里没有音轨"))?;
+        let params = &track.codec_params;
+        let rate = params.sample_rate.ok_or_else(|| anyhow!("未知采样率"))?;
+        let channels = params
+            .channels
+            .ok_or_else(|| anyhow!("未知声道布局"))?
+            .count();
+        anyhow::ensure!(
+            (8000..=768000).contains(&rate) && channels > 0 && channels <= 8,
+            "不支持的音频格式"
+        );
+        let decoder = symphonia::default::get_codecs().make(params, &DecoderOptions::default())?;
+        let format = TrackFormat {
+            tags,
+            path: path.to_path_buf(),
+            sample_rate: rate,
+            channels,
+            codec: symphonia::default::get_codecs()
+                .get_codec(params.codec)
+                .map(|c| c.short_name.to_string())
+                .unwrap_or_default(),
+            bits_per_sample: params.bits_per_sample,
+            duration_secs: params.n_frames.map(|n| n as f64 / rate as f64),
+        };
+        let track_id = track.id;
+        let time_base = params
+            .time_base
+            .unwrap_or(symphonia::core::units::TimeBase::new(1, rate));
+        Ok(Self {
+            format,
+            reader,
+            decoder,
+            track_id,
+            time_base,
+            skip_until: 0,
+        })
+    }
+    pub fn seek(&mut self, seconds: f64) -> Result<()> {
+        use symphonia::core::{
+            formats::{SeekMode, SeekTo},
+            units::Time,
+        };
+        anyhow::ensure!(seconds.is_finite() && seconds >= 0.0, "无效的跳转位置");
+        self.reader.seek(
+            SeekMode::Accurate,
+            SeekTo::Time {
+                time: Time::from(seconds),
+                track_id: Some(self.track_id),
+            },
+        )?;
+        self.decoder.reset();
+        self.skip_until = (seconds * self.format.sample_rate as f64).round() as u64;
+        Ok(())
+    }
+    pub fn next_packet(&mut self) -> Result<Option<Vec<f32>>> {
+        loop {
+            let packet = match self.reader.next_packet() {
+                Ok(packet) => packet,
+                Err(symphonia::core::errors::Error::IoError(e))
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    return Ok(None)
+                }
+                Err(e) => return Err(e.into()),
+            };
+            if packet.track_id() != self.track_id {
+                continue;
+            }
+            let buf = self.decoder.decode(&packet)?;
+            anyhow::ensure!(
+                buf.spec().rate == self.format.sample_rate
+                    && buf.spec().channels.count() == self.format.channels,
+                "音轨内部格式变化，无法连续解码"
+            );
+            anyhow::ensure!(buf.frames() <= 262144, "音频包超过解码缓冲限制");
+            let mut samples =
+                symphonia::core::audio::SampleBuffer::<f32>::new(buf.frames() as u64, *buf.spec());
+            samples.copy_interleaved_ref(buf);
+            let time = self.time_base.calc_time(packet.ts());
+            let start =
+                ((time.seconds as f64 + time.frac) * self.format.sample_rate as f64).round() as u64;
+            let skip = self.skip_until.saturating_sub(start) as usize;
+            let frames = samples.len() / self.format.channels;
+            if skip >= frames {
+                continue;
+            }
+            self.skip_until = 0;
+            return Ok(Some(
+                samples.samples()[skip * self.format.channels..].to_vec(),
+            ));
+        }
     }
 }

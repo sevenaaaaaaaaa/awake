@@ -1,0 +1,2067 @@
+{
+  "version": 1,
+  "checked": "2026-11-11",
+  "models": [
+    {
+      "id": "wh-1000xm4",
+      "name": "Sony WH-1000XM4",
+      "brand": "索尼 Sony",
+      "aliases": [
+        "WH-1000XM4",
+        "索尼 WH-1000XM4"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪头戴，支持模拟线连接。开机有线与关机被动模式分别建档；USB 充电口不作为 USB 音频入口。",
+      "source": "https://www.sony.com/electronics/support/wireless-headphones-bluetooth-headphones/wh-1000xm4/specifications",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "analog"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透",
+        "被动模式"
+      ],
+      "measurementNames": [
+        "Sony WH-1000XM4"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "wh-1000xm5",
+      "name": "Sony WH-1000XM5",
+      "brand": "索尼 Sony",
+      "aliases": [
+        "WH-1000XM5",
+        "索尼 WH-1000XM5"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪头戴，支持模拟线连接。开机有线与关机被动模式分别建档；USB 充电口不作为 USB 音频入口。 厂商有线参数：开机 48 Ω / 102 dB/mW，关机 16 Ω / 100 dB/mW；请确认供电状态后手动录入对应组合。",
+      "source": "https://www.sony.com/electronics/support/wireless-headphones-bluetooth-headphones/wh-1000xm5/specifications",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "analog"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透",
+        "被动模式"
+      ],
+      "measurementNames": [
+        "Sony WH-1000XM5"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "wh-1000xm6",
+      "name": "Sony WH-1000XM6",
+      "brand": "索尼 Sony",
+      "aliases": [
+        "WH-1000XM6",
+        "索尼 WH-1000XM6"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪头戴，支持模拟线连接。开机有线与关机被动模式分别建档；USB 充电口不作为 USB 音频入口。 厂商有线参数：开机 48 Ω / 103 dB/mW，关机 16 Ω / 102 dB/mW；请确认供电状态后手动录入对应组合。",
+      "source": "https://www.sony.com/electronics/support/wireless-headphones-bluetooth-headphones/wh-1000xm6/specifications",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "analog"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透",
+        "被动模式"
+      ],
+      "measurementNames": [
+        "Sony WH-1000XM6"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "wf-1000xm5",
+      "name": "Sony WF-1000XM5",
+      "brand": "索尼 Sony",
+      "aliases": [
+        "WF-1000XM5",
+        "索尼 WF-1000XM5"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线降噪入耳式。原装隔音耳塞与替换耳套分别记录；WH 头戴与 WF 入耳不互用参数。",
+      "source": "https://www.sony.com/electronics/support/wireless-headphones-bluetooth-headphones/wf-1000xm5/specifications",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Sony WF-1000XM5"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "wf-1000xm6",
+      "name": "Sony WF-1000XM6",
+      "brand": "索尼 Sony",
+      "aliases": [
+        "WF-1000XM6",
+        "索尼 WF-1000XM6"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线降噪入耳式。原装隔音耳塞与替换耳套分别记录；WH 头戴与 WF 入耳不互用参数。",
+      "source": "https://www.sony.com/electronics/support/wireless-headphones-bluetooth-headphones/wf-1000xm6/specifications",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Sony WF-1000XM6"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "wh-ch720n",
+      "name": "Sony WH-CH720N",
+      "brand": "索尼 Sony",
+      "aliases": [
+        "WH-CH720N",
+        "索尼 CH720N"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：封闭头戴式；调音偏好请结合当前模式与个人反馈确认。 厂商有线参数：开机 325 Ω / 108 dB/mW，关机 31 Ω / 99 dB/mW；请确认供电状态后手动录入对应组合。",
+      "source": "https://www.sony.com/electronics/support/wireless-headphones-bluetooth-headphones/wh-ch720n/specifications",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "analog"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透",
+        "被动模式"
+      ],
+      "measurementNames": [
+        "Sony WH-CH720N"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "linkbuds-open",
+      "name": "Sony LinkBuds Open",
+      "brand": "索尼 Sony",
+      "aliases": [
+        "LinkBuds Open",
+        "索尼 LinkBuds Open"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商定位：开放式环形单元。优先确认佩戴位置与环境声，低频目标按开放结构试听。",
+      "source": "https://www.sony.com/electronics/support/wireless-headphones-bluetooth-headphones/wf-l910/specifications",
+      "form": "开放式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "开放式佩戴"
+      ],
+      "measurementNames": [
+        "Sony LinkBuds Open"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "qc45",
+      "name": "Bose QuietComfort 45",
+      "brand": "Bose",
+      "aliases": [
+        "Bose QC45"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪头戴，Quiet / Aware 模式；模拟线与蓝牙分别记录。",
+      "source": "https://www.bose.com/p/headphones/quietcomfort-45-headphones/QC45-HEADPHONEARN.html",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "analog"
+      ],
+      "modes": [
+        "ANC 开启",
+        "通透"
+      ],
+      "measurementNames": [
+        "Bose QuietComfort 45"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "qc2023",
+      "name": "Bose QuietComfort Headphones 2023",
+      "brand": "Bose",
+      "aliases": [
+        "Bose QC 2023"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：2023 年 QuietComfort 头戴款，区别于 QC45 与 Ultra 系列。",
+      "source": "https://www.bose.com/p/headphones/quietcomfort-headphones/QC-HEADPHONEARN.html",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "analog"
+      ],
+      "modes": [
+        "ANC 开启",
+        "通透"
+      ],
+      "measurementNames": [
+        "Bose QuietComfort Headphones 2023"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "qc-ultra",
+      "name": "Bose QuietComfort Ultra Headphones",
+      "brand": "Bose",
+      "aliases": [
+        "Bose QC Ultra 一代"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：Ultra 头戴一代，Quiet / Aware / Immersion 分开记录；不沿用二代的 USB 音频能力。",
+      "source": "https://www.bose.com/p/headphones/bose-quietcomfort-ultra-headphones/QCUH-HEADPHONEARN.html",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "analog"
+      ],
+      "modes": [
+        "ANC 开启",
+        "通透"
+      ],
+      "measurementNames": [
+        "Bose QuietComfort Ultra Headphones",
+        "Bose QuietComfort Ultra"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "qc-ultra-2",
+      "name": "Bose QuietComfort Ultra Headphones 2nd Gen",
+      "brand": "Bose",
+      "aliases": [
+        "Bose QC Ultra 二代"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：Ultra 头戴二代，支持 USB 音频。和一代分开匹配；USB、模拟线、蓝牙及沉浸音效分别记录。",
+      "source": "https://www.bose.com/p/headphones/bose-quietcomfort-ultra-headphones-2nd-gen/QCUH2-HEADPHONEARN.html",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "analog",
+        "usb"
+      ],
+      "modes": [
+        "ANC 开启",
+        "通透"
+      ],
+      "measurementNames": [
+        "Bose QuietComfort Ultra Headphones 2nd Gen"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "qc-ultra-earbuds",
+      "name": "Bose QuietComfort Ultra Earbuds",
+      "brand": "Bose",
+      "aliases": [
+        "Bose Ultra Earbuds 一代"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：Ultra 入耳一代。CustomTune 与沉浸音效属于设备端处理，和头戴 Ultra 不互用测量。",
+      "source": "https://www.bose.com/p/earbuds/bose-quietcomfort-ultra-earbuds/QCUE-HEADPHONEIN.html",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "通透"
+      ],
+      "measurementNames": [
+        "Bose QuietComfort Ultra Earbuds"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "qc-ultra-earbuds-2",
+      "name": "Bose QuietComfort Ultra Earbuds 2nd Gen",
+      "brand": "Bose",
+      "aliases": [
+        "Bose Ultra Earbuds 二代"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：Ultra 入耳二代。充电盒 USB-C 不等于 USB 音频；不使用头戴二代参数。",
+      "source": "https://support.bose.co.uk/article/quietcomfort-ultra-earbuds-gen-2-specifications",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "通透"
+      ],
+      "measurementNames": [
+        "Bose QuietComfort Ultra Earbuds 2nd Gen"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "bose-open",
+      "name": "Bose Ultra Open Earbuds",
+      "brand": "Bose",
+      "aliases": [
+        "Bose Ultra Open",
+        "Bose 开放式耳夹"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商定位：开放式耳夹。记录夹持位置，避免以密闭入耳目标大幅补低频。",
+      "source": "https://www.bose.com/p/earbuds/bose-ultra-open-earbuds/ULT-HEADPHONEOPN.html",
+      "form": "耳夹开放式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "开放式佩戴"
+      ],
+      "measurementNames": [
+        "Bose Ultra Open Earbuds"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "hd600",
+      "name": "Sennheiser HD 600",
+      "brand": "森海塞尔 Sennheiser",
+      "aliases": [
+        "HD600",
+        "HD 600",
+        "森海塞尔 HD600"
+      ],
+      "impedance": 300,
+      "sensitivity": 97,
+      "unit": "dB/V",
+      "description": "厂商资料：开放式参考聆听；厂商灵敏度单位为 dB/V。",
+      "source": "https://us.sennheiser-hearing.com/products/hd-600",
+      "form": "开放头戴式",
+      "connections": [
+        "analog"
+      ],
+      "modes": [
+        "被动模式"
+      ],
+      "measurementNames": [
+        "Sennheiser HD 600"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "hd560s",
+      "name": "Sennheiser HD 560S",
+      "brand": "森海塞尔 Sennheiser",
+      "aliases": [
+        "HD560S",
+        "森海塞尔 HD560S"
+      ],
+      "impedance": 120,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：开放式有线；耳垫状态与佩戴会影响听感。",
+      "source": "https://us.sennheiser-hearing.com/products/hd-560s",
+      "form": "开放头戴式",
+      "connections": [
+        "analog"
+      ],
+      "modes": [
+        "被动模式"
+      ],
+      "measurementNames": [
+        "Sennheiser HD 560S"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "ie200",
+      "name": "Sennheiser IE 200",
+      "brand": "森海塞尔 Sennheiser",
+      "aliases": [
+        "IE200",
+        "森海塞尔 IE200"
+      ],
+      "impedance": 18,
+      "sensitivity": 119,
+      "unit": "dB/V",
+      "description": "厂商资料：有线入耳；耳套位置与密封需一起记录。 厂商阻抗 18 Ω 含线、16 Ω 不含线；此处采用含线数据。",
+      "source": "https://us.sennheiser-hearing.com/products/ie-200",
+      "form": "入耳式",
+      "connections": [
+        "analog"
+      ],
+      "modes": [
+        "被动模式"
+      ],
+      "measurementNames": [
+        "Sennheiser IE 200"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "momentum4",
+      "name": "Sennheiser MOMENTUM 4 Wireless",
+      "brand": "森海塞尔 Sennheiser",
+      "aliases": [
+        "MOMENTUM 4",
+        "森海塞尔 大馒头4"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪头戴；蓝牙、USB 与模拟线分别建档，设备端个性化音效单独记录。",
+      "source": "https://us.sennheiser-hearing.com/products/momentum-4-wireless",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "analog",
+        "usb"
+      ],
+      "modes": [
+        "ANC 开启",
+        "通透"
+      ],
+      "measurementNames": [
+        "Sennheiser MOMENTUM 4 Wireless"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "mtw4",
+      "name": "Sennheiser MOMENTUM True Wireless 4",
+      "brand": "森海塞尔 Sennheiser",
+      "aliases": [
+        "MTW4",
+        "森海塞尔 真无线4"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线入耳；音效个性化和自适应降噪按实际状态记录。",
+      "source": "https://us.sennheiser-hearing.com/products/momentum-true-wireless-4",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Sennheiser MOMENTUM True Wireless 4"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "accentum-plus",
+      "name": "Sennheiser ACCENTUM Plus Wireless",
+      "brand": "森海塞尔 Sennheiser",
+      "aliases": [
+        "ACCENTUM Plus",
+        "森海塞尔 ACCENTUM Plus"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪头戴；和 ACCENTUM 标准版分别匹配。",
+      "source": "https://us.sennheiser-hearing.com/products/accentum-plus-wireless",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "analog",
+        "usb"
+      ],
+      "modes": [
+        "ANC 开启",
+        "通透"
+      ],
+      "measurementNames": [
+        "Sennheiser ACCENTUM Plus Wireless"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "chu2",
+      "name": "Moondrop CHU II",
+      "brand": "水月雨 Moondrop",
+      "aliases": [
+        "Moondrop Chu 2",
+        "水月雨 竹2",
+        "CHU II",
+        "竹2"
+      ],
+      "impedance": 18,
+      "sensitivity": 119,
+      "unit": "dB/V",
+      "description": "厂商资料：厂商以 VDSF 为调音目标；3.5mm 模拟版与 DSP 线版本需分开记录。",
+      "source": "https://moondroplab.com/en-products/chu-ii",
+      "form": "入耳式",
+      "connections": [
+        "analog"
+      ],
+      "modes": [
+        "被动模式"
+      ],
+      "measurementNames": [
+        "Moondrop Chu 2"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "aria2",
+      "name": "Moondrop ARIA 2",
+      "brand": "水月雨 Moondrop",
+      "aliases": [
+        "ARIA2",
+        "水月雨 咏叹调2",
+        "咏叹调2"
+      ],
+      "impedance": 33,
+      "sensitivity": 122,
+      "unit": "dB/V",
+      "description": "厂商资料：有线入耳；耳套与替换导管状态一起记录。",
+      "source": "https://moondroplab.com/en/products/aria2",
+      "form": "入耳式",
+      "connections": [
+        "analog"
+      ],
+      "modes": [
+        "被动模式"
+      ],
+      "measurementNames": [
+        "Moondrop ARIA 2"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "kato",
+      "name": "Moondrop KATO",
+      "brand": "水月雨 Moondrop",
+      "aliases": [
+        "水月雨 KATO",
+        "KATO"
+      ],
+      "impedance": 32,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：有线入耳；不同导管和耳套单独记录。 厂商标称阻抗 32 Ω；当前网页灵敏度单位存在排版疑义，暂不据此计算推力。",
+      "source": "https://moondroplab.com/en/products/kato",
+      "form": "入耳式",
+      "connections": [
+        "analog"
+      ],
+      "modes": [
+        "被动模式"
+      ],
+      "measurementNames": [
+        "Moondrop KATO"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "may",
+      "name": "Moondrop MAY",
+      "brand": "水月雨 Moondrop",
+      "aliases": [
+        "水月雨 梅",
+        "水月雨 MAY"
+      ],
+      "impedance": 30,
+      "sensitivity": 120,
+      "unit": "dB/V",
+      "description": "厂商资料：USB-C DSP 混合单元入耳。原装 DSP 线与换模拟线分别建档，先核对设备端曲线，避免双重校正。",
+      "source": "https://moondroplab.com/en/products/may",
+      "form": "入耳式",
+      "connections": [
+        "usb",
+        "analog"
+      ],
+      "modes": [
+        "被动模式"
+      ],
+      "measurementNames": [
+        "Moondrop MAY"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "space-travel",
+      "name": "Moondrop Space Travel",
+      "brand": "水月雨 Moondrop",
+      "aliases": [
+        "水月雨 太空漫游",
+        "太空漫游"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线降噪；设备端预设和 ANC 状态分别记录。",
+      "source": "https://moondroplab.com/en/products/space-travel",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Moondrop Space Travel"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "ad2000x",
+      "name": "Audio-Technica ATH-AD2000X",
+      "brand": "铁三角 Audio-Technica",
+      "aliases": [
+        "ATH-AD2000X",
+        "AD2000X"
+      ],
+      "impedance": 40,
+      "sensitivity": 103,
+      "unit": "dB/mW",
+      "description": "厂商定位：开放式动圈。个人的人声偏好优先保留。",
+      "source": "https://www.audio-technica.com/en-us/ath-ad2000x",
+      "form": "开放头戴式",
+      "connections": [
+        "analog"
+      ],
+      "modes": [
+        "被动模式"
+      ],
+      "measurementNames": [
+        "Audio-Technica ATH-AD2000X"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "studio-pro",
+      "name": "Beats Studio Pro",
+      "brand": "Beats",
+      "aliases": [
+        "Studio Pro"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商说明：USB-C 有 Signature、Entertainment、Conversation 三种配置，分别保存设备端模式。",
+      "source": "https://www.beatsbydre.com/support/headphones/studio-pro",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "analog",
+        "usb"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Beats Studio Pro"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "airpods-pro2",
+      "name": "Apple AirPods Pro 2",
+      "brand": "苹果 Apple",
+      "aliases": [
+        "AirPods Pro2",
+        "AirPods Pro 2",
+        "苹果 AirPods Pro 2"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：Pro 2；请在设备端模式注明 Lightning / USB-C 修订版及固件。",
+      "source": "https://support.apple.com/109525",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透",
+        "自适应"
+      ],
+      "measurementNames": [
+        "Apple AirPods Pro 2",
+        "Apple AirPods Pro2"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "airpods-pro3",
+      "name": "Apple AirPods Pro 3",
+      "brand": "苹果 Apple",
+      "aliases": [
+        "AirPods Pro3",
+        "AirPods Pro 3",
+        "苹果 AirPods Pro 3"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：Pro 3，和 Pro 2 分开匹配；泡棉复合耳套状态一起记录。",
+      "source": "https://support.apple.com/109525",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "通透",
+        "自适应"
+      ],
+      "measurementNames": [
+        "Apple AirPods Pro 3"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "airpods4",
+      "name": "Apple AirPods 4",
+      "brand": "苹果 Apple",
+      "aliases": [
+        "AirPods 4 标准版",
+        "苹果 AirPods 4"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：AirPods 4 标准版，不含主动降噪。",
+      "source": "https://support.apple.com/109525",
+      "form": "半入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "开放式佩戴"
+      ],
+      "measurementNames": [],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "airpods4-anc",
+      "name": "Apple AirPods 4 ANC",
+      "brand": "苹果 Apple",
+      "aliases": [
+        "AirPods 4 降噪版",
+        "苹果 AirPods 4 ANC"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：AirPods 4 主动降噪版，和标准版分别建档。",
+      "source": "https://support.apple.com/109525",
+      "form": "半入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透",
+        "自适应"
+      ],
+      "measurementNames": [],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "max2020",
+      "name": "Apple AirPods Max 2020",
+      "brand": "苹果 Apple",
+      "aliases": [
+        "AirPods Max Lightning",
+        "AirPods Max 2020"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：Lightning 初代；有线需要匹配的音频线，USB 充电线不等于音频线。",
+      "source": "https://support.apple.com/109525",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "analog"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Apple AirPods Max"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "max2024",
+      "name": "Apple AirPods Max USB-C 2024",
+      "brand": "苹果 Apple",
+      "aliases": [
+        "AirPods Max USB-C",
+        "AirPods Max 2024"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：USB-C 修订版；USB 音频按系统、固件和线材实际能力确认；不当作 Max 2。",
+      "source": "https://support.apple.com/109525",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "usb"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "max2",
+      "name": "Apple AirPods Max 2",
+      "brand": "苹果 Apple",
+      "aliases": [
+        "AirPods Max2",
+        "AirPods Max 2",
+        "苹果 AirPods Max 2"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：Max 2，与 2020 / 2024 初代分开匹配。",
+      "source": "https://support.apple.com/109525",
+      "form": "封闭头戴式",
+      "connections": [
+        "bluetooth",
+        "usb"
+      ],
+      "modes": [
+        "ANC 开启",
+        "通透",
+        "自适应"
+      ],
+      "measurementNames": [
+        "Apple AirPods Max 2"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "earpods-usbc",
+      "name": "Apple EarPods USB-C",
+      "brand": "苹果 Apple",
+      "aliases": [
+        "EarPods USB-C",
+        "苹果 EarPods USB-C"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：开放佩戴的 EarPods；按接口和是否经过小尾巴分别建档。",
+      "source": "https://www.apple.com/shop/product/mtjy3am/a/earpods-usb-c",
+      "form": "平头式",
+      "connections": [
+        "usb"
+      ],
+      "modes": [
+        "开放式佩戴"
+      ],
+      "measurementNames": [],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "earpods-35",
+      "name": "Apple EarPods 3.5mm",
+      "brand": "苹果 Apple",
+      "aliases": [
+        "EarPods 3.5mm",
+        "苹果 EarPods 3.5mm"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：开放佩戴的 EarPods；按接口和是否经过小尾巴分别建档。",
+      "source": "https://www.apple.com/shop/product/mnhf2am/a/earpods-35mm-headphone-plug",
+      "form": "平头式",
+      "connections": [
+        "analog"
+      ],
+      "modes": [
+        "开放式佩戴"
+      ],
+      "measurementNames": [],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "buds2pro",
+      "name": "Samsung Galaxy Buds2 Pro",
+      "brand": "三星 Samsung",
+      "aliases": [
+        "三星 Buds2 Pro",
+        "Galaxy Buds 2 Pro",
+        "三星 buds 2 pro"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线降噪入耳。Galaxy 专属编码、空间与增强功能按手机支持情况确认；iOS 不因此解锁三星专属功能。",
+      "source": "https://www.samsung.com/us/support/owners/product/galaxy-buds2-pro/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Samsung Galaxy Buds2 Pro"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "buds3pro",
+      "name": "Samsung Galaxy Buds3 Pro",
+      "brand": "三星 Samsung",
+      "aliases": [
+        "三星 Buds3 Pro",
+        "Galaxy Buds 3 Pro"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线降噪入耳。Galaxy 专属编码、空间与增强功能按手机支持情况确认；iOS 不因此解锁三星专属功能。",
+      "source": "https://www.samsung.com/fr/support/mobile-devices/what-are-the-differences-between-the-galaxy-buds4-pro-buds4-and-galaxy-buds3-pro-buds3/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Samsung Galaxy Buds3 Pro"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "buds4pro",
+      "name": "Samsung Galaxy Buds4 Pro",
+      "brand": "三星 Samsung",
+      "aliases": [
+        "三星 Buds4 Pro",
+        "Galaxy Buds 4 Pro"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线降噪入耳。Galaxy 专属编码、空间与增强功能按手机支持情况确认；iOS 不因此解锁三星专属功能。",
+      "source": "https://www.samsung.com/fr/support/mobile-devices/what-are-the-differences-between-the-galaxy-buds4-pro-buds4-and-galaxy-buds3-pro-buds3/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Samsung Galaxy Buds4 Pro"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "buds3fe",
+      "name": "Samsung Galaxy Buds3 FE",
+      "brand": "三星 Samsung",
+      "aliases": [
+        "三星 Buds3 FE",
+        "Galaxy Buds 3 FE"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线降噪入耳。Galaxy 专属编码、空间与增强功能按手机支持情况确认；iOS 不因此解锁三星专属功能。",
+      "source": "https://www.samsung.com/us/mobile-audio/galaxy-buds/compare/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Samsung Galaxy Buds3 FE"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "xiaomi-buds-5",
+      "name": "Xiaomi Buds 5",
+      "brand": "小米 / Redmi",
+      "aliases": [
+        "小米 Buds5",
+        "小米 Buds 5"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：半入耳式；厂商 Harman AudioEFX 调音，按设备端音效分别保存。",
+      "source": "https://www.mi.com/global/product/xiaomi-buds-5/",
+      "form": "半入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Xiaomi Buds 5"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "xiaomi-buds-5-pro",
+      "name": "Xiaomi Buds 5 Pro",
+      "brand": "小米 / Redmi",
+      "aliases": [
+        "小米 Buds5 Pro",
+        "小米 Buds 5 Pro"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：入耳式；厂商双功放三单元与 Harman AudioEFX。蓝牙版与 Wi-Fi 版本不可混用链路，Wi-Fi 专属能力需兼容手机。",
+      "source": "https://www.mi.com/global/product/xiaomi-buds-5-pro/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Xiaomi Buds 5 Pro"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "redmi-buds-5-pro",
+      "name": "Redmi Buds 5 Pro",
+      "brand": "小米 / Redmi",
+      "aliases": [
+        "红米 Buds5 Pro",
+        "红米 Buds 5 Pro"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线降噪入耳；LDAC 与设备端音效按系统支持情况确认。",
+      "source": "https://www.mi.com/global/product/redmi-buds-5-pro/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Redmi Buds 5 Pro"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "redmi-buds-6",
+      "name": "Redmi Buds 6",
+      "brand": "小米 / Redmi",
+      "aliases": [
+        "红米 Buds6",
+        "红米 Buds 6"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：双单元降噪入耳；标准版与 Pro 版独立匹配。",
+      "source": "https://www.mi.com/global/product/redmi-buds-6/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Redmi Buds 6"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "redmi-buds-6-pro",
+      "name": "Redmi Buds 6 Pro",
+      "brand": "小米 / Redmi",
+      "aliases": [
+        "红米 Buds6 Pro",
+        "红米 Buds 6 Pro"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：三单元降噪入耳；设备端空间音效与编码条件分别确认。",
+      "source": "https://www.mi.com/global/product/redmi-buds-6-pro/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Redmi Buds 6 Pro"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "huawei-freebuds-pro-3",
+      "name": "HUAWEI FreeBuds Pro 3",
+      "brand": "华为 HUAWEI",
+      "aliases": [
+        "华为 FreeBuds Pro 3",
+        "FreeBuds Pro 3"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪入耳，记录智慧生活中的音效、ANC 与耳套；专属功能依赖手机与固件。",
+      "source": "https://consumer.huawei.com/cn/support/content/zh-cn00759656/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "HUAWEI FreeBuds Pro 3"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "huawei-freebuds-pro-4",
+      "name": "HUAWEI FreeBuds Pro 4",
+      "brand": "华为 HUAWEI",
+      "aliases": [
+        "华为 FreeBuds Pro 4",
+        "FreeBuds Pro 4"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪入耳，记录智慧生活中的音效、ANC 与耳套；专属功能依赖手机与固件。",
+      "source": "https://consumer.huawei.com/cn/support/content/zh-cn00759656/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "HUAWEI FreeBuds Pro 4"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "huawei-freebuds-pro-5",
+      "name": "HUAWEI FreeBuds Pro 5",
+      "brand": "华为 HUAWEI",
+      "aliases": [
+        "华为 FreeBuds Pro 5",
+        "FreeBuds Pro 5"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪入耳，记录智慧生活中的音效、ANC 与耳套；专属功能依赖手机与固件。",
+      "source": "https://consumer.huawei.com/cn/headphones/freebuds-pro-5/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "HUAWEI FreeBuds Pro 5"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "huawei-freebuds-6i",
+      "name": "HUAWEI FreeBuds 6i",
+      "brand": "华为 HUAWEI",
+      "aliases": [
+        "华为 FreeBuds 6i",
+        "FreeBuds 6i"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪入耳，记录智慧生活中的音效、ANC 与耳套；专属功能依赖手机与固件。",
+      "source": "https://consumer.huawei.com/cn/support/content/zh-cn00759656/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "HUAWEI FreeBuds 6i"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "huawei-freebuds-7i",
+      "name": "HUAWEI FreeBuds 7i",
+      "brand": "华为 HUAWEI",
+      "aliases": [
+        "华为 FreeBuds 7i",
+        "FreeBuds 7i"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪入耳，记录智慧生活中的音效、ANC 与耳套；专属功能依赖手机与固件。",
+      "source": "https://consumer.huawei.com/cn/support/content/zh-cn00759656/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "HUAWEI FreeBuds 7i"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "huawei-freebuds-6",
+      "name": "HUAWEI FreeBuds 6",
+      "brand": "华为 HUAWEI",
+      "aliases": [
+        "华为 FreeBuds 6",
+        "FreeBuds 6"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：半入耳降噪，密封感和低频不能套用入耳式目标。",
+      "source": "https://consumer.huawei.com/cn/support/content/zh-cn00759656/",
+      "form": "半入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭"
+      ],
+      "measurementNames": [
+        "HUAWEI FreeBuds 6"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "huawei-freeclip",
+      "name": "HUAWEI FreeClip",
+      "brand": "华为 HUAWEI",
+      "aliases": [
+        "华为 FreeClip",
+        "FreeClip"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：开放式耳夹，佩戴位置与环境声优先记录。",
+      "source": "https://consumer.huawei.com/cn/support/content/zh-cn00759656/",
+      "form": "耳夹开放式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "开放式佩戴"
+      ],
+      "measurementNames": [
+        "HUAWEI FreeClip"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "huawei-freeclip-2",
+      "name": "HUAWEI FreeClip 2",
+      "brand": "华为 HUAWEI",
+      "aliases": [
+        "华为 FreeClip 2",
+        "FreeClip 2"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：开放式耳夹，佩戴位置与环境声优先记录。",
+      "source": "https://consumer.huawei.com/cn/headphones/freeclip2/",
+      "form": "耳夹开放式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "开放式佩戴"
+      ],
+      "measurementNames": [
+        "HUAWEI FreeClip 2"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "huawei-freebuds-se-3",
+      "name": "HUAWEI FreeBuds SE 3",
+      "brand": "华为 HUAWEI",
+      "aliases": [
+        "华为 FreeBuds SE 3",
+        "FreeBuds SE 3"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：基础真无线入耳，不添加未确认的主动降噪状态。",
+      "source": "https://consumer.huawei.com/cn/support/content/zh-cn00759656/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "原声"
+      ],
+      "measurementNames": [
+        "HUAWEI FreeBuds SE 3"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "oppo-enco-x2",
+      "name": "OPPO Enco X2",
+      "brand": "OPPO",
+      "aliases": [
+        "OPPO EncoX2"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线降噪入耳；设备端预设与连接手机分别记录，LHDC 等能力按系统支持情况确认。",
+      "source": "https://www.oppo.com/uk/accessories/oppo-enco-x/specs/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "OPPO Enco X2"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "oppo-enco-x3",
+      "name": "OPPO Enco X3",
+      "brand": "OPPO",
+      "aliases": [
+        "OPPO EncoX3"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线降噪入耳；设备端预设与连接手机分别记录，LHDC 等能力按系统支持情况确认。",
+      "source": "https://www.oppo.com/cn/headphones/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "OPPO Enco X3"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "oppo-enco-air4-pro",
+      "name": "OPPO Enco Air4 Pro",
+      "brand": "OPPO",
+      "aliases": [
+        "OPPO Air4 Pro"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线降噪入耳；设备端预设与连接手机分别记录，LHDC 等能力按系统支持情况确认。",
+      "source": "https://www.oppo.com/en/accessories/enco-air4-pro/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "OPPO Enco Air4 Pro"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "oppo-enco-x3s",
+      "name": "OPPO Enco X3s",
+      "brand": "OPPO",
+      "aliases": [
+        "OPPO EncoX3s"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线降噪入耳；设备端预设与连接手机分别记录，LHDC 等能力按系统支持情况确认。",
+      "source": "https://www.oppo.com/uk/accessories/oppo-enco-x/specs/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "OPPO Enco X3s"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "oneplus-pro3",
+      "name": "OnePlus Buds Pro 3",
+      "brand": "一加 OnePlus",
+      "aliases": [
+        "一加 Buds Pro 3"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：双单元、双 DAC 真无线降噪；丹拿或设备端预设单独记录，专属编码需兼容手机。",
+      "source": "https://www.oneplus.com/us/product/product/oneplus-buds-pro-3",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "OnePlus Buds Pro 3"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "oneplus-buds4",
+      "name": "OnePlus Buds 4",
+      "brand": "一加 OnePlus",
+      "aliases": [
+        "一加 Buds 4"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：双单元、双 DAC 真无线降噪；丹拿或设备端预设单独记录，专属编码需兼容手机。",
+      "source": "https://www.oneplus.com/us/oneplus-buds-4",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "OnePlus Buds 4"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "vivo-tws4",
+      "name": "vivo TWS 4",
+      "brand": "vivo / iQOO",
+      "aliases": [
+        "vivo TWS4"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪入耳。Hi-Fi 版与标准版独立匹配；低延迟与自适应音效取决于配套手机和工作状态。 厂商标注第二代高通 S3 音频平台；芯片型号不替代该耳机的测量。",
+      "source": "https://www.vivo.com.cn/vivo/param/vivotws4",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "vivo TWS 4"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "vivo-tws4-hifi",
+      "name": "vivo TWS 4 Hi-Fi",
+      "brand": "vivo / iQOO",
+      "aliases": [
+        "vivo TWS4 HiFi"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪入耳。Hi-Fi 版与标准版独立匹配；低延迟与自适应音效取决于配套手机和工作状态。 厂商标注第三代高通 S3 音频平台；和普通 TWS 4 不共用型号档案。",
+      "source": "https://www.vivo.com.cn/vivo/param/vivotws4hifi",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "vivo TWS 4 Hi-Fi"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "vivo-tws5",
+      "name": "vivo TWS 5",
+      "brand": "vivo / iQOO",
+      "aliases": [
+        "vivo TWS5"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪入耳。Hi-Fi 版与标准版独立匹配；低延迟与自适应音效取决于配套手机和工作状态。",
+      "source": "https://www.vivo.com.cn/vivo/param/vivotws5",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "vivo TWS 5"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "iqoo-tws5",
+      "name": "iQOO TWS 5",
+      "brand": "vivo / iQOO",
+      "aliases": [
+        "iQOO TWS5"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪入耳。Hi-Fi 版与标准版独立匹配；低延迟与自适应音效取决于配套手机和工作状态。",
+      "source": "https://www.vivo.com.cn/vivo/iqootws5/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "iQOO TWS 5"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "honor-3pro",
+      "name": "HONOR Earbuds 3 Pro",
+      "brand": "荣耀 HONOR",
+      "aliases": [
+        "荣耀 Earbuds3 Pro",
+        "荣耀 Earbuds 3 Pro"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：按实际降噪类型与佩戴方式保存；跨手机平台不保证全部增强功能。",
+      "source": "https://www.honor.com/cn/support/content/zh-cn15904928/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "HONOR Earbuds 3 Pro"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "honor-4",
+      "name": "HONOR Earbuds 4",
+      "brand": "荣耀 HONOR",
+      "aliases": [
+        "荣耀 Earbuds4",
+        "荣耀 Earbuds 4"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：按实际降噪类型与佩戴方式保存；跨手机平台不保证全部增强功能。",
+      "source": "https://www.honor.com/cn/support/content/zh-cn15904928/",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "HONOR Earbuds 4"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "honor-open",
+      "name": "HONOR Earbuds Open",
+      "brand": "荣耀 HONOR",
+      "aliases": [
+        "荣耀开放式耳机",
+        "荣耀 Earbuds 开放式"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：按实际降噪类型与佩戴方式保存；跨手机平台不保证全部增强功能。",
+      "source": "https://www.honor.com/cn/support/content/zh-cn15904928/",
+      "form": "开放式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "开放式佩戴",
+        "ANC 开启",
+        "ANC 关闭"
+      ],
+      "measurementNames": [
+        "HONOR Earbuds Open"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "realme-air6",
+      "name": "realme Buds Air6",
+      "brand": "realme",
+      "aliases": [
+        "真我 Buds Air6",
+        "realme Buds Air 6"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线主动降噪。标准版与 Pro 版独立匹配，游戏模式与编码依赖兼容设备。",
+      "source": "https://www.realme.com/ru/newsroom/Air6",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "realme Buds Air6"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "realme-air6-pro",
+      "name": "realme Buds Air6 Pro",
+      "brand": "realme",
+      "aliases": [
+        "真我 Buds Air6 Pro",
+        "realme Buds Air 6 Pro"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：真无线主动降噪。标准版与 Pro 版独立匹配，游戏模式与编码依赖兼容设备。",
+      "source": "https://www.realme.com/ru/newsroom/Air6",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "realme Buds Air6 Pro"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "google-pixel-buds-pro-2",
+      "name": "Google Pixel Buds Pro 2",
+      "brand": "Google Pixel",
+      "aliases": [
+        "Pixel Buds Pro 2",
+        "谷歌 Pixel Buds Pro 2"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：Tensor A1 与主动降噪；可连接 iOS 蓝牙，完整配置和部分增强功能需兼容 Android。",
+      "source": "https://support.google.com/googlepixelbuds/answer/10595435?hl=en-IN",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Google Pixel Buds Pro 2"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "google-pixel-buds-2a",
+      "name": "Google Pixel Buds 2a",
+      "brand": "Google Pixel",
+      "aliases": [
+        "Pixel Buds 2a",
+        "谷歌 Pixel Buds 2a"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：Tensor A1 与主动降噪；可连接 iOS 蓝牙，完整配置和部分增强功能需兼容 Android。",
+      "source": "https://support.google.com/googlepixelbuds/answer/10595435?hl=en-IN",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Google Pixel Buds 2a"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "nothing-ear2024",
+      "name": "Nothing Ear 2024",
+      "brand": "Nothing",
+      "aliases": [
+        "Nothing Ear (2024)"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：2024 年 Ear，和 Ear (2)、Ear (3)、Ear (a) 独立匹配。",
+      "source": "https://checkout-au.nothing.tech/pages/about",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Nothing Ear (2024)"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "nothing-eara",
+      "name": "Nothing Ear (a)",
+      "brand": "Nothing",
+      "aliases": [
+        "Nothing Ear a"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：降噪入耳，Bass Enhance 低频算法按实际开启状态记录。",
+      "source": "https://checkout-eu.nothing.tech/products/ear-a",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Nothing Ear (a)"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "nothing-ear3",
+      "name": "Nothing Ear (3)",
+      "brand": "Nothing",
+      "aliases": [
+        "Nothing Ear 3"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "厂商资料：2025 年第三代，和 2024 Ear 分开；Super Mic 等功能按设备与应用实际支持确认。",
+      "source": "https://us.nothing.tech/llms.txt",
+      "form": "入耳式",
+      "connections": [
+        "bluetooth"
+      ],
+      "modes": [
+        "ANC 开启",
+        "ANC 关闭",
+        "通透"
+      ],
+      "measurementNames": [
+        "Nothing Ear (3)"
+      ],
+      "status": "厂商资料",
+      "checked": "2026-11-11"
+    },
+    {
+      "id": "vido-unconfirmed",
+      "name": "原道 / Vido（版本待确认）",
+      "brand": "原道 / Vido",
+      "aliases": [
+        "原道",
+        "Vido",
+        "原道耳机"
+      ],
+      "impedance": null,
+      "sensitivity": null,
+      "unit": "dB/V",
+      "description": "版本登记入口：请填写包装型号、购买渠道、是否带麦、插头与耳棉。同名版本未核实，不预置阻抗、调音标签或测量 EQ。",
+      "source": "",
+      "form": "平头式（待确认）",
+      "connections": [
+        "analog"
+      ],
+      "modes": [
+        "开放式佩戴"
+      ],
+      "measurementNames": [],
+      "status": "版本待确认",
+      "checked": "2026-11-11"
+    }
+  ]
+}

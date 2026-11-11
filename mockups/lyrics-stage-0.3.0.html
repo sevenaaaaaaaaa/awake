@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;color:var(--text-primary,#1f2328);-webkit-font-smoothing:antialiased}
+.wrap{max-width:680px;margin:0 auto;padding:1rem 0}
+.head-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+h2{margin:0;font-size:18px;font-weight:500;color:var(--text-primary,#1f2328)}
+.legend{display:flex;gap:12px;font-size:12px;color:var(--text-secondary,#5c6470);align-items:center;flex-wrap:wrap}
+.dotn{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;font:500 11px/1 var(--mono);margin-right:5px;vertical-align:-3px}
+.dotn.on{background:#d9a24a;color:#1a1408}
+.dotn.off{border:1px solid #d9a24a;color:#d9a24a}
+.win{--s0:#12110f;--s1:#161513;--s2:#1c1a18;--s3:#262421;--hair:rgba(239,233,222,.08);
+  --t1:#efe9de;--t2:#aaa398;--t3:#8a847a;--ac:#d9a24a;--onac:#1a1408;--tint:217,162,74;
+  --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,monospace;
+  display:grid;grid-template-columns:176px minmax(0,1fr);grid-template-rows:1fr 84px;
+  width:100%;max-width:672px;margin:0 auto;height:508px;
+  background:var(--s1);color:var(--t1);border:1px solid var(--hair);border-radius:12px;overflow:hidden;position:relative;font-size:13px;line-height:18px}
+.side{grid-row:1;background:var(--s0);border-right:1px solid var(--hair);padding:0 10px 10px;display:flex;flex-direction:column;min-width:0}
+.whead{height:44px;display:flex;align-items:center;gap:6px;padding:0 4px;flex-shrink:0}
+.tl{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.tl.r{background:#ff5f57}.tl.y{background:#febc2e}.tl.g{background:#28c840}
+.brand{display:flex;align-items:center;gap:7px;padding:0 8px 14px;font-size:16px;font-weight:600;letter-spacing:-.01em}
+.brand i{color:var(--ac);font-size:17px}
+.nsec{font-size:11px;font-weight:500;color:var(--t3);padding:14px 8px 5px}
+.nav{display:flex;flex-direction:column;gap:1px}
+.ni{display:flex;align-items:center;gap:7px;height:29px;padding:0 8px;border-radius:8px;font-size:13px;color:var(--t2)}
+.ni i{font-size:15px;color:var(--t3)}
+.ni .c{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--t3)}
+.ni.on{background:var(--s3);color:var(--t1);box-shadow:inset 0 1px 0 rgba(255,255,255,.1)}
+.ni.on i{color:var(--t1)}
+.foot{margin-top:auto;padding:10px 8px 0;border-top:1px solid var(--hair);display:flex;justify-content:space-between}
+.plate{font-family:var(--mono);font-size:11px;line-height:16px;color:var(--t3);letter-spacing:0;white-space:nowrap}
+.main{grid-row:1;min-width:0;padding:14px 20px 0;display:flex;flex-direction:column}
+.back{display:inline-flex;align-items:center;gap:3px;height:22px;padding:0 6px 0 2px;border-radius:4px;font-size:12px;color:var(--t2);margin-bottom:10px;width:max-content}
+.back i{font-size:13px}
+.stage{display:grid;grid-template-columns:176px minmax(0,1fr);gap:20px;align-items:start}
+.cw{position:relative;width:176px}
+.cover{box-sizing:border-box;width:176px;height:176px;border-radius:12px;background:#121110;display:flex;align-items:flex-end;padding:14px 12px;position:relative}
+.cover::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px var(--hair);pointer-events:none}
+.bars{display:flex;align-items:flex-end;gap:2px;width:100%;height:64px}
+.bars b{flex:1;background:rgba(217,162,74,.85);border-radius:1px;display:block}
+.lyr{min-width:0}
+.tk{font-size:15px;font-weight:500;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tm{font-size:12px;line-height:17px;color:var(--t2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp{display:flex;gap:10px;font-family:var(--mono);font-size:11px;color:var(--t3);margin-top:6px}
+.stack{margin-top:15px;display:flex;flex-direction:column;gap:9px;min-width:0;position:relative}
+.ln{min-width:0}
+.ln .en{display:block;width:100%;float:none;font-size:13px;line-height:18px;color:var(--t3);white-space:normal}
+.ln .zh{display:block;width:100%;float:none;font-size:12px;line-height:16px;color:var(--t3);opacity:.8;margin-top:1px;white-space:normal}
+.ln.cur{padding-left:10px;position:relative}
+.ln.cur::before{content:"";position:absolute;left:0;top:1px;bottom:1px;width:2px;border-radius:1px;background:rgba(var(--tint),.9)}
+.ln.cur .en{font-size:14px;line-height:20px;color:var(--t1);font-weight:500}
+.ln.cur .zh{font-size:12px;line-height:16px;color:var(--t2);opacity:1}
+.specwrap{margin-top:auto;padding:12px 0 10px;position:relative}
+.spectxt{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:11px;color:var(--t3);margin-bottom:6px}
+.spec{display:flex;align-items:flex-end;gap:3px;height:46px;border-bottom:1px solid var(--hair);padding-bottom:1px}
+.spec b{flex:1;background:rgba(217,162,74,.7);border-radius:1px;display:block}
+.pb{grid-column:1/-1;grid-row:2;display:grid;grid-template-columns:minmax(0,1fr) 264px minmax(0,1fr);align-items:center;gap:16px;padding:0 18px;background:var(--s0);border-top:1px solid var(--hair)}
+.now{display:flex;align-items:center;gap:10px;min-width:0}
+.nart{width:52px;height:52px;border-radius:8px;background:#1c1a18;position:relative;display:flex;align-items:flex-end;padding:8px 6px;overflow:hidden;flex-shrink:0}
+.nart::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px var(--hair)}
+.nart .bars{height:20px;gap:1.5px}
+.nt{min-width:0}
+.nt .a{font-size:13px;line-height:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nt .b{font-size:12px;line-height:17px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb{display:flex;flex-direction:column;gap:6px;min-width:0}
+.tr{display:flex;align-items:center;justify-content:center;gap:14px}
+.ib{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;color:var(--t3);opacity:.35}
+.ib i{font-size:15px}
+.pbplay{width:38px;height:38px;border-radius:50%;background:var(--ac);color:var(--onac);display:grid;place-items:center}
+.pbplay i{font-size:17px}
+.tml{display:grid;grid-template-columns:34px minmax(0,1fr) 34px;gap:8px;align-items:center}
+.tml span{font-family:var(--mono);font-size:11px;color:var(--t3)}
+.tml span:last-child{text-align:right}
+.rail{position:relative;height:2px;border-radius:1px;background:var(--s3);overflow:hidden}
+.rail i{position:absolute;left:0;top:0;bottom:0;width:38%;border-radius:1px;background:rgba(var(--tint),.9);display:block}
+.right{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0}
+.badge{width:18px;height:18px;border-radius:50%;font:500 11px/1 var(--mono);display:inline-grid;place-items:center;flex-shrink:0}
+.badge.on{background:var(--ac);color:var(--onac)}
+.badge.off{background:#12110f;border:1px solid var(--ac);color:var(--ac)}
+.badge.abs{position:absolute;top:-8px;right:-8px;z-index:5}
+.badge.inl{margin-left:6px;vertical-align:2px}
+.key{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:8px 22px}
+.key .k{display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:17px;color:var(--text-secondary,#5c6470)}
+.key .k .badge{margin-top:0}
+@media (max-width:620px){
+  .win{height:auto;grid-template-columns:1fr;grid-template-rows:auto auto}
+  .side{display:none}
+  .main{padding:12px 14px 0}
+  .stage{grid-template-columns:104px minmax(0,1fr);gap:12px}
+  .cw,.cover{width:104px}
+  .cover{height:104px;padding:10px 8px}
+  .bars{height:44px}
+  .pb{grid-column:1;grid-template-columns:1fr;padding:10px 14px 12px;gap:8px}
+  .right{align-items:flex-start;flex-direction:row;gap:10px}
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="head-row">
+    <h2>Awake 0.3.0 · 歌词舞台拟稿</h2>
+    <div class="legend">
+      <span><span class="dotn on">1</span>0.3.0 已有</span>
+      <span><span class="dotn off">3</span>待建 / 待接通</span>
+    </div>
+  </div>
+
+  <div class="win">
+    <aside class="side">
+      <div class="whead">
+        <span class="tl r"></span><span class="tl y"></span><span class="tl g"></span>
+        <span class="badge on inl">1</span>
+      </div>
+      <div class="brand"><i class="ti ti-wave-sine" aria-hidden="true"></i><span>Awake</span></div>
+      <nav class="nav">
+        <div class="nsec">曲库</div>
+        <div class="ni"><i class="ti ti-disc" aria-hidden="true"></i>专辑<span class="c">9</span></div>
+        <div class="ni"><i class="ti ti-list" aria-hidden="true"></i>歌曲<span class="c">9</span></div>
+        <div class="ni on"><i class="ti ti-microphone-2" aria-hidden="true"></i>歌词舞台</div>
+        <div class="nsec">来源</div>
+        <div class="ni"><i class="ti ti-database" aria-hidden="true"></i>演示曲库<span class="c">9</span></div>
+        <div class="nsec">声音</div>
+        <div class="ni"><i class="ti ti-sliders" aria-hidden="true"></i>31 段 EQ</div>
+      </nav>
+      <div class="foot"><span class="plate">v0.3.0</span><span class="plate">9 首</span></div>
+    </aside>
+
+    <div class="main">
+      <div class="back"><i class="ti ti-chevron-left" aria-hidden="true"></i>专辑</div>
+      <div class="stage">
+        <div class="cw">
+          <div class="cover"><div class="bars"><b style="height:32%"></b><b style="height:42%"></b><b style="height:55%"></b><b style="height:70%"></b><b style="height:84%"></b><b style="height:100%"></b><b style="height:90%"></b><b style="height:78%"></b><b style="height:66%"></b><b style="height:80%"></b><b style="height:92%"></b><b style="height:86%"></b><b style="height:72%"></b><b style="height:60%"></b><b style="height:54%"></b><b style="height:46%"></b><b style="height:40%"></b><b style="height:54%"></b><b style="height:68%"></b><b style="height:60%"></b><b style="height:50%"></b><b style="height:42%"></b><b style="height:36%"></b><b style="height:46%"></b><b style="height:58%"></b><b style="height:50%"></b><b style="height:40%"></b><b style="height:32%"></b><b style="height:26%"></b><b style="height:22%"></b><b style="height:18%"></b><b style="height:14%"></b></div></div>
+          <span class="badge on abs">2</span>
+        </div>
+        <div class="lyr">
+          <div class="tk">Nightflight</div>
+          <div class="tm">Demo Ensemble · Night Flights</div>
+          <div class="sp"><span>FLAC</span><span>24-bit</span><span>96 kHz</span><span>2 ch</span></div>
+          <div class="stack"><span class="badge off" style="position:absolute;top:-9px;right:-9px">4</span>
+            <div class="ln"><div class="en">silver runway hums under amber light</div><div class="zh">银色的跑道在琥珀灯下低鸣</div></div>
+            <div class="ln cur"><div class="en">and the city lights bleed into one</div><div class="zh">城市的灯火融成一片</div></div>
+            <div class="ln"><div class="en">we chase the horizon through the haze</div><div class="zh">我们在雾气里追逐地平线</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="specwrap">
+        <div class="spectxt"><span>32 段实时频谱 · 0–16 kHz</span><span class="badge off">3</span></div>
+        <div class="spec"><b style="height:22%"></b><b style="height:30%"></b><b style="height:40%"></b><b style="height:36%"></b><b style="height:46%"></b><b style="height:58%"></b><b style="height:50%"></b><b style="height:62%"></b><b style="height:74%"></b><b style="height:66%"></b><b style="height:78%"></b><b style="height:88%"></b><b style="height:80%"></b><b style="height:70%"></b><b style="height:62%"></b><b style="height:74%"></b><b style="height:84%"></b><b style="height:76%"></b><b style="height:66%"></b><b style="height:58%"></b><b style="height:50%"></b><b style="height:62%"></b><b style="height:54%"></b><b style="height:46%"></b><b style="height:40%"></b><b style="height:46%"></b><b style="height:54%"></b><b style="height:46%"></b><b style="height:40%"></b><b style="height:32%"></b><b style="height:26%"></b><b style="height:20%"></b></div>
+      </div>
+    </div>
+
+    <div class="pb">
+      <div class="now">
+        <div class="nart"><div class="bars"><b style="height:32%"></b><b style="height:42%"></b><b style="height:55%"></b><b style="height:70%"></b><b style="height:84%"></b><b style="height:100%"></b><b style="height:90%"></b><b style="height:78%"></b><b style="height:66%"></b><b style="height:80%"></b><b style="height:92%"></b><b style="height:86%"></b><b style="height:72%"></b><b style="height:60%"></b><b style="height:54%"></b><b style="height:46%"></b></div></div>
+        <div class="nt"><div class="a">Nightflight</div><div class="b">Demo Ensemble · Night Flights</div></div>
+      </div>
+      <div class="tb">
+        <div class="tr">
+          <span class="ib"><i class="ti ti-player-skip-back" aria-hidden="true"></i></span>
+          <span class="pbplay"><i class="ti ti-player-pause" aria-hidden="true"></i></span>
+          <span class="ib"><i class="ti ti-player-skip-forward" aria-hidden="true"></i></span>
+        </div>
+        <div class="tml"><span>1:42</span><div class="rail"><i></i></div><span>4:37</span></div>
+      </div>
+      <div class="right"><span class="plate">FLAC · 24/96</span><span class="plate">播放中</span></div>
+    </div>
+  </div>
+
+  <div class="key">
+    <div class="k"><span class="badge on">1</span><span>悬停浮现的交通灯：顶栏零占位，mousemove ≤56px 唤出（已有）</span></div>
+    <div class="k"><span class="badge on">2</span><span>封面取色 → tint 回声（×0.55 + 90×0.45），驱动高亮条与进度（已有）</span></div>
+    <div class="k"><span class="badge off">3</span><span>32 段实时频谱需播放抽头；后端现有 analyze_track 为离线分析</span></div>
+    <div class="k"><span class="badge off">4</span><span>逐句译文需迁歌词源；awake-core 暂无 lyrics 模块（0.2 走 LRCLIB）</span></div>
+  </div>
+</main>
+</body>
+</html>

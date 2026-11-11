@@ -16,3 +16,7 @@ ui/.vite/
 
 # 发行包（构建产物）
 Awake-*-macos-arm64.zip
+
+# iOS 构建产物
+dist-ios/
+ios/*.xcodeproj/xcuserdata/

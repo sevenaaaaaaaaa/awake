@@ -7,6 +7,25 @@ withDefaults(defineProps<{ name: string; size?: number; stroke?: number }>(), {
 });
 
 const PATHS: Record<string, string> = {
+  home: '<path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+  spark:
+    '<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5Z"/>',
+  orbit:
+    '<circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="11" ry="4.5" transform="rotate(-40 12 12)"/><ellipse cx="12" cy="12" rx="11" ry="4.5" transform="rotate(40 12 12)"/>',
+  headphones:
+    '<path d="M4 14v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="12" width="4" height="8" rx="2"/><rect x="17" y="12" width="4" height="8" rx="2"/>',
+  chevron: '<path d="m9 6 6 6-6 6"/>',
+  arrow: '<path d="M4 12h16m-6-6 6 6-6 6"/>',
+  folder: '<path d="M3 6h7l2 2h9v12H3Z"/><path d="M3 8V4h7l2 2"/>',
+  refresh:
+    '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.3 6.3a8 8 0 0 1 13 3M4.7 14.7a8 8 0 0 0 13 3"/>',
+  shield:
+    '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8 12 3 3 5-6"/>',
+  close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  check: '<path d="m5 12 5 5L20 7"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',
+
   disc: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/>',
   list: '<path d="M21 15V6"/><path d="M18.5 18.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M21 6l-9 2"/><path d="M8.5 18.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M12 18V8"/>',
   database:
@@ -27,6 +46,8 @@ const PATHS: Record<string, string> = {
   music:
     '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
   wave: '<path d="M2 12h2l2-6 3 12 3-9 2 5h4"/>',
+  lyrics:
+    '<path d="M4 7h9"/><path d="M4 12h6"/><path d="M4 17h11"/><path d="M17 4v11"/><circle cx="17" cy="17" r="2.5"/><path d="M19.5 17V8"/>',
 };
 </script>
 

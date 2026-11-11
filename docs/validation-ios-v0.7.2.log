@@ -1,0 +1,99 @@
+Awake iOS 0.7.2 — Mainstream headphones — 2026-11-11
+Xcode 27.2; iPhoneOS ARM64 Release; minimum iOS 17
+Simulator: Awake iOS QA / iPhone 17 Pro / iOS 26.5
+
+Final regression: 18 native tests + 4 UI tests
+Test Case '-[AwakeTests.AwakeTests testAPORejectsInvalidAndRetainsCenterShelfQ]' passed (0.003 seconds).
+Test Case '-[AwakeTests.AwakeTests testChainForkPersistenceAndFeedbackAdvice]' passed (0.005 seconds).
+Test Case '-[AwakeTests.AwakeTests testCompatibleQueuePauseAndCompletion]' passed (2.974 seconds).
+Test Case '-[AwakeTests.AwakeTests testEquipmentLegacyDecodeAndModeForkPersistence]' passed (0.014 seconds).
+Test Case '-[AwakeTests.AwakeTests testEquipmentOutputRequiresModelModeAndAnalogPath]' passed (0.001 seconds).
+Test Case '-[AwakeTests.AwakeTests testEquipmentUnitsAndUnknownsAreNotInterchangeable]' passed (0.002 seconds).
+Test Case '-[AwakeTests.AwakeTests testGenerationsAreNotImplicitlyInterchangeable]' passed (0.001 seconds).
+Test Case '-[AwakeTests.AwakeTests testImportUsesRealMetadataAndKeepsOriginalFilename]' passed (0.019 seconds).
+Test Case '-[AwakeTests.AwakeTests testInterruptedJobsDoNotAutoRetryAndCredentialDestinationMustMatch]' passed (0.002 seconds).
+Test Case '-[AwakeTests.AwakeTests testMainstreamCatalogBrandsAliasesAndSourceIntegrity]' passed (0.012 seconds).
+Test Case '-[AwakeTests.AwakeTests testMainstreamMeasurementMappingAndConditionIsolation]' passed (0.004 seconds).
+Test Case '-[AwakeTests.AwakeTests testModelSelectionResetsConditionsAndPreservesSameModelOverrides]' passed (0.001 seconds).
+Test Case '-[AwakeTests.AwakeTests testOfflineBenchReportsActualFramesAndFiniteSignal]' passed (0.099 seconds).
+Test Case '-[AwakeTests.AwakeTests testPlaybackSeekDoesNotLearnSkippedTime]' passed (1.008 seconds).
+Test Case '-[AwakeTests.AwakeTests testSkinInteroperabilityAndInjectionRejection]' passed (0.002 seconds).
+Test Case '-[AwakeTests.AwakeTests testSourceBoundaryAndPlaintextRules]' passed (0.001 seconds).
+Test Case '-[AwakeTests.AwakeTests testTwoHourSparseTrackSeeksWithoutFullDecode]' passed (1.065 seconds).
+Test Case '-[AwakeTests.AwakeTests testWebDAVNamespacesAndPlexSections]' passed (0.001 seconds).
+Test Suite 'AwakeTests' passed at 2026-11-11 16:39:39.167.
+	 Executed 18 tests, with 0 failures (0 unexpected) in 5.216 (5.222) seconds
+Test Suite 'AwakeTests.xctest' passed at 2026-11-11 16:39:39.167.
+	 Executed 18 tests, with 0 failures (0 unexpected) in 5.216 (5.222) seconds
+Test Suite 'All tests' passed at 2026-11-11 16:39:39.168.
+	 Executed 18 tests, with 0 failures (0 unexpected) in 5.216 (5.223) seconds
+Test Case '-[AwakeUITests.AwakeUITests testEquipmentGoalsAndSourcesCanBeSaved]' passed (32.365 seconds).
+Test Case '-[AwakeUITests.AwakeUITests testListeningFeedbackAndSoftwareBench]' passed (18.875 seconds).
+Test Case '-[AwakeUITests.AwakeUITests testMainstreamCatalogBrandFilterAndSelection]' passed (17.962 seconds).
+Test Case '-[AwakeUITests.AwakeUITests testRouteConfigurationAndNativeThemes]' passed (20.280 seconds).
+Test Suite 'AwakeUITests' passed at 2026-11-11 16:41:10.981.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 89.482 (89.488) seconds
+Test Suite 'AwakeUITests.xctest' passed at 2026-11-11 16:41:10.982.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 89.482 (89.489) seconds
+Test Suite 'All tests' passed at 2026-11-11 16:41:10.983.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 89.482 (89.490) seconds
+** TEST SUCCEEDED **
+
+Device archive: ** ARCHIVE SUCCEEDED **
+{
+  "version": "0.7.2",
+  "build": "9",
+  "platforms": [
+    "iPhoneOS"
+  ],
+  "minimumOS": "17.0",
+  "catalogModels": 75,
+  "brandGroups": 18,
+  "pendingVersionEntries": 1,
+  "catalogMatchesSource": true,
+  "privacyManifest": true,
+  "appIcon": true,
+  "containsProvisioningProfile": false,
+  "qaFixtureInRelease": false,
+  "sizeBytes": 2332132,
+  "sha256": "e56984cd1aa1c6992e783fa6e5dba5b608c76aecc47d78fe9e03f354d092004c"
+}
+
+Live public measurement file download smoke checks (not acoustic validation):
+[
+  {
+    "model": "Sony WH-1000XM6",
+    "url": "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/Kuulokenurkka/over-ear/Sony%20WH-1000XM6/Sony%20WH-1000XM6%20ParametricEQ.txt",
+    "bytes": 478,
+    "hasPreamp": true,
+    "hasFilters": true
+  },
+  {
+    "model": "Huawei FreeBuds Pro 4 (ANC on)",
+    "url": "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/Regan%20Cipher/in-ear/Huawei%20FreeBuds%20Pro%204%20(ANC%20on)/Huawei%20FreeBuds%20Pro%204%20(ANC%20on)%20ParametricEQ.txt",
+    "bytes": 482,
+    "hasPreamp": true,
+    "hasFilters": true
+  },
+  {
+    "model": "Moondrop Chu 2",
+    "url": "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/HypetheSonics/GRAS%20RA0045%20in-ear/Moondrop%20Chu%202/Moondrop%20Chu%202%20ParametricEQ.txt",
+    "bytes": 480,
+    "hasPreamp": true,
+    "hasFilters": true
+  },
+  {
+    "model": "Redmi Buds 6 Pro (ANC on)",
+    "url": "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/Regan%20Cipher/in-ear/Redmi%20Buds%206%20Pro%20(ANC%20on)/Redmi%20Buds%206%20Pro%20(ANC%20on)%20ParametricEQ.txt",
+    "bytes": 479,
+    "hasPreamp": true,
+    "hasFilters": true
+  }
+]
+
+Catalog: 74 manufacturer-source model records + 1 unconfirmed Vido version registration; 18 brand groups.
+Catalog coverage does not imply an available measured EQ for every model. Known mode and generation conflicts block application.
+Analog headphones connected through a confirmed USB frontend remain compatible; TWS charge ports do not become USB audio inputs.
+Unit regression caught an overly strict USB/analog match; corrected before final package.
+Unsigned IPA: user signing still required. No physical iPhone/headphone acoustic tests or paid AI calls performed.
+Strict swift-format lint and git diff --check passed.

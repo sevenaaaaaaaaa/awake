@@ -52,6 +52,30 @@ pub fn collect_audio_files(root: &Path) -> Vec<PathBuf> {
     out
 }
 
+fn collect_checked(root: &Path) -> Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in
+            std::fs::read_dir(&dir).with_context(|| format!("无法读取目录：{}", dir.display()))?
+        {
+            let entry = entry?;
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
+            let kind = entry.file_type()?;
+            let path = entry.path();
+            if kind.is_dir() {
+                stack.push(path);
+            } else if kind.is_file() && is_audio_file(&path) {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
 /// 找同目录封面文件。
 fn folder_artwork(dir: &Path) -> Option<PathBuf> {
     ARTWORK_NAMES.iter().find_map(|name| {
@@ -92,7 +116,7 @@ pub fn scan_local_source(
         anyhow::bail!("来源路径不是一个目录: {}", root.display());
     }
 
-    let files = collect_audio_files(root);
+    let files = collect_checked(root)?;
     let total = files.len();
     let mut tracks = Vec::with_capacity(total);
 
@@ -129,11 +153,11 @@ pub fn scan_local_source(
             .clone();
 
         // 封面优先级：内嵌 > 同目录 sidecar（与 Swift 一致）
-        let artwork_path = if let (Some(data), Some(out_dir)) = (tags.artwork.as_ref(), artwork_dir) {
+        let artwork_path = if let (Some(data), Some(out_dir)) = (tags.artwork.as_ref(), artwork_dir)
+        {
             if !data.is_empty() {
-                persist_artwork(data, &id, out_dir).or_else(|| {
-                    sidecar.as_ref().map(|p| p.to_string_lossy().to_string())
-                })
+                persist_artwork(data, &id, out_dir)
+                    .or_else(|| sidecar.as_ref().map(|p| p.to_string_lossy().to_string()))
             } else {
                 sidecar.as_ref().map(|p| p.to_string_lossy().to_string())
             }
@@ -164,7 +188,10 @@ pub fn scan_local_source(
             play_count: existing.get(&locator).map(|t| t.play_count).unwrap_or(0),
             favorite: existing.get(&locator).map(|t| t.favorite).unwrap_or(false),
             last_played: existing.get(&locator).and_then(|t| t.last_played),
-            added_at: existing.get(&locator).map(|t| t.added_at).unwrap_or_else(now_ms),
+            added_at: existing
+                .get(&locator)
+                .map(|t| t.added_at)
+                .unwrap_or_else(now_ms),
             is_remote: false,
         };
         apply_tags(&mut track, &tags);
@@ -225,7 +252,10 @@ impl Library {
             .ok()
             .and_then(|s| serde_json::from_str::<LibrarySnapshot>(&s).ok())
             .unwrap_or_default();
-        Self { snapshot, store_path }
+        Self {
+            snapshot,
+            store_path,
+        }
     }
 
     pub fn save(&self) -> Result<()> {
@@ -233,8 +263,11 @@ impl Library {
             std::fs::create_dir_all(parent).ok();
         }
         let json = serde_json::to_string_pretty(&self.snapshot)?;
-        std::fs::write(&self.store_path, json)
+        let tmp = self.store_path.with_extension("json.tmp");
+        std::fs::write(&tmp, json)
             .with_context(|| format!("写入曲库失败: {}", self.store_path.display()))?;
+        std::fs::rename(tmp, &self.store_path)
+            .with_context(|| format!("提交曲库失败: {}", self.store_path.display()))?;
         Ok(())
     }
 
@@ -306,7 +339,12 @@ mod tests {
         assert_eq!(tracks.len(), 9);
 
         let albums = group_albums(&tracks);
-        assert_eq!(albums.len(), 3, "演示曲库为 3 张专辑，实测 {}", albums.len());
+        assert_eq!(
+            albums.len(),
+            3,
+            "演示曲库为 3 张专辑，实测 {}",
+            albums.len()
+        );
 
         // 每首都应有封面（内嵌或同目录 sidecar）
         let with_art = tracks.iter().filter(|t| t.artwork_path.is_some()).count();
@@ -336,9 +374,12 @@ mod tests {
         };
         let art_dir = std::env::temp_dir().join("awake-test-artwork2");
         let _ = std::fs::remove_dir_all(&art_dir);
-        let first = scan_local_source(&root, "src", &HashMap::new(), Some(&art_dir), |_, _, _| {}).unwrap();
-        let existing: HashMap<String, Track> =
-            first.iter().map(|t| (t.locator.clone(), t.clone())).collect();
+        let first =
+            scan_local_source(&root, "src", &HashMap::new(), Some(&art_dir), |_, _, _| {}).unwrap();
+        let existing: HashMap<String, Track> = first
+            .iter()
+            .map(|t| (t.locator.clone(), t.clone()))
+            .collect();
 
         let mut reused = 0;
         let second = scan_local_source(&root, "src", &existing, Some(&art_dir), |_, _, _| {

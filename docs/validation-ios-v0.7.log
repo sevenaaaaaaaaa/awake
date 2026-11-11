@@ -1,0 +1,65 @@
+Awake iOS 0.7.0 — 2026-11-11
+Simulator: iOS 26.5 / Awake iOS QA / iPhone 17 Pro
+Xcode 27.2; deployment target iOS 17
+
+最终测试
+Test Case '-[AwakeTests.AwakeTests testAPORejectsInvalidAndRetainsCenterShelfQ]' started.
+Test Case '-[AwakeTests.AwakeTests testAPORejectsInvalidAndRetainsCenterShelfQ]' passed (0.003 seconds).
+Test Case '-[AwakeTests.AwakeTests testChainForkPersistenceAndFeedbackAdvice]' started.
+Test Case '-[AwakeTests.AwakeTests testChainForkPersistenceAndFeedbackAdvice]' passed (0.010 seconds).
+Test Case '-[AwakeTests.AwakeTests testCompatibleQueuePauseAndCompletion]' started.
+Test Case '-[AwakeTests.AwakeTests testCompatibleQueuePauseAndCompletion]' passed (2.798 seconds).
+Test Case '-[AwakeTests.AwakeTests testGenerationsAreNotImplicitlyInterchangeable]' started.
+Test Case '-[AwakeTests.AwakeTests testGenerationsAreNotImplicitlyInterchangeable]' passed (0.001 seconds).
+Test Case '-[AwakeTests.AwakeTests testImportUsesRealMetadataAndKeepsOriginalFilename]' started.
+Test Case '-[AwakeTests.AwakeTests testImportUsesRealMetadataAndKeepsOriginalFilename]' passed (0.026 seconds).
+Test Case '-[AwakeTests.AwakeTests testInterruptedJobsDoNotAutoRetryAndCredentialDestinationMustMatch]' started.
+Test Case '-[AwakeTests.AwakeTests testInterruptedJobsDoNotAutoRetryAndCredentialDestinationMustMatch]' passed (0.003 seconds).
+Test Case '-[AwakeTests.AwakeTests testOfflineBenchReportsActualFramesAndFiniteSignal]' started.
+IOS_BENCH frames=240000 elapsed=0.05620204166734766 peak=0.4570719 rms=0.19595918
+Test Case '-[AwakeTests.AwakeTests testOfflineBenchReportsActualFramesAndFiniteSignal]' passed (0.098 seconds).
+Test Case '-[AwakeTests.AwakeTests testPlaybackSeekDoesNotLearnSkippedTime]' started.
+Test Case '-[AwakeTests.AwakeTests testPlaybackSeekDoesNotLearnSkippedTime]' passed (1.064 seconds).
+Test Case '-[AwakeTests.AwakeTests testSkinInteroperabilityAndInjectionRejection]' started.
+Test Case '-[AwakeTests.AwakeTests testSkinInteroperabilityAndInjectionRejection]' passed (0.003 seconds).
+Test Case '-[AwakeTests.AwakeTests testSourceBoundaryAndPlaintextRules]' started.
+Test Case '-[AwakeTests.AwakeTests testSourceBoundaryAndPlaintextRules]' passed (0.002 seconds).
+Test Case '-[AwakeTests.AwakeTests testTwoHourSparseTrackSeeksWithoutFullDecode]' started.
+Test Case '-[AwakeTests.AwakeTests testTwoHourSparseTrackSeeksWithoutFullDecode]' passed (1.058 seconds).
+Test Case '-[AwakeTests.AwakeTests testWebDAVNamespacesAndPlexSections]' started.
+Test Case '-[AwakeTests.AwakeTests testWebDAVNamespacesAndPlexSections]' passed (0.001 seconds).
+	 Executed 12 tests, with 0 failures (0 unexpected) in 5.067 (5.072) seconds
+	 Executed 12 tests, with 0 failures (0 unexpected) in 5.067 (5.073) seconds
+	 Executed 12 tests, with 0 failures (0 unexpected) in 5.067 (5.073) seconds
+Test Case '-[AwakeUITests.AwakeUITests testListeningFeedbackAndSoftwareBench]' started.
+Test Case '-[AwakeUITests.AwakeUITests testListeningFeedbackAndSoftwareBench]' passed (18.380 seconds).
+Test Case '-[AwakeUITests.AwakeUITests testRouteConfigurationAndNativeThemes]' started.
+Test Case '-[AwakeUITests.AwakeUITests testRouteConfigurationAndNativeThemes]' passed (21.239 seconds).
+	 Executed 2 tests, with 0 failures (0 unexpected) in 39.619 (39.621) seconds
+	 Executed 2 tests, with 0 failures (0 unexpected) in 39.619 (39.622) seconds
+	 Executed 2 tests, with 0 failures (0 unexpected) in 39.619 (39.625) seconds
+** TEST SUCCEEDED **
+
+最终真机归档
+** ARCHIVE SUCCEEDED **
+IPA: /Users/seveno/Awake/dist-ios/Awake-0.7.0-ios-arm64-unsigned.ipa
+
+IPA 包体验证
+{
+  "version": "0.7.0",
+  "bundle": "com.seven.awake.ios",
+  "platforms": [
+    "iPhoneOS"
+  ],
+  "minimumOS": "17.0",
+  "privacyManifest": true,
+  "appIcon": true,
+  "containsProvisioningProfile": false,
+  "qaFixtureInRelease": false,
+  "sizeBytes": 2254564,
+  "sha256": "12330bc3d7d393cb0aa767bd75437e275f69afe305fbe4af8eaf78872d3bfcde"
+}
+
+签名边界：证书有效，但 Xcode 无开发者账号和 App 描述文件。交付未签名 IPA，需用用户自己的工具重签；未标为可直接安装。
+实体 iPhone、蓝牙、锁屏、来电与长期后台播放未实机验收；没有调用付费 AI 服务。
+本轮 iOS 不代表桌面功能全部迁移完成，详见 ios/README.md。

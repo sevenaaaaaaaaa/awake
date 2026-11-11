@@ -1,0 +1,127 @@
+Awake 0.5.0 — 2026-11-11 本机验收
+真实 NAS/Plex 账号、付费 AI 服务与 DAC 回环未参与本轮测试。
+
+
+普通回归（包含本机 9 首演示音频）
+   Compiling awake-app v0.5.0 (/Users/seveno/Awake/rust/crates/awake-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.33s
+     Running unittests src/lib.rs (rust/target/debug/deps/awake_app_lib-efc568c3949df9af)
+
+running 17 tests
+test playback::soak_tests::five_minute_long_track_memory_and_underruns ... ignored, five-minute silent CoreAudio soak; generates a sparse two-hour WAV
+test playback::tests::real_output_streaming_queue_pause_seek_and_eof ... ignored, uses the real default CoreAudio output, at zero volume
+test playback::tests::invalid_requests_do_not_start_an_output_stream ... ok
+test playback::callback_tests::seek_discards_old_audio_and_waits_for_prebuffer_without_losing_new_frames ... ok
+test playback::callback_tests::eof_padding_is_not_starvation_but_interrupted_audio_is_counted ... ok
+test remote::tests::real_output_remote_range_seek ... ignored, uses default CoreAudio silently with a loopback Range server
+test playback::callback_tests::callback_has_no_allocations_or_gap_at_track_boundary_and_eq_change ... ok
+test experience::tests::overlapping_filters_have_enough_headroom_and_flat_is_unmodified ... ok
+test experience::tests::profile_persists_and_failed_save_does_not_change_memory ... ok
+test feeds::tests::rss_and_atom_match_metadata_without_following_links ... ok
+test intelligence::tests::cloud_proposal_is_bounded_by_real_candidates_and_contains_no_paths ... ok
+test remote::tests::rejects_auth_failure_cross_origin_and_non_range_servers ... ok
+test remote::tests::plex_pages_music_only_and_keeps_token_in_header ... ok
+test remote::tests::authenticated_webdav_ranges_and_seek_are_bounded ... ok
+test intelligence::tests::invalid_audio_is_never_committed_and_cancelled_requests_are_not_sent ... ok
+test intelligence::tests::binary_music_is_validated_saved_and_can_be_streamed_again ... ok
+test connections::tests::background_scan_updates_revision_and_failure_preserves_old_library ... ok
+
+test result: ok. 14 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src/lib.rs (rust/target/debug/deps/awake_core-36a6591f39c91999)
+
+running 32 tests
+test eq::tests::headroom_prevents_clipping ... ok
+test eq::tests::boost_is_centered_on_band_frequency ... ok
+test eq::tests::all_bands_sum_to_target_curve ... ok
+test eq::tests::flat_curve_is_transparent ... ok
+test library::tests::finds_all_nine_demo_tracks ... ok
+test models::tests::album_key_falls_back_to_artist ... ok
+test lyrics::tests::multi_timestamps_offset_and_metadata ... ok
+test models::tests::groups_albums_and_sorts_tracks ... ok
+test models::tests::quality_label_matches_swift ... ok
+test library::tests::locator_is_relative_and_unique ... ok
+test models::tests::track_id_is_stable_and_short ... ok
+test metadata::tests::reads_embedded_artwork ... ok
+test metadata::tests::reads_title_and_audio_properties ... ok
+test parametric::tests::apo_import_has_exact_peaking_response_and_shelf_asymptotes ... ok
+test library::tests::library_roundtrips_through_json ... ok
+test analyze::tests::silence_is_floor ... ok
+test analyze::tests::detects_1khz_tone_in_correct_band ... ok
+test decode::tests::probes_demo_flac ... ok
+test taste::tests::learns_artist_from_qualified_listen_and_respects_source ... ok
+test taste::tests::rejects_bad_events_and_handles_empty_library ... ok
+test taste::tests::seeking_to_eof_does_not_count_as_a_qualified_listen ... ok
+test taste::tests::skip_lowers_rank_and_history_round_trips ... ok
+test library::tests::scans_and_groups_into_three_albums ... ok
+test library::tests::incremental_scan_reuses_cached_entries ... ok
+test resample::tests::exact_length_and_last_samples_survive_filter_latency ... ok
+test resample::tests::stereo_channels_stay_separate ... ok
+test pipeline::tests::format_change_has_correct_counts_and_channel_mapping ... ok
+test resample::tests::halves_frame_count_when_downsampling ... ok
+test resample::tests::preserves_frequency_not_just_length ... ok
+test pipeline::tests::two_hour_file_starts_with_bounded_blocks_and_seeks_to_end ... ok
+test decode::tests::decodes_demo_flac_to_pcm ... ok
+test pipeline::tests::split_wav_is_sample_exact_and_has_no_inserted_silence ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.64s
+
+
+
+真实 CoreAudio 输出与 loopback Range
+   Compiling awake-app v0.5.0 (/Users/seveno/Awake/rust/crates/awake-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.28s
+     Running unittests src/lib.rs (rust/target/debug/deps/awake_app_lib-efc568c3949df9af)
+
+running 2 tests
+test playback::tests::real_output_streaming_queue_pause_seek_and_eof ... streaming startup=495ms capacity=24000frames underruns=0 position=2s
+ok
+test remote::tests::real_output_remote_range_seek ... REMOTE_STREAM_PASS startup=202ms buffer=96000 frames
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 4.11s
+
+
+
+五分钟长音轨静音输出
+   Compiling awake-app v0.5.0 (/Users/seveno/Awake/rust/crates/awake-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.63s
+     Running unittests src/lib.rs (rust/target/debug/deps/awake_app_lib-efc568c3949df9af)
+
+running 1 test
+soak t=30s position=29.7s rss=16176KB peak=18256KB underruns=0
+test playback::soak_tests::five_minute_long_track_memory_and_underruns has been running for over 60 seconds
+soak t=60s position=59.7s rss=14768KB peak=18256KB underruns=0
+soak t=90s position=89.8s rss=13376KB peak=18256KB underruns=0
+soak t=120s position=119.9s rss=13328KB peak=18256KB underruns=0
+soak t=150s position=150.0s rss=13360KB peak=18256KB underruns=0
+soak t=180s position=180.0s rss=14192KB peak=18256KB underruns=0
+soak t=210s position=210.1s rss=14208KB peak=18256KB underruns=0
+soak t=240s position=240.1s rss=14208KB peak=18256KB underruns=0
+soak t=270s position=270.2s rss=14160KB peak=18256KB underruns=0
+soak t=300s position=300.3s rss=14144KB peak=18256KB underruns=0
+SOAK_PASS seconds=300.3 startup=445ms baseline=18256KB peak=18256KB delta=0KB
+test playback::soak_tests::five_minute_long_track_memory_and_underruns ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 300.87s
+
+
+
+最终发布构建
+
+> awake-ui@0.5.0 build
+> vue-tsc --noEmit && vite build
+
+vite v6.4.6 building for production...
+transforming...
+✓ 23 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.39 kB │ gzip:  0.27 kB
+dist/assets/index-CRDc90Tj.css   36.31 kB │ gzip:  8.64 kB
+dist/assets/index-Dv5ixJtg.js   139.84 kB │ gzip: 51.96 kB
+✓ built in 546ms
+   Compiling awake-app v0.5.0 (/Users/seveno/Awake/rust/crates/awake-app)
+    Finished `release` profile [optimized] target(s) in 1m 07s
+/Users/seveno/Awake/dist-rust/Awake.app: replacing existing signature
+Built: /Users/seveno/Awake/dist-rust/Awake.app

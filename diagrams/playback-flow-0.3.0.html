@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --sans:-apple-system,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --s1:#f6f6f4; --s2:#ffffff;
+  --bd:rgba(0,0,0,.14); --bds:rgba(0,0,0,.32);
+  --tx:#1f2328; --tx-soft:#5c6470;
+  --am-bg:#fff6e6; --am-bd:#dfae55; --am-tx:#8a5a00; --am-sub:#a67c2e;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --s1:#242424; --s2:#2b2b2b;
+    --bd:rgba(255,255,255,.16); --bds:rgba(255,255,255,.40);
+    --tx:#ececec; --tx-soft:#9aa0a8;
+    --am-bg:#2c2412; --am-bd:#8a6a2a; --am-tx:#f0c264; --am-sub:#c9a35a;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--sans);font-size:16px;line-height:1.7;color:var(--tx)}
+main.wrap{max-width:680px;margin:0 auto;padding:1rem 0}
+header.head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+h2{margin:0;font-size:18px;font-weight:500;color:var(--tx)}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--tx-soft);flex-wrap:wrap}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:5px}
+.sw.a{background:var(--am-bg);border:1px solid var(--am-bd)}
+.sw.g{background:var(--s2);border:1px solid var(--bd)}
+.sw.d{background:var(--s2);border:1px dashed var(--bds)}
+svg{width:100%;height:auto;display:block}
+.th{font:500 13px var(--sans);fill:var(--tx)}
+.tha{font:500 13px var(--sans);fill:var(--am-tx)}
+.ts{font:400 11px var(--sans);fill:var(--tx-soft)}
+.tsa{font:400 11px var(--sans);fill:var(--am-sub)}
+.cap{font:400 11px var(--mono);fill:var(--tx-soft)}
+.gl{font:500 12px var(--sans);fill:var(--tx)}
+rect.graph{fill:var(--s2);stroke:var(--bd);stroke-width:1}
+rect.amber{fill:var(--am-bg);stroke:var(--am-bd);stroke-width:1}
+rect.grp{fill:var(--s1);stroke:var(--bd);stroke-width:1}
+rect.dashg{fill:var(--s2);stroke:var(--bd);stroke-width:1;stroke-dasharray:4 3}
+.arr-g{stroke:var(--bds);stroke-width:1.2;fill:none}
+.arr-a{stroke:var(--am-bd);stroke-width:1.6;fill:none}
+.dot{stroke:var(--tx-soft);stroke-width:1;stroke-dasharray:3 3;fill:none}
+.fa{fill:var(--am-bd)} .fg{fill:var(--bds)}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="head">
+    <h2>Awake 0.3.0 播放链路 · 数据流</h2>
+    <div class="legend">
+      <span><span class="sw a"></span>PCM 音频流</span>
+      <span><span class="sw g"></span>控制 / 元数据</span>
+      <span><span class="sw d"></span>已注册 · 未接通（v0.3.0）</span>
+    </div>
+  </header>
+  <svg viewBox="0 0 680 566" role="img" aria-label="Awake 0.3.0 播放数据流：UI 调 play_track 携带 31 段增益，播放线程整轨解码、整段 EQ、按需重采样后由 cpal 回调从内存逐帧输出">
+    <defs>
+      <marker id="ma" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="fa"/></marker>
+      <marker id="mg" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="fg"/></marker>
+    </defs>
+
+    <rect x="200" y="14" width="280" height="58" rx="10" class="graph"/>
+    <text x="340" y="37" text-anchor="middle" class="th">UI · Vue</text>
+    <text x="340" y="55" text-anchor="middle" class="ts">播放 · 停止 · EQ 面板</text>
+
+    <path d="M480,24 H562 Q588,24 588,47 Q588,70 562,70 H486" class="arr-g" marker-end="url(#mg)"/>
+    <text x="540" y="84" text-anchor="middle" class="ts">进度 = UI 本地计时器 500ms</text>
+    <text x="540" y="96" text-anchor="middle" class="ts">playback_status 已注册 · 未调用</text>
+
+    <line x1="340" y1="72" x2="340" y2="96" class="arr-g" marker-end="url(#mg)"/>
+    <text x="348" y="88" class="ts">play_track · 31 段增益</text>
+    <line x1="240" y1="72" x2="240" y2="96" class="dot" marker-end="url(#mg)"/>
+    <text x="232" y="76" text-anchor="end" class="ts">stop_playback</text>
+
+
+    <rect x="40" y="100" width="600" height="210" rx="12" class="grp"/>
+    <text x="56" y="122" class="gl">播放线程 · 整批式流水线</text>
+
+    <rect x="60" y="138" width="160" height="72" rx="8" class="amber"/>
+    <text x="140" y="160" text-anchor="middle" class="tha">解码 · symphonia</text>
+    <text x="140" y="178" text-anchor="middle" class="tsa">整轨进内存</text>
+    <text x="140" y="194" text-anchor="middle" class="tsa">f32 交错</text>
+
+    <line x1="222" y1="174" x2="246" y2="174" class="arr-a" marker-end="url(#ma)"/>
+
+    <rect x="250" y="138" width="160" height="72" rx="8" class="amber"/>
+    <text x="330" y="160" text-anchor="middle" class="tha">EQ · 31 段 biquad</text>
+    <text x="330" y="178" text-anchor="middle" class="tsa">headroom 预放大</text>
+    <text x="330" y="194" text-anchor="middle" class="tsa">整段缓冲一次性处理</text>
+    <text x="250" y="226" class="ts">set_eq_curve 仅校验，不落存储 · 下次播放生效</text>
+
+    <line x1="412" y1="174" x2="436" y2="174" class="arr-a" marker-end="url(#ma)"/>
+
+    <rect x="440" y="138" width="160" height="72" rx="8" class="amber"/>
+    <text x="520" y="160" text-anchor="middle" class="tha">重采样 · 条件触发</text>
+    <text x="520" y="178" text-anchor="middle" class="tsa">优先原生采样率</text>
+    <text x="520" y="194" text-anchor="middle" class="tsa">仅失配时整段重采样</text>
+
+    <line x1="520" y1="210" x2="520" y2="326" class="arr-a" marker-end="url(#ma)"/>
+    <text x="530" y="268" class="tsa">缓冲驻内存</text>
+
+    <text x="340" y="252" text-anchor="middle" class="ts">完曲判定：50ms 轮询 pos/total → playing=false</text>
+    <text x="340" y="268" text-anchor="middle" class="ts">stop_flag → 回调清零 · 等待循环退出</text>
+
+    <rect x="440" y="330" width="160" height="56" rx="8" class="amber"/>
+    <text x="520" y="352" text-anchor="middle" class="tha">cpal 回调</text>
+    <text x="520" y="370" text-anchor="middle" class="tsa">从内存逐帧读取</text>
+
+    <line x1="520" y1="386" x2="520" y2="406" class="arr-a" marker-end="url(#ma)"/>
+
+    <rect x="440" y="410" width="160" height="48" rx="8" class="amber"/>
+    <text x="520" y="439" text-anchor="middle" class="tha">输出设备</text>
+
+    <text x="60" y="474" class="ts">离线分析 · 自行重新解码，不接播放流 · UI 未调用（v0.3.0）</text>
+
+    <rect x="60" y="490" width="180" height="56" rx="8" class="dashg"/>
+    <text x="150" y="512" text-anchor="middle" class="th">analyze_track</text>
+    <text x="150" y="530" text-anchor="middle" class="ts">decode_file → to_mono</text>
+
+    <line x1="240" y1="518" x2="262" y2="518" class="dot" marker-end="url(#mg)"/>
+
+    <rect x="266" y="490" width="180" height="56" rx="8" class="dashg"/>
+    <text x="356" y="512" text-anchor="middle" class="th">SpectrumAnalyzer</text>
+    <text x="356" y="530" text-anchor="middle" class="ts">FFT 窗 8192</text>
+
+    <line x1="446" y1="518" x2="468" y2="518" class="dot" marker-end="url(#mg)"/>
+
+    <rect x="472" y="490" width="168" height="56" rx="8" class="dashg"/>
+    <text x="556" y="512" text-anchor="middle" class="th">Analysis 返回值</text>
+    <text x="556" y="530" text-anchor="middle" class="ts">bands[32] · peak · duration</text>
+  </svg>
+</main>
+</body>
+</html>
