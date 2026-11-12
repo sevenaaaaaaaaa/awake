@@ -9,6 +9,7 @@ struct SettingsView: View {
   @State private var shareFile: SharedFile?
   @State private var sourceSheet = false
   @State private var folderImport = false
+  @State private var fileImport = false
   var body: some View {
     Form {
       Section("外观与皮肤") {
@@ -30,6 +31,22 @@ struct SettingsView: View {
           }
         }.accessibilityIdentifier("themePicker")
         Button("导入 design.md / 皮肤 JSON") { skinImport = true }
+          .fileImporter(isPresented: $skinImport, allowedContentTypes: [.plainText, .json, .text]) {
+            result in
+            do {
+              let u = try result.get()
+              let access = u.startAccessingSecurityScopedResource()
+              defer { if access { u.stopAccessingSecurityScopedResource() } }
+              let data = try Data(contentsOf: u, options: .mappedIfSafe)
+              guard data.count <= 65536 else { throw AppFailure("皮肤文件不能超过 64 KB") }
+              var skin = try Skin.parse(String(decoding: data, as: UTF8.self))
+              skin.id = "custom-" + UUID().uuidString
+              store.state.customSkins.append(skin)
+              store.state.customSkins = Array(store.state.customSkins.suffix(30))
+              store.state.skin = skin
+              store.save()
+            } catch { store.message = error.localizedDescription }
+          }
         Button("导出当前 design.md") {
           do {
             let data = try JSONEncoder().encode(store.state.skin)
@@ -44,7 +61,24 @@ struct SettingsView: View {
       Section("自己的音乐来源") {
         Button("添加 WebDAV / Plex / Telegram", systemImage: "plus") { sourceSheet = true }
           .accessibilityIdentifier("addSource")
+        Button("导入音频文件", systemImage: "doc.badge.plus") { fileImport = true }
+          .accessibilityIdentifier("importAudioFiles")
+          .fileImporter(
+            isPresented: $fileImport, allowedContentTypes: [.audio], allowsMultipleSelection: true
+          ) { result in
+            switch result {
+            case .success(let urls): Task { await store.importFiles(urls) }
+            case .failure(let error): store.message = error.localizedDescription
+            }
+          }
         Button("导入本地 / Telegram 下载文件夹", systemImage: "folder") { folderImport = true }
+          .accessibilityIdentifier("importFolder")
+          .fileImporter(isPresented: $folderImport, allowedContentTypes: [.folder]) { result in
+            do {
+              let url = try result.get()
+              Task { await store.importAudioFolder(url) }
+            } catch { store.message = error.localizedDescription }
+          }
         ForEach(store.state.sources) { s in
           VStack(alignment: .leading, spacing: 8) {
             Text(s.name).font(.headline)
@@ -52,6 +86,12 @@ struct SettingsView: View {
               .font(.caption).foregroundStyle(.secondary)
             if s.kind == "telegram" { TelegramSponsoredView(source: s) }
             Button("刷新来源") { Task { await refresh(s) } }.disabled(store.busy)
+          }
+        }
+        if store.busy {
+          HStack(spacing: 8) {
+            ProgressView()
+            Text("正在导入本机音频…").font(.caption)
           }
         }
         Text("NAS 与网盘也可通过文件 App 连接并导入。远程曲目首次播放先下载到本机，随后进入统一 EQ 播放链路；当前 iOS 版不宣称远程即点即流或跨采样率无缝。")
@@ -91,28 +131,9 @@ struct SettingsView: View {
         Text("公开测量与 AI 建议不是实物测量或全网统计。iOS 无法通过这里强制改变蓝牙编码、耳机 ANC 或接收器固件。").font(.caption)
           .foregroundStyle(.secondary)
       }
-    }.fileImporter(isPresented: $folderImport, allowedContentTypes: [.folder]) { result in
-      do { let url = try result.get(); Task { await store.importAudioFolder(url) } }
-      catch { store.message = error.localizedDescription }
     }.appSurface().navigationTitle("设置").sheet(isPresented: $sourceSheet) { SourceEditor() }.sheet(
       item: $shareFile
-    ) { file in ShareView(url: file.url) }.fileImporter(
-      isPresented: $skinImport, allowedContentTypes: [.plainText, .json, .text]
-    ) { result in
-      do {
-        let u = try result.get()
-        let access = u.startAccessingSecurityScopedResource()
-        defer { if access { u.stopAccessingSecurityScopedResource() } }
-        let data = try Data(contentsOf: u, options: .mappedIfSafe)
-        guard data.count <= 65536 else { throw AppFailure("皮肤文件不能超过 64 KB") }
-        var skin = try Skin.parse(String(decoding: data, as: UTF8.self))
-        skin.id = "custom-" + UUID().uuidString
-        store.state.customSkins.append(skin)
-        store.state.customSkins = Array(store.state.customSkins.suffix(30))
-        store.state.skin = skin
-        store.save()
-      } catch { store.message = error.localizedDescription }
-    }
+    ) { file in ShareView(url: file.url) }
   }
   func saveService(_ type: String) {
     do {
@@ -197,6 +218,13 @@ struct SourceEditor: View {
   @State private var catalog: TelegramCatalog?
   @State private var selected = Set<String>()
   @State private var limit = 1000
+  @State private var trustSelfSigned = false
+  @State private var plexToken = ""
+  @State private var plexServers: [PlexAuth.Server] = []
+  @State private var plexBusy = false
+  @State private var plexNote = ""
+  @State private var selectedServer = ""
+  @Environment(\.openURL) private var openURL
   var telegramReady: Bool {
     url.range(of: "/v1/libraries/[a-f0-9]{24}/?$", options: .regularExpression) != nil
   }
@@ -215,10 +243,48 @@ struct SourceEditor: View {
             .accessibilityIdentifier("sourceURL")
           if kind == "webdav" {
             TextField("账号（可选）", text: $username).textInputAutocapitalization(.never)
+            Toggle("允许自签名 HTTPS 证书", isOn: $trustSelfSigned).font(.caption)
+            Text("仅当 NAS 使用自签证书时打开；只对这个来源的主机生效。能用 HTTP 局域网地址时不要打开。")
+              .font(.caption2).foregroundStyle(.secondary)
           }
-          SecureField(kind == "plex" ? "Plex Token" : kind == "telegram" ? "连接器访问令牌" : "密码 / 应用密码", text: $secret)
-            .accessibilityIdentifier("sourceSecret")
+          SecureField(
+            kind == "plex" ? "Plex Token（也可用下方账号登录）"
+              : kind == "telegram" ? "连接器访问令牌" : "密码 / 应用密码", text: $secret
+          )
+          .accessibilityIdentifier("sourceSecret")
         }.disabled(busy)
+        if kind == "plex" {
+          Section("Plex 账号登录") {
+            Button {
+              Task { await plexSignIn() }
+            } label: {
+              Label(
+                plexToken.isEmpty ? "用 Plex 账号登录" : "已登录 · 重新授权",
+                systemImage: "person.badge.key")
+            }
+            .disabled(plexBusy)
+            .accessibilityIdentifier("plexLogin")
+            if plexBusy { ProgressView("等待浏览器完成授权…").font(.caption) }
+            if !plexNote.isEmpty { Text(plexNote).font(.caption).foregroundStyle(.secondary) }
+            if plexServers.count > 1 {
+              Picker("服务器", selection: $selectedServer) {
+                ForEach(plexServers) { Text($0.name).tag($0.uri) }
+              }
+              .onChange(of: selectedServer) { _, value in
+                if let server = plexServers.first(where: { $0.uri == value }) {
+                  url = server.uri
+                  secret = server.accessToken
+                  plexToken = server.accessToken
+                  if name.trimmingCharacters(in: .whitespaces).isEmpty {
+                    name = "Plex · " + server.name
+                  }
+                }
+              }
+            }
+            Text("登录只用于换取这台服务器的访问 Token；密码不会保存在手机上，Token 存入钥匙串。授权在 Safari 完成。")
+              .font(.caption2).foregroundStyle(.secondary)
+          }
+        }
         if kind == "telegram" && !telegramReady {
           Section("选择 Telegram 音频") {
             Text("先在你自己的电脑或 NAS 上运行连接器并登录 Telegram。iPhone 填写该设备的局域网或 HTTPS 地址，不能使用电脑的 127.0.0.1 地址。").font(.caption)
@@ -255,6 +321,7 @@ struct SourceEditor: View {
             .accessibilityIdentifier("connectSource")
         }
       }.appSurface().navigationTitle("添加音乐来源").toolbar { Button("完成") { dismiss() }.disabled(busy) }
+      .onChange(of: kind) { _, _ in plexNote = ""; catalog = nil; selected = [] }
       .onChange(of: url) { _, _ in catalog = nil; selected = [] }
       .onChange(of: secret) { _, _ in catalog = nil; selected = [] }
       .fileImporter(isPresented: $configurationImport, allowedContentTypes: [.json, .xml, .plainText]) { result in
@@ -270,6 +337,40 @@ struct SourceEditor: View {
         } catch { self.error = error.localizedDescription }
       }
     }
+  }
+  func plexSignIn() async {
+    plexBusy = true
+    plexNote = ""
+    defer { plexBusy = false }
+    do {
+      let pin = try await PlexAuth.createPin()
+      openURL(PlexAuth.authURL(pin))
+      plexNote = "已打开 Plex 授权页；登录并允许后会自动继续。"
+      var token: String?
+      let deadline = Date().addingTimeInterval(300)
+      while Date() < deadline {
+        try await Task.sleep(nanoseconds: 2_000_000_000)
+        if let value = try await PlexAuth.poll(pin) {
+          token = value
+          break
+        }
+      }
+      guard let token else {
+        throw AppFailure("等待 Plex 授权超时（5 分钟）。请重试，或在上面手动填写 Token。")
+      }
+      plexToken = token
+      let servers = try await PlexAuth.servers(token: token)
+      guard let server = servers.first else {
+        throw AppFailure("这个 Plex 账号下没有找到可用的服务器。请确认 Plex 服务器已登录同一账号并在线。")
+      }
+      plexServers = servers
+      selectedServer = server.uri
+      url = server.uri
+      secret = server.accessToken
+      if name.trimmingCharacters(in: .whitespaces).isEmpty { name = "Plex · " + server.name }
+      plexNote = "已登录：\(server.name)。点“连接并扫描”读取音乐库。"
+      error = ""
+    } catch { plexNote = error.localizedDescription }
   }
   func browse() async {
     busy = true; error = ""
@@ -288,7 +389,10 @@ struct SourceEditor: View {
     defer { busy = false }
     do {
       _ = try Network.endpoint(url, localHTTP: true)
-      let source = MusicSource(name: name.trimmingCharacters(in: .whitespaces), kind: kind, url: url, username: kind == "webdav" ? username : "")
+      let source = MusicSource(
+        name: name.trimmingCharacters(in: .whitespaces), kind: kind, url: url,
+        username: kind == "webdav" ? username : "",
+        trustSelfSigned: kind == "webdav" ? trustSelfSigned : false)
       let songs = try await SourceService.scan(source, secret: secret)
       try Secrets.set(secret, account: "source." + source.id)
       let previous = store.state

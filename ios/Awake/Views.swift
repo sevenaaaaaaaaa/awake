@@ -51,6 +51,9 @@ struct RootView: View {
     .overlay(alignment: .top) { EffectActivationOverlay() }
     .sensoryFeedback(.success, trigger: player.effectRevision)
     .onChange(of: player.route.uid) { _, _ in applyChain() }
+    .onOpenURL { url in
+      Task { await store.importFiles([url]) }
+    }
     .task {
       player.onListen = { song, seconds in store.recordListen(song, seconds: seconds) }
       player.artworkResolver = { song in store.artworkURL(song.artwork) }
@@ -397,6 +400,7 @@ struct SongRow: View {
 struct LibraryView: View {
   @EnvironmentObject var store: MobileStore
   @State private var importing = false
+  @State private var folderImporting = false
   @State private var query = ""
   var filtered: [Song] {
     store.state.songs.filter {
@@ -418,14 +422,24 @@ struct LibraryView: View {
       }
       ForEach(filtered) { SongRow(song: $0).listRowBackground(Color.clear) }
     }.appSurface().navigationTitle("音乐资料库").searchable(text: $query, prompt: "曲名、艺人或专辑").toolbar {
-      Button("导入", systemImage: "plus") { importing = true }.accessibilityIdentifier("importMusic")
-    }.fileImporter(
-      isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true
-    ) { result in
-      switch result {
-      case .success(let urls): Task { await store.importFiles(urls) }
-      case .failure(let e): store.message = e.localizedDescription
-      }
+      Button("导入文件夹", systemImage: "folder.badge.plus") { folderImporting = true }
+        .accessibilityIdentifier("importLibraryFolder")
+        .fileImporter(isPresented: $folderImporting, allowedContentTypes: [.folder]) { result in
+          do {
+            let url = try result.get()
+            Task { await store.importAudioFolder(url) }
+          } catch { store.message = error.localizedDescription }
+        }
+      Button("导入文件", systemImage: "plus") { importing = true }
+        .accessibilityIdentifier("importMusic")
+        .fileImporter(
+          isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true
+        ) { result in
+          switch result {
+          case .success(let urls): Task { await store.importFiles(urls) }
+          case .failure(let e): store.message = e.localizedDescription
+          }
+        }
     }
   }
 }

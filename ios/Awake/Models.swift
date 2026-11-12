@@ -28,6 +28,29 @@ struct MusicSource: Identifiable, Codable {
   var kind: String
   var url: String
   var username = ""
+  /// 用户明确勾选后才对该来源的主机放行自签名 HTTPS 证书。
+  var trustSelfSigned = false
+
+  init(id: String = UUID().uuidString, name: String, kind: String, url: String, username: String = "", trustSelfSigned: Bool = false) {
+    self.id = id
+    self.name = name
+    self.kind = kind
+    self.url = url
+    self.username = username
+    self.trustSelfSigned = trustSelfSigned
+  }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+    name = try c.decodeIfPresent(String.self, forKey: .name) ?? "未命名来源"
+    kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? "webdav"
+    url = try c.decodeIfPresent(String.self, forKey: .url) ?? ""
+    username = try c.decodeIfPresent(String.self, forKey: .username) ?? ""
+    trustSelfSigned = try c.decodeIfPresent(Bool.self, forKey: .trustSelfSigned) ?? false
+  }
+
+  private enum CodingKeys: String, CodingKey { case id, name, kind, url, username, trustSelfSigned }
 }
 struct Listen: Codable {
   var songID: String
@@ -355,13 +378,17 @@ enum Secrets {
   func importAudioFolder(_ url: URL) async {
     let access = url.startAccessingSecurityScopedResource()
     defer { if access { url.stopAccessingSecurityScopedResource() } }
+    busy = true
+    defer { busy = false }
     do {
       let urls: [URL] = try await Task.detached(priority: .userInitiated) {
         try Self.audioFiles(in: url)
       }.value
-      guard !urls.isEmpty else { throw AppFailure("文件夹内没有支持的音频文件") }
-      await importFiles(urls)
-    } catch { message = error.localizedDescription }
+      guard !urls.isEmpty else {
+        throw AppFailure("这个文件夹里没有支持的音频文件（mp3 / m4a / flac / wav / aiff / alac / caf）")
+      }
+      await importFiles(urls, report: true)
+    } catch { message = "导入失败：" + error.localizedDescription }
   }
   nonisolated static func audioFiles(in url: URL) throws -> [URL] {
         guard let entries = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) else {
@@ -378,9 +405,12 @@ enum Secrets {
         }
         return files.sorted { $0.path < $1.path }
   }
-  func importFiles(_ urls: [URL]) async {
+  func importFiles(_ urls: [URL], report: Bool = false) async {
     busy = true
     defer { busy = false }
+    var added = 0
+    var failed = 0
+    var firstFailure = ""
     for url in urls {
       let access = url.startAccessingSecurityScopedResource()
       defer { if access { url.stopAccessingSecurityScopedResource() } }
@@ -391,7 +421,7 @@ enum Secrets {
         let name = UUID().uuidString + "." + ext
         let dest = music.appendingPathComponent(name)
         try await Task.detached(priority: .userInitiated) {
-          try FileManager.default.copyItem(at: url, to: dest)
+          try Self.copyImported(url, to: dest)
         }.value
         do {
           var song = try await Self.readSong(dest, file: name)
@@ -402,12 +432,39 @@ enum Secrets {
           }
           state.songs.append(song)
           save()
+          added += 1
         } catch {
           try? FileManager.default.removeItem(at: dest)
           throw error
         }
-      } catch { message = error.localizedDescription }
+      } catch {
+        failed += 1
+        if firstFailure.isEmpty { firstFailure = error.localizedDescription }
+      }
     }
+    if failed > 0 {
+      message =
+        added > 0
+        ? "已导入 \(added) 首，\(failed) 首失败：\(firstFailure)"
+        : "导入失败：" + firstFailure
+    } else if added > 0, report || added > 1 {
+      message = "已导入 \(added) 首到本机"
+    }
+  }
+
+  /// iCloud Drive / 文件提供者返回的 URL 直接 copy 可能失败；用 NSFileCoordinator 触发下载后再复制。
+  nonisolated static func copyImported(_ source: URL, to destination: URL) throws {
+    let coordinator = NSFileCoordinator()
+    var coordinationError: NSError?
+    var copyError: Error?
+    coordinator.coordinate(readingItemAt: source, options: [], error: &coordinationError) {
+      readURL in
+      do { try FileManager.default.copyItem(at: readURL, to: destination) } catch {
+        copyError = error
+      }
+    }
+    if let copyError { throw copyError }
+    if let coordinationError { throw coordinationError }
   }
   static func readSong(_ url: URL, file: String) async throws -> Song {
     let audio = try AVAudioFile(forReading: url)

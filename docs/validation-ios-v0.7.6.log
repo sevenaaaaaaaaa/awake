@@ -1,0 +1,42 @@
+Awake iOS 0.7.6 — 2026-11-12 Asia/Shanghai
+build 13 · MARKETING_VERSION 0.7.6
+
+PASS: 设置页导入选择器回归
+  修复前：设置页同时存在 folder/skin 两个 .fileImporter，点击“导入本地 / Telegram 下载文件夹”
+  无任何反应（XCTest 8 秒内找不到文件选择器）。
+  修复后：每个按钮各自绑定 .fileImporter；界面测试 testImportPickersPresentAndCancel 依次打开
+  设置-文件夹、设置-文件、曲库-文件夹、曲库-文件 四个选择器并取消，全部呈现，28.7 秒通过。
+
+PASS: 文件夹导入
+  testImportFolderCopiesAudioAndKeepsNestedTitles：嵌套子目录中的 WAV 被复制到
+  Documents/Awake/Music，标题取文件名，结束后提示“已导入 1 首到本机”。
+
+PASS: WebDAV 行为矩阵（工具：Tools/webdav_matrix_server.py）
+  testWebDAVFixtureMatrix：
+    基本 Basic 认证目录递归 -> 3 首（root.flac + Album/Song.mp3 + Album/Live 版.wav）
+    同源 301 重定向跟随（保留 PROPFIND 方法与凭据）-> 207 multistatus
+    跨站 301 被拒绝，且只发出 1 次请求
+    Digest 401 -> 计算响应重试 -> 扫描成功（Digest Song）
+    部分 403 条目被跳过，其余条目照常返回
+    HTML 登录页 -> 明确报“返回的是网页，不是 WebDAV 目录”
+    空目录 -> 明确报错，不静默成功
+PASS: 局域网地址规则
+  单段主机名 http://diskstation:5005/dav、.local、私有 IPv4、IPv6 ULA 允许 HTTP；
+  公网域名纯 HTTP、ftp://、缺少 scheme 均被拒绝。
+PASS: 自签名 HTTPS
+  testSelfSignedHTTPSRequiresExplicitTrust：勾选来源级“允许自签名证书”后可扫描本地
+  自签名 HTTPS 夹具（openssl 临时证书）；不勾选时仍按系统默认拒绝（-9807）。
+PASS: Digest RFC 2617 向量
+  response=6629fae49393a05397450978507c4ef1，qop=auth 字段正确。
+
+PASS: 全量 iOS 测试
+  xcodebuild test -scheme AwakeIOS -destination 'platform=iOS Simulator,id=37FCBD42-...'
+  41 项测试（单元 + 界面）全部通过，** TEST SUCCEEDED **，EXIT=0。
+
+PASS: ./Tools/build_ios_app.sh unsigned
+  ARCHIVE SUCCEEDED；IPA 版本 0.7.6 / build 13，arm64，需自行重签。
+
+未验证：
+  真实 NAS 的 Digest + 自签名 + 重定向组合；真实 Plex 账号的服务器发现与扫描；
+  文件 App 连接的 SMB 共享在实体 iPhone 上的导入；实体 iPhone 蓝牙与后台播放。
+  未使用真实付费服务或真实用户凭据。

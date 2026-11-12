@@ -413,6 +413,106 @@ final class AwakeTests: XCTestCase {
           .utf8))
     XCTAssertEqual(plex.sections, ["2"])
   }
+  func testLocalAddressRulesAllowNASHostnamesAndRejectPublicPlainHTTP() throws {
+    XCTAssertNoThrow(try Network.endpoint("http://diskstation:5005/dav", localHTTP: true))
+    XCTAssertNoThrow(try Network.endpoint("http://192.168.1.9:5005/dav", localHTTP: true))
+    XCTAssertNoThrow(try Network.endpoint("http://nas.local/dav", localHTTP: true))
+    XCTAssertNoThrow(try Network.endpoint("http://[fd00::1]:5005/dav", localHTTP: true))
+    XCTAssertNoThrow(try Network.endpoint("https://nas.example.com/dav", localHTTP: true))
+    XCTAssertThrowsError(try Network.endpoint("http://nas.example.com/dav", localHTTP: true))
+    XCTAssertThrowsError(try Network.endpoint("http://10.public.example/dav", localHTTP: true))
+    XCTAssertThrowsError(try Network.endpoint("ftp://nas/dav", localHTTP: true))
+    XCTAssertThrowsError(try Network.endpoint("192.168.1.9:5005/dav", localHTTP: true))
+  }
+  func testDigestAuthorizationMatchesRFC2617Vector() throws {
+    let header = #"Digest realm="testrealm@host.com", qop="auth,auth-int", nonce="dcd98b7102dd2f0e8b11d0f600bfb0c093", opaque="5ccc069c403ebaf9f0171e9517f40e41""#
+    let challenge = try XCTUnwrap(DigestAuth.parse(header))
+    let authorization = try DigestAuth.authorization(
+      challenge, method: "GET", url: URL(string: "http://example.com/dir/index.html")!,
+      username: "Mufasa", password: "Circle Of Life", cnonce: "0a4f113b",
+      nonceCount: "00000001")
+    XCTAssertTrue(
+      authorization.contains("response=\"6629fae49393a05397450978507c4ef1\""), authorization)
+    XCTAssertTrue(authorization.contains("qop=auth"), authorization)
+  }
+  func testSelfSignedHTTPSRequiresExplicitTrust() async throws {
+    var trusted = MusicSource(
+      name: "tls", kind: "webdav", url: "https://127.0.0.1:8771/dav/", username: "u")
+    trusted.trustSelfSigned = true
+    do {
+      let songs = try await SourceService.scan(trusted, secret: "p")
+      XCTAssertFalse(songs.isEmpty)
+    } catch {
+      throw XCTSkip(
+        "自签名 HTTPS 夹具未启动：python3 Tools/webdav_matrix_server.py --tls 8771（\(error.localizedDescription)）"
+      )
+    }
+    var untrusted = trusted
+    untrusted.trustSelfSigned = false
+    do {
+      _ = try await SourceService.scan(untrusted, secret: "p")
+      XCTFail("未勾选自签名证书时不应跳过 TLS 校验")
+    } catch {
+      XCTAssertFalse(error.localizedDescription.isEmpty)
+    }
+  }
+  func testWebDAVFixtureMatrix() async throws {
+    let health = URL(string: "http://127.0.0.1:8770/health")!
+    do {
+      _ = try await Network.data(URLRequest(url: health), limit: 4096)
+    } catch {
+      throw XCTSkip("WebDAV 矩阵夹具未启动：python3 Tools/webdav_matrix_server.py 8770")
+    }
+    func source(_ name: String, _ path: String) -> MusicSource {
+      MusicSource(name: name, kind: "webdav", url: "http://127.0.0.1:8770" + path, username: "u")
+    }
+    let basic = try await SourceService.scan(source("basic", "/dav/"), secret: "p")
+    XCTAssertEqual(basic.count, 3, basic.map(\.locator).joined(separator: ","))
+    XCTAssertTrue(basic.contains { $0.locator.hasSuffix("root.flac") })
+    XCTAssertTrue(basic.contains { $0.locator.hasSuffix(".mp3") })
+
+    var request = URLRequest(url: URL(string: "http://127.0.0.1:8770/redirect/")!)
+    request.httpMethod = "PROPFIND"
+    request.setValue("1", forHTTPHeaderField: "Depth")
+    request.setValue(
+      "Basic " + Data("u:p".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
+    let body = try await Network.data(
+      request, limit: 65536, auth: Network.Auth(username: "u", password: "p"))
+    XCTAssertTrue(String(decoding: body, as: UTF8.self).contains("multistatus"))
+
+    do {
+      var cross = URLRequest(url: URL(string: "http://127.0.0.1:8770/cross/")!)
+      cross.httpMethod = "PROPFIND"
+      _ = try await Network.data(cross, limit: 65536)
+      XCTFail("跨站重定向应当被拒绝")
+    } catch {
+      XCTAssertTrue(error.localizedDescription.contains("其他站点"), error.localizedDescription)
+    }
+
+    let digest = try await SourceService.scan(source("digest", "/digest/"), secret: "p")
+    XCTAssertEqual(digest.first?.title, "Digest Song")
+
+    let partial = try await SourceService.scan(source("partial", "/partial/"), secret: "p")
+    XCTAssertEqual(partial.count, 1, partial.map(\.locator).joined(separator: ","))
+    XCTAssertTrue(partial[0].locator.hasSuffix("Readable.mp3"))
+
+    do {
+      _ = try await SourceService.scan(source("html", "/html/"), secret: "p")
+      XCTFail("HTML 响应应当报错")
+    } catch {
+      XCTAssertTrue(error.localizedDescription.contains("网页"), error.localizedDescription)
+    }
+
+    do {
+      _ = try await SourceService.scan(source("empty", "/empty/"), secret: "p")
+      XCTFail("空目录应当报错")
+    } catch {
+      XCTAssertTrue(
+        error.localizedDescription.contains("没有支持的音频")
+          || error.localizedDescription.contains("空"),
+        error.localizedDescription)
+    }
+  }
   @MainActor func testChainForkPersistenceAndFeedbackAdvice() throws {
     let dir = try directory()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -430,6 +530,22 @@ final class AwakeTests: XCTestCase {
     let reopened = MobileStore(root: dir)
     XCTAssertEqual(reopened.state.chains.count, 2)
     XCTAssertTrue(reopened.localAdvice(chainID: nil).first!.contains("先用"))
+  }
+  @MainActor func testImportFolderCopiesAudioAndKeepsNestedTitles() async throws {
+    let dir = try directory()
+    let root = try directory()
+    defer {
+      try? FileManager.default.removeItem(at: dir)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let nested = dir.appendingPathComponent("Album", isDirectory: true)
+    try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+    try wav(nested.appendingPathComponent("Track One.wav"))
+    let store = MobileStore(root: root)
+    await store.importAudioFolder(dir)
+    XCTAssertEqual(store.state.songs.count, 1, store.message)
+    XCTAssertEqual(store.state.songs.first?.title, "Track One")
+    XCTAssertTrue(store.message.contains("已导入 1 首"), store.message)
   }
   @MainActor func testImportUsesRealMetadataAndKeepsOriginalFilename() async throws {
     let dir = try directory()

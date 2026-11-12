@@ -1,74 +1,369 @@
 import AVFoundation
+import CryptoKit
 import Foundation
 
-final class NoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+final class TrustPolicy: @unchecked Sendable {
+  private let lock = NSLock()
+  private var hosts = Set<String>()
+  func allow(_ host: String) {
+    lock.lock()
+    hosts.insert(host.lowercased())
+    lock.unlock()
+  }
+  func allows(_ host: String) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return hosts.contains(host.lowercased())
+  }
+}
+
+final class NoRedirect: NSObject, URLSessionDelegate, URLSessionTaskDelegate, @unchecked Sendable {
+  let trust: TrustPolicy?
+  init(trust: TrustPolicy? = nil) { self.trust = trust }
+
+  private func answer(
+    _ challenge: URLAuthenticationChallenge,
+    _ completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+  ) {
+    if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+      let trust, trust.allows(challenge.protectionSpace.host),
+      let serverTrust = challenge.protectionSpace.serverTrust
+    {
+      completionHandler(.useCredential, URLCredential(trust: serverTrust))
+    } else {
+      completionHandler(.performDefaultHandling, nil)
+    }
+  }
+
   func urlSession(
     _ session: URLSession, task: URLSessionTask,
     willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
     completionHandler: @escaping (URLRequest?) -> Void
   ) { completionHandler(nil) }
+
+  func urlSession(
+    _ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+  ) { answer(challenge, completionHandler) }
+
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge,
+    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+  ) { answer(challenge, completionHandler) }
 }
+
+enum DigestAuth {
+  struct Challenge: Sendable {
+    var realm = ""
+    var nonce = ""
+    var opaque: String?
+    var qop: String?
+    var algorithm = "MD5"
+  }
+
+  static func parse(_ header: String) -> Challenge? {
+    guard header.lowercased().hasPrefix("digest") else { return nil }
+    var parts: [String] = []
+    var current = ""
+    var quoted = false
+    for ch in header.dropFirst("digest".count) {
+      if ch == "\"" { quoted.toggle() }
+      if ch == "," && !quoted {
+        parts.append(current)
+        current = ""
+      } else {
+        current.append(ch)
+      }
+    }
+    parts.append(current)
+    var challenge = Challenge()
+    for part in parts {
+      let pieces = part.split(separator: "=", maxSplits: 1).map {
+        $0.trimmingCharacters(in: .whitespaces)
+      }
+      guard pieces.count == 2 else { continue }
+      let key = pieces[0].lowercased()
+      var value = pieces[1]
+      if value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 {
+        value = String(value.dropFirst().dropLast())
+      }
+      switch key {
+      case "realm": challenge.realm = value
+      case "nonce": challenge.nonce = value
+      case "opaque": challenge.opaque = value
+      case "qop": challenge.qop = value
+      case "algorithm": challenge.algorithm = value
+      default: break
+      }
+    }
+    return challenge.nonce.isEmpty ? nil : challenge
+  }
+
+  static func authorization(
+    _ challenge: Challenge, method: String, url: URL, username: String, password: String,
+    cnonce: String = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(),
+    nonceCount: String = "00000001"
+  ) throws -> String {
+    let uri = url.path(percentEncoded: true) + (url.query.map { "?" + $0 } ?? "")
+    let algorithm = challenge.algorithm.uppercased()
+    let ha1 = try hash(algorithm, "\(username):\(challenge.realm):\(password)")
+    let ha2 = try hash(algorithm, "\(method):\(uri)")
+    let wantsQop =
+      challenge.qop?.split(separator: ",").map {
+        $0.trimmingCharacters(in: .whitespaces).lowercased()
+      }.contains("auth") ?? false
+    let response =
+      wantsQop
+      ? try hash(
+        algorithm,
+        "\(ha1):\(challenge.nonce):\(nonceCount):\(cnonce):auth:\(ha2)")
+      : try hash(algorithm, "\(ha1):\(challenge.nonce):\(ha2)")
+    var fields = [
+      "username=\"\(username)\"", "realm=\"\(challenge.realm)\"", "nonce=\"\(challenge.nonce)\"",
+      "uri=\"\(uri)\"", "response=\"\(response)\"", "algorithm=\(challenge.algorithm)",
+    ]
+    if wantsQop {
+      fields += ["qop=auth", "nc=\(nonceCount)", "cnonce=\"\(cnonce)\""]
+    }
+    if let opaque = challenge.opaque { fields.append("opaque=\"\(opaque)\"") }
+    return "Digest " + fields.joined(separator: ", ")
+  }
+
+  static func hash(_ algorithm: String, _ text: String) throws -> String {
+    let data = Data(text.utf8)
+    switch algorithm {
+    case "MD5", "":
+      return Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    case "SHA-256", "SHA256":
+      return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    default:
+      throw AppFailure("服务器使用暂不支持的 Digest 算法（\(algorithm)），请改用基础认证或 HTTPS")
+    }
+  }
+}
+
 enum Network {
-  static let session: URLSession = {
+  struct Auth: Sendable {
+    var username = ""
+    var password = ""
+    var trustSelfSigned = false
+    var hasCredentials: Bool { !username.isEmpty || !password.isEmpty }
+
+    init(username: String = "", password: String = "", trustSelfSigned: Bool = false) {
+      self.username = username
+      self.password = password
+      self.trustSelfSigned = trustSelfSigned
+    }
+  }
+
+  static let policy = TrustPolicy()
+
+  private static let configuration: URLSessionConfiguration = {
     let c = URLSessionConfiguration.ephemeral
     c.timeoutIntervalForRequest = 30
     c.timeoutIntervalForResource = 240
     c.httpShouldSetCookies = false
-    return URLSession(configuration: c, delegate: NoRedirect(), delegateQueue: nil)
+    return c
   }()
+
+  static let session = URLSession(
+    configuration: configuration, delegate: NoRedirect(), delegateQueue: nil)
+  private static let trustingSession = URLSession(
+    configuration: configuration, delegate: NoRedirect(trust: policy), delegateQueue: nil)
+
+  private static func session(_ request: URLRequest, auth: Auth) -> URLSession {
+    guard auth.trustSelfSigned, let host = request.url?.host else { return session }
+    policy.allow(host)
+    return trustingSession
+  }
+
+  static func isLocalHost(_ host: String) -> Bool {
+    let value = host.lowercased()
+    if value == "localhost" || value == "::1" || value == "[::1]" { return true }
+    if [".local", ".lan", ".home", ".internal", ".localdomain"].contains(where: {
+      value.hasSuffix($0)
+    }) { return true }
+    if value.contains(":") {
+      let literal = value.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+      return literal.hasPrefix("fc") || literal.hasPrefix("fd") || literal.hasPrefix("fe80")
+    }
+    if !value.contains(".") { return true }
+    let pieces = value.split(separator: ".")
+    let octets = pieces.compactMap { Int($0) }
+    guard pieces.count == 4, octets.count == 4, octets.allSatisfy({ (0...255).contains($0) })
+    else { return false }
+    return octets[0] == 10 || octets[0] == 127
+      || (octets[0] == 192 && octets[1] == 168)
+      || (octets[0] == 172 && (16...31).contains(octets[1]))
+      || (octets[0] == 169 && octets[1] == 254)
+  }
+
   static func endpoint(_ text: String, localHTTP: Bool = false) throws -> URL {
-    guard let u = URL(string: text), let host = u.host, u.user == nil, u.password == nil,
-      u.query == nil, u.fragment == nil
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { throw AppFailure("请填写服务器地址") }
+    guard trimmed.contains("://") else {
+      throw AppFailure("地址需以 http:// 或 https:// 开头，例如 https://192.168.1.10:5006/dav")
+    }
+    guard let u = URL(string: trimmed), let host = u.host, !host.isEmpty,
+      u.user == nil, u.password == nil, u.query == nil, u.fragment == nil
     else { throw AppFailure("请输入不含凭据、查询参数的服务器地址") }
-    let parts = host.split(separator: ".").compactMap { Int($0) }
-    let ipv4 =
-      parts.count == 4 && parts.allSatisfy { (0...255).contains($0) }
-      && host.split(separator: ".").count == 4
-    let privateIP =
-      ipv4
-      && (parts[0] == 10 || parts[0] == 127 || (parts[0] == 192 && parts[1] == 168)
-        || (parts[0] == 172 && (16...31).contains(parts[1]))
-        || (parts[0] == 169 && parts[1] == 254))
-    let local =
-      host == "localhost" || host.hasSuffix(".local") || host == "::1" || host == "[::1]"
-      || privateIP
-    guard u.scheme == "https" || (localHTTP && local && u.scheme == "http") else {
-      throw AppFailure("外部服务使用 HTTPS；局域网可使用 HTTP")
+    if u.scheme == "https" { return u }
+    guard u.scheme == "http" else { throw AppFailure("只支持 http:// 或 https:// 地址") }
+    guard localHTTP, isLocalHost(host) else {
+      throw AppFailure(
+        "外部地址请使用 HTTPS。局域网设备（192.168.x、10.x、单段主机名或 .local）可以用 HTTP：\(trimmed)")
     }
     return u
   }
+
   static func check(_ response: URLResponse) throws {
-    guard let r = response as? HTTPURLResponse, (200..<300).contains(r.statusCode) else {
-      throw AppFailure("服务 HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+    guard let http = response as? HTTPURLResponse else {
+      throw AppFailure("服务器没有返回 HTTP 响应")
+    }
+    guard (200..<300).contains(http.statusCode) else {
+      throw AppFailure(message(for: http))
     }
   }
-  static func data(_ request: URLRequest, limit: Int = 2 * 1024 * 1024) async throws -> Data {
-    let (bytes, response) = try await session.bytes(for: request)
-    try check(response)
-    guard response.expectedContentLength <= limit else { throw AppFailure("服务响应过大") }
-    var data = Data()
-    data.reserveCapacity(min(limit, 65536))
-    for try await byte in bytes {
-      try Task.checkCancellation()
-      guard data.count < limit else { throw AppFailure("服务响应超过限制") }
-      data.append(byte)
-    }
-    return data
-  }
-  static func download(_ request: URLRequest, limit: Int64 = 4 * 1024 * 1024 * 1024) async throws
-    -> URL
-  {
-    let (url, response) = try await session.download(for: request)
-    do {
-      try check(response)
-      let size = (try url.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
-      guard size > 0, Int64(size) <= limit else { throw AppFailure("音频为空或超过支持大小") }
-      return url
-    } catch {
-      try? FileManager.default.removeItem(at: url)
-      throw error
+
+  static func message(for response: HTTPURLResponse) -> String {
+    let address = response.url?.absoluteString ?? "该地址"
+    switch response.statusCode {
+    case 401:
+      return "需要登录（401）。请核对账号与密码；开启双重验证的 NAS 请使用「应用密码」。地址：\(address)"
+    case 403:
+      return "服务器拒绝访问（403）。确认这个账号对该目录有读取权限。地址：\(address)"
+    case 404:
+      return "路径不存在（404）。WebDAV 通常需要带完整路径（例如 /dav），请核对。地址：\(address)"
+    case 405, 501:
+      return "这个地址不支持 WebDAV（HTTP \(response.statusCode)）。请先在 NAS 设置里开启 WebDAV 服务，并填写 WebDAV 的完整地址。地址：\(address)"
+    case 407:
+      return "代理需要认证（407）。地址：\(address)"
+    case 503:
+      return "服务器暂时不可用（503）。地址：\(address)"
+    default:
+      return "服务返回 HTTP \(response.statusCode)。地址：\(address)"
     }
   }
+
+  private static let redirectCodes: Set<Int> = [301, 302, 303, 307, 308]
+
+  private static func redirectLocation(_ response: HTTPURLResponse) -> URL? {
+    guard redirectCodes.contains(response.statusCode),
+      let value = response.value(forHTTPHeaderField: "Location"),
+      let base = response.url
+    else { return nil }
+    return URL(string: value, relativeTo: base)?.absoluteURL
+  }
+
+  private static func followed(_ request: URLRequest, to target: URL) throws -> URLRequest {
+    guard let base = request.url, base.scheme == target.scheme, base.host == target.host,
+      base.port == target.port
+    else { throw AppFailure("服务器试图重定向到其他站点，已停止") }
+    var next = request
+    next.url = target
+    return next
+  }
+
+  static func data(
+    _ request: URLRequest, limit: Int = 2 * 1024 * 1024, auth: Auth = Auth()
+  ) async throws -> Data {
+    var request = request
+    var redirects = 0
+    var digestTries = 0
+    while true {
+      let (bytes, response) = try await session(request, auth: auth).bytes(for: request)
+      guard let http = response as? HTTPURLResponse else {
+        throw AppFailure("服务器没有返回 HTTP 响应")
+      }
+      if let target = redirectLocation(http) {
+        redirects += 1
+        guard redirects <= 3 else {
+          throw AppFailure("重定向次数过多：\(request.url?.absoluteString ?? "")")
+        }
+        request = try followed(request, to: target)
+        continue
+      }
+      if http.statusCode == 401, auth.hasCredentials,
+        let raw = http.value(forHTTPHeaderField: "WWW-Authenticate"),
+        let challenge = DigestAuth.parse(raw)
+      {
+        digestTries += 1
+        guard digestTries <= 1 else {
+          throw AppFailure(
+            "认证失败（Digest 401）。请核对账号与密码。地址：\(request.url?.absoluteString ?? "")")
+        }
+        request.setValue(
+          try DigestAuth.authorization(
+            challenge, method: request.httpMethod ?? "GET", url: request.url!,
+            username: auth.username, password: auth.password),
+          forHTTPHeaderField: "Authorization")
+        continue
+      }
+      try check(http)
+      guard http.expectedContentLength <= Int64(limit) else { throw AppFailure("服务响应过大") }
+      var data = Data()
+      data.reserveCapacity(min(limit, 65536))
+      for try await byte in bytes {
+        try Task.checkCancellation()
+        guard data.count < limit else { throw AppFailure("服务响应超过限制") }
+        data.append(byte)
+      }
+      return data
+    }
+  }
+
+  static func download(
+    _ request: URLRequest, limit: Int64 = 4 * 1024 * 1024 * 1024, auth: Auth = Auth()
+  ) async throws -> URL {
+    var request = request
+    var redirects = 0
+    var digestTries = 0
+    while true {
+      let (url, response) = try await session(request, auth: auth).download(for: request)
+      guard let http = response as? HTTPURLResponse else {
+        try? FileManager.default.removeItem(at: url)
+        throw AppFailure("服务器没有返回 HTTP 响应")
+      }
+      if let target = redirectLocation(http) {
+        try? FileManager.default.removeItem(at: url)
+        redirects += 1
+        guard redirects <= 3 else {
+          throw AppFailure("重定向次数过多：\(request.url?.absoluteString ?? "")")
+        }
+        request = try followed(request, to: target)
+        continue
+      }
+      if http.statusCode == 401, auth.hasCredentials,
+        let raw = http.value(forHTTPHeaderField: "WWW-Authenticate"),
+        let challenge = DigestAuth.parse(raw)
+      {
+        try? FileManager.default.removeItem(at: url)
+        digestTries += 1
+        guard digestTries <= 1 else {
+          throw AppFailure(
+            "认证失败（Digest 401）。请核对账号与密码。地址：\(request.url?.absoluteString ?? "")")
+        }
+        request.setValue(
+          try DigestAuth.authorization(
+            challenge, method: request.httpMethod ?? "GET", url: request.url!,
+            username: auth.username, password: auth.password),
+          forHTTPHeaderField: "Authorization")
+        continue
+      }
+      do {
+        try check(http)
+        let size = (try url.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
+        guard size > 0, Int64(size) <= limit else {
+          throw AppFailure("音频为空或超过支持大小")
+        }
+        return url
+      } catch {
+        try? FileManager.default.removeItem(at: url)
+        throw error
+      }
+    }
+  }
+
   static func child(_ href: String, base: URL, restrictPath: Bool = true) throws -> URL {
     guard let url = URL(string: href, relativeTo: base)?.absoluteURL.standardized,
       url.scheme == base.scheme, url.host == base.host, url.port == base.port, url.user == nil,
@@ -152,6 +447,19 @@ enum SourceService {
     }
     return r
   }
+  static func auth(_ source: MusicSource, secret: String) -> Network.Auth {
+    Network.Auth(
+      username: source.kind == "webdav" ? source.username : "",
+      password: source.kind == "webdav" ? secret : "",
+      trustSelfSigned: source.trustSelfSigned)
+  }
+  static func webDAVHint(_ data: Data) -> String? {
+    let head = String(decoding: data.prefix(512), as: UTF8.self).lowercased()
+    if head.contains("<html") || head.contains("<!doctype html") || head.contains("<head") {
+      return "这个地址返回的是网页，不是 WebDAV 目录。请确认 NAS 已开启 WebDAV 服务，并填写完整地址（常见形如 https://主机:5006/dav）。"
+    }
+    return nil
+  }
   static func scan(_ source: MusicSource, secret: String) async throws -> [Song] {
     if source.kind == "telegram" { return try await TelegramService.scan(source, secret: secret) }
     let base = try Network.endpoint(source.url, localHTTP: true)
@@ -161,11 +469,16 @@ enum SourceService {
         else { throw AppFailure("Plex 地址无效") }
         return try Network.child(u.absoluteString, base: base, restrictPath: false)
       }
+      let plexAuth = auth(source, secret: secret)
       let xml = SourceXML()
-      try xml.parse(
-        try await Network.data(
-          request(try api("library/sections"), source: source, secret: secret),
-          limit: 8 * 1024 * 1024))
+      do {
+        try xml.parse(
+          try await Network.data(
+            request(try api("library/sections"), source: source, secret: secret),
+            limit: 8 * 1024 * 1024, auth: plexAuth))
+      } catch {
+        throw AppFailure("Plex 资料库读取失败：\(error.localizedDescription)。请确认 Token 仍有效，且服务器地址指向这台 Plex 服务器。")
+      }
       var songs: [Song] = []
       for section in xml.sections.prefix(30) {
         var offset = 0
@@ -178,9 +491,14 @@ enum SourceService {
             .init(name: "X-Plex-Container-Size", value: "500"),
           ]
           let page = SourceXML()
-          try page.parse(
-            try await Network.data(
-              request(components.url!, source: source, secret: secret), limit: 8 * 1024 * 1024))
+          do {
+            try page.parse(
+              try await Network.data(
+                request(components.url!, source: source, secret: secret), limit: 8 * 1024 * 1024,
+                auth: plexAuth))
+          } catch {
+            throw AppFailure("Plex 曲目分页读取失败：\(error.localizedDescription)")
+          }
           for row in page.rows {
             _ = try Network.child(row.href, base: base, restrictPath: false)
             songs.append(
@@ -196,9 +514,13 @@ enum SourceService {
     }
     var root = base
     if !root.absoluteString.hasSuffix("/") { root.appendPathComponent("") }
+    let davAuth = auth(source, secret: secret)
     var stack: [(URL, Int)] = [(root, 0)]
     var seen = Set<String>()
     var songs: [Song] = []
+    var skipped = 0
+    var firstError: Error?
+    var sawEntry = false
     while let (folder, depth) = stack.popLast() {
       try Task.checkCancellation()
       guard seen.insert(folder.absoluteString).inserted else { continue }
@@ -211,8 +533,29 @@ enum SourceService {
         "<?xml version=\"1.0\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:resourcetype/><d:displayname/><d:getcontentlength/></d:prop></d:propfind>"
           .utf8)
       let xml = SourceXML()
-      try xml.parse(try await Network.data(req, limit: 8 * 1024 * 1024))
-      guard xml.failures == 0 else { throw AppFailure("目录包含无法读取的项目，保留原索引") }
+      let body: Data
+      do {
+        body = try await Network.data(req, limit: 8 * 1024 * 1024, auth: davAuth)
+        if let hint = webDAVHint(body) { throw AppFailure(hint) }
+      } catch {
+        if folder == root { throw error }
+        skipped += 1
+        firstError = firstError ?? error
+        continue
+      }
+      do {
+        try xml.parse(body)
+      } catch {
+        if folder == root, let hint = webDAVHint(body) { throw AppFailure(hint) }
+        if folder == root { throw AppFailure("这个地址没有返回 WebDAV 目录结构。请确认地址指向 WebDAV 根目录（常见形如 /dav），并且服务器已开启 WebDAV。") }
+        skipped += 1
+        firstError = firstError ?? error
+        continue
+      }
+      if !xml.rows.isEmpty { sawEntry = true }
+      if xml.rows.isEmpty && xml.failures > 0 {
+        throw AppFailure("这个目录的所有条目都无法读取（共 \(xml.failures) 个），请检查账号权限")
+      }
       for row in xml.rows {
         let url = try Network.child(row.href, base: root)
         if url.standardized.path == folder.standardized.path { continue }
@@ -231,6 +574,12 @@ enum SourceService {
         }
       }
     }
+    if songs.isEmpty {
+      if let firstError { throw firstError }
+      if skipped > 0 { throw AppFailure("有 \(skipped) 个目录无法读取，且没有找到可播放的音频；请检查账号权限") }
+      if sawEntry { throw AppFailure("这个 WebDAV 目录里没有支持的音频文件（mp3 / m4a / flac / wav / aiff / alac / caf）") }
+      throw AppFailure("这个 WebDAV 目录是空的，或没有读取到任何条目")
+    }
     return songs
   }
   static func cache(_ song: Song, source: MusicSource, secret: String, directory: URL) async throws
@@ -238,7 +587,8 @@ enum SourceService {
   {
     let base = try Network.endpoint(source.url, localHTTP: true)
     let url = try Network.child(song.locator, base: base, restrictPath: source.kind != "plex")
-    let temp = try await Network.download(request(url, source: source, secret: secret))
+    let temp = try await Network.download(
+      request(url, source: source, secret: secret), auth: auth(source, secret: secret))
     defer { try? FileManager.default.removeItem(at: temp) }
     let ext = url.pathExtension.isEmpty ? "audio" : url.pathExtension
     let name = song.id + "." + ext

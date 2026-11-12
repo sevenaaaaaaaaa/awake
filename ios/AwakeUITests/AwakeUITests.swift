@@ -27,6 +27,41 @@ final class AwakeUITests: XCTestCase {
     app.buttons["song-qa-audio"].tap()
     XCTAssertTrue(app.buttons["打开正在播放"].waitForExistence(timeout: 3))
   }
+  func testImportPickersPresentAndCancel() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--uitesting"]
+    app.launch()
+    app.tabBars.buttons["设置"].tap()
+    let folderButton = app.buttons["importFolder"]
+    for _ in 0..<5 { if !folderButton.isHittable { app.swipeUp() } }
+    XCTAssertTrue(folderButton.waitForExistence(timeout: 5))
+    folderButton.tap()
+    var cancel = app.buttons["Cancel"]
+    XCTAssertTrue(cancel.waitForExistence(timeout: 8), app.debugDescription)
+    cancel.tap()
+    let fileButton = app.buttons["importAudioFiles"]
+    for _ in 0..<5 { if !fileButton.isHittable { app.swipeUp() } }
+    XCTAssertTrue(fileButton.waitForExistence(timeout: 5))
+    fileButton.tap()
+    cancel = app.buttons["Cancel"]
+    XCTAssertTrue(cancel.waitForExistence(timeout: 8), app.debugDescription)
+    cancel.tap()
+    XCTAssertTrue(app.buttons["addSource"].waitForExistence(timeout: 5))
+    app.tabBars.buttons["曲库"].tap()
+    let libraryFolder = app.buttons["importLibraryFolder"]
+    XCTAssertTrue(libraryFolder.waitForExistence(timeout: 5))
+    libraryFolder.tap()
+    cancel = app.buttons["Cancel"]
+    XCTAssertTrue(cancel.waitForExistence(timeout: 8), app.debugDescription)
+    cancel.tap()
+    let libraryFile = app.buttons["importMusic"]
+    XCTAssertTrue(libraryFile.waitForExistence(timeout: 5))
+    libraryFile.tap()
+    cancel = app.buttons["Cancel"]
+    XCTAssertTrue(cancel.waitForExistence(timeout: 8), app.debugDescription)
+    cancel.tap()
+    XCTAssertTrue(app.buttons["song-qa-audio"].waitForExistence(timeout: 5))
+  }
   private func connectorFixtureIsRunning() -> Bool {
     let finished = expectation(description: "Check explicit loopback fixture")
     var available = false

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		1C4BB82C69D83C82833211ED /* AwakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7700F7B34C8ED756CD34503 /* AwakeTests.swift */; };
 		2564CA1CFEB8D307C8CAE7A1 /* AudioMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4DBA378C7D6D05CD323C399 /* AudioMath.swift */; };
+		3C2D20B4E55CC99F689E2D3E /* PlexAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 046C135D8C11B5D31D674698 /* PlexAuth.swift */; };
 		3EEE4B57BC5DDD7C667C8C79 /* Services.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E9A956315BB1CF4C1AC0C /* Services.swift */; };
 		43F5D7F071B4E2C84A216C9B /* headphones-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = 5FDBF46097E81A062E813ACF /* headphones-v1.json */; };
 		47C542D8C2026F53FE215AB8 /* EffectViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14CA279FE9B8282B5072B66 /* EffectViews.swift */; };
@@ -49,6 +50,7 @@
 
 /* Begin PBXFileReference section */
 		010B6479A9D277C37E652BF4 /* TelegramService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramService.swift; sourceTree = "<group>"; };
+		046C135D8C11B5D31D674698 /* PlexAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlexAuth.swift; sourceTree = "<group>"; };
 		05148C82B7EE499186BB6DDB /* EffectState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectState.swift; sourceTree = "<group>"; };
 		0DBC4D62DEC457DBE5281F0A /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		24EE460B200DCEB777CB6E57 /* EquipmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentViews.swift; sourceTree = "<group>"; };
@@ -128,6 +130,7 @@
 				577909C48018E6F4BB732837 /* MediaInfoView.swift */,
 				C39625E967E4D9282FC678BB /* MobilePlayer.swift */,
 				A25772CF3D1E1165C2FC3C88 /* Models.swift */,
+				046C135D8C11B5D31D674698 /* PlexAuth.swift */,
 				E40E9A956315BB1CF4C1AC0C /* Services.swift */,
 				5B67216F06EEA6B1C51089A5 /* SettingsViews.swift */,
 				4BFF41650CE622F89415946F /* SoundViews.swift */,
@@ -284,6 +287,7 @@
 				7E206D5ACCAF7A80D855093A /* MediaInfoView.swift in Sources */,
 				63F16572E47029185FA00BF4 /* MobilePlayer.swift in Sources */,
 				4F2225AED07B39B3AFE0A874 /* Models.swift in Sources */,
+				3C2D20B4E55CC99F689E2D3E /* PlexAuth.swift in Sources */,
 				3EEE4B57BC5DDD7C667C8C79 /* Services.swift in Sources */,
 				B2010DF4B036EE42DE9F020D /* SettingsViews.swift in Sources */,
 				4B2B9E96F4274C216D84C376 /* SoundViews.swift in Sources */,
@@ -405,7 +409,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -426,7 +430,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.7.5;
+				MARKETING_VERSION = 0.7.6;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -528,7 +532,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -543,7 +547,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.7.5;
+				MARKETING_VERSION = 0.7.6;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
