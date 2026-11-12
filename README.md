@@ -1,4 +1,4 @@
-# Awake 0.6.2
+# Awake 0.6.3
 
 **让好音乐，越来越合拍。** macOS 本地播放器：流式音频、后端连续队列、自有音乐来源、可解释的偏好学习，以及用户主动触发的 AI 策展和创作。
 
@@ -6,8 +6,14 @@
 
 ## 下载
 
-- **[macOS 0.6.2（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.6.2)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.6.2.md)
-- **[iOS 0.7.5 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.7.5)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.7.5.md)
+- **[macOS 0.6.3（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.6.3)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.6.3.md)
+- **[iOS 0.7.6 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.7.6)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.7.6.md)
+
+## 0.6.3 / iOS 0.7.6 · 来源连接与 Plex 登录
+
+修复 iOS 设置页“导入本地 / Telegram 下载文件夹”点击无反应：同一页面两个文件选择器冲突，现已拆成每个按钮独立选择器；曲库新增“导入文件夹”，并支持从文件 App 用 Awake 打开音频。导入显示进度、成功条数与失败原因，iCloud / 文件提供者先下载再复制。
+
+NAS / WebDAV 现在接受局域网 HTTP（单段主机名、`.local`、私有 IP、IPv6 ULA），跟随同源重定向，支持 Digest 认证与“允许自签名 HTTPS 证书”开关（仅当前来源）；401/403/404/405 与返回网页都有可读提示，子目录 403 会跳过。Plex 支持账号登录（PIN + 浏览器授权）自动获取服务器与 Token，手动 Token 保留兜底。iOS 的 SMB 共享请先在文件 App 连接服务器再导入。详见 [iOS 发行说明](docs/releases/ios-v0.7.6.md) 与 [桌面发行说明](docs/releases/v0.6.3.md)。
 
 ## 0.6.2 / iOS 0.7.5 · 封面、歌词与乐评
 
@@ -146,6 +152,8 @@ open dist-rust/Awake.app
 密码与 API 密钥写入 macOS 系统钥匙串；不会通过查询曲库/配置接口回传到前端。曲库和档案先写临时文件再原子替换；后台来源更新失败保留旧内容。损坏的听歌档案会保留恢复副本。
 
 ## 验证
+
+0.6.3 / iOS 0.7.6 本轮：新增 WebDAV 行为矩阵（Basic / Digest / 同源重定向 / HTML 返回 / 部分 403 / 自签名 TLS）与 Plex 协议单元测试；Rust `awake-app` 31 项、`awake-core` 37 项通过，iOS 单元与界面测试通过（含四个导入选择器的呈现回归）。详见[iOS 验证记录](docs/validation-ios-v0.7.6.log)与[桌面验证记录](docs/validation-v0.6.3.log)。
 
 0.6.2 / iOS 0.7.5 本轮：54 项 Rust 普通回归通过（awake-app 18 + awake-core 36，5 项真实声卡 / 长音轨测试按需单独运行），Vue / TypeScript 生产构建通过；iOS 27 项单元检查通过（1 项依赖连接器夹具的旧测试跳过），编辑资料后继续播放原音频的界面流程通过。详见[资料整理验证日志](docs/validation-media-information.log)与[个人媒体源验证日志](docs/validation-telegram.log)。
 
