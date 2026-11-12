@@ -7,7 +7,11 @@
 ## 下载
 
 - **[macOS 0.6.3（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.6.3)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.6.3.md)
-- **[iOS 0.7.6 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.7.6)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.7.6.md)
+- **[iOS 0.7.7 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.7.7)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.7.7.md)
+
+## iOS 0.7.7 · 刷音乐与平台歌单导入
+
+正在播放页新增「刷音乐」：上滑下一首、下滑上一首，或切换成卡片模式左右抽卡（右滑喜欢、左滑跳过）；不是底部主页面入口。曲库新增「导入歌单」：支持网易云、QQ 音乐、YouTube、Apple Music、Spotify 公开页面，以及 M3U / PLS / CSV / JSON / TXT 与 CUE；只取元数据并与本地曲库匹配，未匹配条目可逐条手动指定，不下载平台音频。CUE 需要整轨已在曲库，APE 需先转 FLAC / ALAC。详见 [iOS 发行说明](docs/releases/ios-v0.7.7.md)。
 
 ## 0.6.3 / iOS 0.7.6 · 来源连接与 Plex 登录
 
@@ -152,6 +156,8 @@ open dist-rust/Awake.app
 密码与 API 密钥写入 macOS 系统钥匙串；不会通过查询曲库/配置接口回传到前端。曲库和档案先写临时文件再原子替换；后台来源更新失败保留旧内容。损坏的听歌档案会保留恢复副本。
 
 ## 验证
+
+0.7.7 本轮（iOS）：刷音乐两种模式、平台歌单导入与本地匹配、CUE 虚拟分轨；单元测试覆盖解析/匹配/CUE，在线集成测试验证网易云全量曲目、QQ、YouTube、Apple Music 返回结果。详见[iOS 0.7.7 验证记录](docs/validation-ios-v0.7.7.log)。
 
 0.6.3 / iOS 0.7.6 本轮：新增 WebDAV 行为矩阵（Basic / Digest / 同源重定向 / HTML 返回 / 部分 403 / 自签名 TLS）与 Plex 协议单元测试；Rust `awake-app` 31 项、`awake-core` 37 项通过，iOS 单元与界面测试通过（含四个导入选择器的呈现回归）。详见[iOS 验证记录](docs/validation-ios-v0.7.6.log)与[桌面验证记录](docs/validation-v0.6.3.log)。
 
