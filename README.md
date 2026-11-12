@@ -1,4 +1,4 @@
-# Awake 0.7.0
+# Awake 0.7.1
 
 **让好音乐，越来越合拍。** macOS 本地播放器：流式音频、后端连续队列、自有音乐来源、可解释的偏好学习，以及用户主动触发的 AI 策展和创作。
 
@@ -6,8 +6,14 @@
 
 ## 下载
 
-- **[macOS 0.7.0（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.7.0)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.7.0.md)
-- **[iOS 0.7.7 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.7.7)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.7.7.md)
+- **[macOS 0.7.1（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.7.1)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.7.1.md)
+- **[iOS 0.7.8 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.7.8)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.7.8.md)
+
+## 0.7.1 / iOS 0.7.8 · 播放接力与加密备份
+
+手机正在播放时点「接力到电脑」，电脑在底部播放条的「数据与接力」里点「接收接力」，输入 6 位配对码即可在同一 Wi-Fi 下继续播放：电脑匹配本地曲目并沿用当前音量/EQ、seek 到手机进度。只传曲目元数据与进度，不传音频、账号或 Token；配对码 10 分钟过期、错 5 次换码。
+
+双端新增端到端加密备份：PBKDF2-HMAC-SHA256（310,000 次）+ AES-256-GCM，密码不保存；备份曲库元数据、歌单、收藏、配置和上次播放进度（不含音频文件与钥匙串密码/Token）。桌面导出直接写入下载目录，恢复前自动保留安全副本；只接受本平台备份，跨平台只支持歌单导入。格式见 [备份格式](docs/backup-format.md)，接力协议见 [接力协议](docs/handoff-protocol.md)。
 
 ## 0.7.0 · 刷音乐与歌单导入（桌面）
 
