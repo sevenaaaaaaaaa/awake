@@ -48,6 +48,9 @@ const PATHS: Record<string, string> = {
   wave: '<path d="M2 12h2l2-6 3 12 3-9 2 5h4"/>',
   lyrics:
     '<path d="M4 7h9"/><path d="M4 12h6"/><path d="M4 17h11"/><path d="M17 4v11"/><circle cx="17" cy="17" r="2.5"/><path d="M19.5 17V8"/>',
+  download: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
+  cast: '<path d="M21 8V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2"/><path d="M21 16v2a2 2 0 0 1-2 2h-7"/><path d="M3 12a9 9 0 0 1 9 9"/><path d="M3 16a5 5 0 0 1 5 5"/><path d="M4 20h.01"/>',
 };
 </script>
 

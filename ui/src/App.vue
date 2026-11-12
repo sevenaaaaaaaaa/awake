@@ -18,6 +18,7 @@ import Artwork from "./Artwork.vue";
 import TrackList from "./TrackList.vue";
 import SwipeMode from "./SwipeMode.vue";
 import PlaylistImport from "./PlaylistImport.vue";
+import DataTransfer from "./DataTransfer.vue";
 import { useAwake } from "./useAwake";
 import { call, desktop } from "./bridge";
 import {
@@ -51,7 +52,8 @@ const album = ref<Album | null>(null),
   commandOpen = ref(false),
   sourceOpen = ref(false),
   swipeOpen = ref(false),
-  importOpen = ref(false);
+  importOpen = ref(false),
+  dataOpen = ref(false);
 const sourcePath = ref(""),
   saveOpen = ref(false),
   playlistName = ref(""),
@@ -626,7 +628,11 @@ function trapFocus(e: KeyboardEvent) {
 }
 function keydown(e: KeyboardEvent) {
   // 刷音乐 / 歌单导入自己处理方向键与空格，避免一次按键触发两次。
-  if ((swipeOpen.value || importOpen.value) && e.key !== "Escape") return;
+  if (
+    (swipeOpen.value || importOpen.value || dataOpen.value) &&
+    e.key !== "Escape"
+  )
+    return;
   const target = e.target as HTMLElement;
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
     e.preventDefault();
@@ -640,6 +646,7 @@ function keydown(e: KeyboardEvent) {
     queueOpen.value = false;
     swipeOpen.value = false;
     importOpen.value = false;
+    dataOpen.value = false;
     return;
   }
   if (
@@ -675,6 +682,11 @@ watch(importOpen, async (open) => {
   if (open) return;
   await nextTick();
   document.getElementById("playlist-import-launch")?.focus();
+});
+watch(dataOpen, async (open) => {
+  if (open) return;
+  await nextTick();
+  document.getElementById("data-launch")?.focus();
 });
 watch(sourceKind, (kind) => {
   if (kind !== "plex") stopPlexPoll();
@@ -835,7 +847,7 @@ onUnmounted(() => {
           ><Icon name="chevron" :size="14" />
         </button>
         <div class="version-line">
-          <span>为好音乐而生</span><span>0.7.0 / PERSONAL</span>
+          <span>为好音乐而生</span><span>0.7.1 / PERSONAL</span>
         </div>
       </div>
     </aside>
@@ -2032,6 +2044,15 @@ onUnmounted(() => {
           @click="queueOpen = !queueOpen"
         >
           <Icon name="list" :size="20" /></button
+        ><button
+          id="data-launch"
+          class="icon-btn"
+          aria-label="数据与接力：加密备份与手机接力"
+          aria-haspopup="dialog"
+          title="数据与接力（加密备份 / 手机接力）"
+          @click="dataOpen = true"
+        >
+          <Icon name="shield" :size="19" /></button
         ><button class="icon-btn" aria-label="声音实验室" @click="go('sound')">
           <Icon name="sliders" :size="19" /></button
         ><label class="volume-control"
@@ -2313,6 +2334,12 @@ onUnmounted(() => {
       </section>
     </div>
 
+    <DataTransfer
+      v-if="dataOpen"
+      :refresh="s.refresh"
+      @close="dataOpen = false"
+      @toast="s.toast"
+    />
     <PlaylistImport
       v-if="importOpen"
       :tracks="s.tracks"

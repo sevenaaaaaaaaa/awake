@@ -512,7 +512,7 @@ export function useAwake() {
       });
     await checkDevice();
     await call("frontend_ready", {
-      version: "0.7.0",
+      version: "0.7.1",
       tracks: tracks.value.length,
     }).catch(() => {});
     timer = window.setInterval(() => void poll(), 350);

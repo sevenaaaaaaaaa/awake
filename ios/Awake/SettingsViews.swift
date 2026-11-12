@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
   @EnvironmentObject var store: MobileStore
+  @EnvironmentObject var player: MobilePlayer
   @State private var skinImport = false
   @State private var curatorKey = ""
   @State private var musicKey = ""
@@ -10,6 +11,10 @@ struct SettingsView: View {
   @State private var sourceSheet = false
   @State private var folderImport = false
   @State private var fileImport = false
+  @State private var backupCreate = false
+  @State private var backupImport = false
+  @State private var backupCandidate: BackupCandidate?
+  @State private var restoredBackup: BackupPreview?
   var body: some View {
     Form {
       Section("外观与皮肤") {
@@ -123,6 +128,50 @@ struct SettingsView: View {
         Text("报告包含主观评分、反馈文字和软件测试，不包含源密码、API 密钥或设备 UID。仅保存在本机，分享由你发起。").font(.caption)
           .foregroundStyle(.secondary)
       }
+      Section("备份与恢复") {
+        Button {
+          backupCreate = true
+        } label: {
+          Label("创建加密备份", systemImage: "lock.doc")
+        }.accessibilityIdentifier("createBackup")
+        Button {
+          backupImport = true
+        } label: {
+          Label("从备份文件恢复", systemImage: "arrow.down.doc")
+        }.accessibilityIdentifier("restoreBackup")
+        .fileImporter(
+          isPresented: $backupImport, allowedContentTypes: [.awakeBackupFile, .json]
+        ) { result in
+          do {
+            let url = try result.get()
+            let access = url.startAccessingSecurityScopedResource()
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard size <= BackupService.maxFileBytes else {
+              throw AppFailure("备份文件不能超过 32 MB")
+            }
+            let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            guard data.count <= BackupService.maxFileBytes else {
+              throw AppFailure("备份文件不能超过 32 MB")
+            }
+            let candidate = BackupCandidate(name: url.lastPathComponent, data: data)
+            DispatchQueue.main.async { backupCandidate = candidate }
+          } catch { store.message = error.localizedDescription }
+        }
+        if let restoredBackup {
+          if let playback = restoredBackup.playback, !playback.title.isEmpty {
+            Text("上次播放：\(playback.title)（\(BackupFormat.clock(playback.position))）")
+              .font(.subheadline)
+            Button("继续播放") { continuePlayback(playback) }
+              .accessibilityIdentifier("continueRestoredPlayback")
+          }
+          Text(
+            "已从 \(restoredBackup.device) 的备份恢复：\(restoredBackup.trackCount) 首曲目、\(restoredBackup.playlistCount) 个歌单、\(restoredBackup.favoriteCount) 首收藏。"
+          ).font(.caption).foregroundStyle(.secondary)
+        }
+        Text("备份使用密码端到端加密，只包含曲库、歌单、收藏与配置；不备份钥匙串里的密码/Token，也不包含音频文件，换设备后需要重新填写凭据。跨平台只支持歌单导入。")
+          .font(.caption).foregroundStyle(.secondary)
+      }
       Section("关于 Awake") {
         Text(
           "Awake iOS \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")"
@@ -131,9 +180,18 @@ struct SettingsView: View {
         Text("公开测量与 AI 建议不是实物测量或全网统计。iOS 无法通过这里强制改变蓝牙编码、耳机 ANC 或接收器固件。").font(.caption)
           .foregroundStyle(.secondary)
       }
-    }.appSurface().navigationTitle("设置").sheet(isPresented: $sourceSheet) { SourceEditor() }.sheet(
-      item: $shareFile
-    ) { file in ShareView(url: file.url) }
+    }
+    .appSurface()
+    .navigationTitle("设置")
+    .sheet(isPresented: $sourceSheet) { SourceEditor() }
+    .sheet(item: $shareFile) { file in ShareView(url: file.url) }
+    .sheet(isPresented: $backupCreate) { BackupCreateSheet() }
+    .sheet(item: $backupCandidate) { candidate in
+      BackupRestoreSheet(candidate: candidate) { preview in restoredBackup = preview }
+    }
+  }
+  func continuePlayback(_ playback: BackupPlayback) {
+    continueBackupPlayback(playback, store: store, player: player)
   }
   func saveService(_ type: String) {
     do {
@@ -402,5 +460,263 @@ struct SourceEditor: View {
       secret = ""
       dismiss()
     } catch { self.error = error.localizedDescription }
+  }
+}
+
+struct BackupCandidate: Identifiable {
+  let id = UUID()
+  let name: String
+  let data: Data
+}
+
+extension UTType {
+  /// 文档选择器里按扩展名过滤；系统没有动态类型时退回 .data。
+  static var awakeBackupFile: UTType {
+    UTType(filenameExtension: "awake-backup") ?? .data
+  }
+}
+
+/// 按标题 + 艺人匹配恢复后的曲目，只载入并 seek，不自动播放。
+@MainActor
+func continueBackupPlayback(
+  _ playback: BackupPlayback, store: MobileStore, player: MobilePlayer
+) {
+  let title = playback.title.trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !title.isEmpty else {
+    store.message = "备份里没有可继续播放的曲目"
+    return
+  }
+  let artist = playback.artist.trimmingCharacters(in: .whitespacesAndNewlines)
+  let matches = store.state.songs.filter { song in
+    guard song.title.compare(
+      title, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+    else { return false }
+    guard !artist.isEmpty else { return true }
+    return song.artist.compare(
+      artist, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+  }
+  guard let song = matches.first(where: { store.localURL($0) != nil }),
+    let url = store.localURL(song)
+  else {
+    store.message = "本机没有找到《\(title)》的音频文件；备份不包含音频，请先导入后重试。"
+    return
+  }
+  let limit = song.duration > 0 ? song.duration : playback.duration
+  let requested = playback.position.isFinite ? max(0, playback.position) : 0
+  let start = limit > 0 ? min(requested, max(0, limit - 0.25)) : requested
+  player.play([(song, url)], at: 0, from: start, startPlaying: false)
+  store.message = "已载入《\(song.title)》，未自动播放"
+}
+
+struct BackupCreateSheet: View {
+  @EnvironmentObject var store: MobileStore
+  @EnvironmentObject var player: MobilePlayer
+  @Environment(\.dismiss) var dismiss
+  @State private var password = ""
+  @State private var confirmation = ""
+  @State private var message = ""
+  @State private var busy = false
+  @State private var shareFile: SharedFile?
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section("备份密码") {
+          SecureField("密码（至少 8 个字符）", text: $password)
+            .accessibilityIdentifier("backupCreatePassword")
+          SecureField("再次输入密码", text: $confirmation)
+            .accessibilityIdentifier("backupCreatePasswordConfirm")
+          Text("密码不会保存，也不会离开这台设备；忘记密码后备份无法恢复。")
+            .font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+          Button {
+            create()
+          } label: {
+            Label("创建并分享备份", systemImage: "square.and.arrow.up")
+          }
+          .disabled(busy || password.isEmpty || confirmation.isEmpty)
+          .accessibilityIdentifier("backupCreateSubmit")
+          if busy { ProgressView("正在用 310000 次密钥派生加密…") }
+          if !message.isEmpty {
+            Text(message).font(.caption).foregroundStyle(.secondary)
+          }
+        }
+        Section {
+          Text("备份包含曲库、歌单、收藏与播放配置；不包含钥匙串密码/Token 与音频文件。")
+            .font(.caption).foregroundStyle(.secondary)
+        }
+      }
+      .navigationTitle("创建加密备份")
+      .toolbar { Button("取消") { dismiss() } }
+      .sheet(item: $shareFile) { file in ShareView(url: file.url) }
+    }
+  }
+
+  private func create() {
+    message = ""
+    busy = true
+    defer { busy = false }
+    do {
+      try BackupCrypto.validatePassword(password, confirmation: confirmation)
+      let data = try BackupService.makeBackup(store: store, player: player, password: password)
+      let url = try BackupService.writeTemporary(data)
+      password = ""
+      confirmation = ""
+      message = "已生成 \(url.lastPathComponent)，可通过分享保存到文件 App。"
+      shareFile = SharedFile(url: url)
+    } catch {
+      message = error.localizedDescription
+    }
+  }
+}
+
+struct BackupRestoreSheet: View {
+  @EnvironmentObject var store: MobileStore
+  @EnvironmentObject var player: MobilePlayer
+  @Environment(\.dismiss) var dismiss
+  let candidate: BackupCandidate
+  let onRestored: (BackupPreview) -> Void
+  @State private var password = ""
+  @State private var preview: BackupPreview?
+  @State private var result: BackupRestoreResult?
+  @State private var error = ""
+  @State private var busy = false
+
+  init(candidate: BackupCandidate, onRestored: @escaping (BackupPreview) -> Void) {
+    self.candidate = candidate
+    self.onRestored = onRestored
+  }
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        if let result {
+          restoredSection(result)
+        } else if let preview {
+          previewSection(preview)
+        } else {
+          passwordSection
+        }
+        if !error.isEmpty {
+          Section {
+            Text(error).foregroundStyle(.red)
+              .accessibilityIdentifier("backupRestoreError")
+          }
+        }
+        if busy {
+          Section { ProgressView("正在解密备份…") }
+        }
+      }
+      .navigationTitle("从加密备份恢复")
+      .toolbar { Button(result == nil ? "取消" : "完成") { dismiss() } }
+    }
+  }
+
+  @ViewBuilder private var passwordSection: some View {
+    Section("备份文件") {
+      Text(candidate.name).font(.headline)
+      Text(
+        ByteCountFormatter.string(
+          fromByteCount: Int64(candidate.data.count), countStyle: .file)
+      ).font(.caption).foregroundStyle(.secondary)
+    }
+    Section("密码") {
+      SecureField("备份密码", text: $password)
+        .accessibilityIdentifier("backupRestorePassword")
+      Button {
+        unlock()
+      } label: {
+        Label("解锁并预览", systemImage: "lock.open")
+      }
+      .disabled(busy || password.count < BackupCrypto.minimumPasswordLength)
+      .accessibilityIdentifier("backupRestoreUnlock")
+      Text("只在本机解密预览；确认前不会改动当前曲库。")
+        .font(.caption).foregroundStyle(.secondary)
+    }
+  }
+
+  @ViewBuilder private func previewSection(_ preview: BackupPreview) -> some View {
+    Section("备份内容") {
+      LabeledContent("设备", value: preview.device)
+      LabeledContent("导出时间", value: preview.exportedAtText)
+      LabeledContent("曲目", value: "\(preview.trackCount) 首")
+      LabeledContent("歌单", value: "\(preview.playlistCount) 个")
+      LabeledContent("收藏", value: "\(preview.favoriteCount) 首")
+      LabeledContent("应用版本", value: preview.appVersion)
+      if let playback = preview.playback, !playback.title.isEmpty {
+        LabeledContent(
+          "上次播放", value: "\(playback.title)（\(BackupFormat.clock(playback.position))）")
+      }
+    }
+    Section {
+      Button {
+        restore()
+      } label: {
+        Label("确认恢复并覆盖当前曲库", systemImage: "arrow.counterclockwise")
+      }
+      .disabled(busy)
+      .accessibilityIdentifier("backupConfirmRestore")
+      Button("重新输入密码") {
+        self.preview = nil
+        password = ""
+        error = ""
+      }
+      Text("恢复前会把当前 library.json 保存为 library.json.before-restore。只接受 awake.backup.ios；其他平台备份会给出明确提示。")
+        .font(.caption).foregroundStyle(.secondary)
+    }
+  }
+
+  @ViewBuilder private func restoredSection(_ result: BackupRestoreResult) -> some View {
+    Section("恢复完成") {
+      Text(
+        "已恢复 \(result.preview.trackCount) 首曲目、\(result.preview.playlistCount) 个歌单、\(result.preview.favoriteCount) 首收藏。"
+      )
+      Text("恢复前副本：\(result.safetyCopy.lastPathComponent)")
+        .font(.caption).foregroundStyle(.secondary)
+      if let playback = result.preview.playback, !playback.title.isEmpty {
+        Text("上次播放：\(playback.title)（\(BackupFormat.clock(playback.position))）")
+        Button {
+          continueBackupPlayback(playback, store: store, player: player)
+        } label: {
+          Label("继续播放", systemImage: "play.fill")
+        }
+        .accessibilityIdentifier("continueRestoredPlaybackInSheet")
+        Text("不会自动播放；若本机没有对应音频，会提示先导入。")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+    }
+    Section {
+      Text("备份不包含钥匙串密码/Token，需要重新填写；音频文件也不在备份中。")
+        .font(.caption).foregroundStyle(.secondary)
+    }
+  }
+
+  private func unlock() {
+    error = ""
+    busy = true
+    defer { busy = false }
+    do {
+      try BackupCrypto.validatePassword(password)
+      preview = try BackupService.inspect(candidate.data, password: password)
+    } catch {
+      self.error = error.localizedDescription
+    }
+  }
+
+  private func restore() {
+    error = ""
+    busy = true
+    defer { busy = false }
+    do {
+      let outcome = try BackupService.restore(
+        into: store, fileData: candidate.data, password: password)
+      result = outcome
+      preview = outcome.preview
+      onRestored(outcome.preview)
+      store.message = "已从加密备份恢复曲库"
+    } catch {
+      self.error = error.localizedDescription
+    }
   }
 }

@@ -1,0 +1,8 @@
+{
+  "password": "Awake-test-123",
+  "salt_b64": "ABEiM0RVZneImaq7zN3u/w==",
+  "nonce_b64": "AAECAwQFBgcICQoL",
+  "iterations": 310000,
+  "payload": "{\"schema\":\"awake.backup.test\",\"version\":1,\"message\":\"hello awake\"}",
+  "data_b64": "AAECAwQFBgcICQoLMDUgbWvLP74LSIE1AHPmaA34YUNnvVlMUkQDFj6kqNJ0zcnVswbSGa/h5HZ9nsjMCIJ/ZjcqhNOdQr2LPyrW8m07aRH3SdS5BTGbL2IdoFVX8g=="
+}

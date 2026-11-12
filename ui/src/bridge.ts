@@ -159,6 +159,17 @@ export async function call<T = unknown>(
       break;
     case "scan_library":
       throw new Error("浏览器中请使用“导入音频”；文件夹扫描请在桌面版使用。");
+    case "backup_export":
+    case "backup_export_file":
+    case "backup_inspect":
+    case "backup_restore":
+      throw new Error("加密备份需要桌面版：请在 Awake 桌面应用中导出或恢复。");
+    case "handoff_start":
+    case "handoff_status":
+    case "handoff_stop":
+      throw new Error(
+        "接力接收需要桌面版：请让手机与电脑在同一局域网，并用桌面版接收。",
+      );
     case "playlist_import_fetch":
     case "playlist_import_file":
     case "playlist_import_match":
@@ -386,4 +397,92 @@ export async function importAudio(input: FileList) {
       track_count: tracks.length,
     },
   ];
+}
+
+// 加密备份 / 接力接收：命令契约由 Rust 端实现（docs/backup-format.md、
+// docs/handoff-protocol.md），参数 camelCase 传入，返回字段 snake_case。
+export interface BackupPreview {
+  schema: string;
+  version: number;
+  exported_at_ms: number;
+  device: string;
+  tracks: number;
+  playlists: number;
+  favorites: number;
+  bytes: number;
+}
+
+export interface BackupRestoreResult {
+  schema: string;
+  tracks: number;
+  playlists: number;
+  favorites: number;
+  safety_copy?: string | null;
+}
+
+export interface HandoffSession {
+  code: string;
+  port: number;
+  name: string;
+  url_hint: string;
+}
+
+export interface HandoffStatus {
+  active: boolean;
+  code: string;
+  port: number;
+  name: string;
+  last_message: string;
+}
+
+export interface HandoffReceived {
+  title: string;
+  position: number;
+  matched: boolean;
+}
+
+export async function backupExport(password: string): Promise<string> {
+  return call<string>("backup_export", { password });
+}
+
+/** 桌面端优先：由 Rust 直接写入 Downloads，避免 WKWebView 静默取消 Blob 下载。 */
+export async function backupExportFile(password: string): Promise<string> {
+  return call<string>("backup_export_file", { password });
+}
+
+export async function backupInspect(
+  file: string,
+  password: string,
+): Promise<BackupPreview> {
+  return call<BackupPreview>("backup_inspect", { file, password });
+}
+
+export async function backupRestore(
+  file: string,
+  password: string,
+): Promise<BackupRestoreResult> {
+  return call<BackupRestoreResult>("backup_restore", { file, password });
+}
+
+export async function handoffStart(): Promise<HandoffSession> {
+  return call<HandoffSession>("handoff_start");
+}
+
+export async function handoffStatus(): Promise<HandoffStatus> {
+  return call<HandoffStatus>("handoff_status");
+}
+
+export async function handoffStop(): Promise<void> {
+  await call("handoff_stop");
+}
+
+// 只在桌面版注册监听；浏览器预览直接返回 null，不触碰 Tauri 事件系统。
+export async function listenHandoffReceived(
+  handler: (payload: HandoffReceived) => void,
+): Promise<(() => void) | null> {
+  if (!desktop) return null;
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<HandoffReceived>("handoff://received", (event) =>
+    handler(event.payload),
+  );
 }

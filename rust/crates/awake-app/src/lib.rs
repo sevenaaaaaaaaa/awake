@@ -19,8 +19,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Manager, State};
 
+mod backup;
 mod connections;
 mod devices;
+mod handoff;
 mod experience;
 mod feeds;
 mod headphone_catalog;
@@ -684,7 +686,14 @@ pub fn run() {
             pick_music_folder,
             playlist_import::playlist_import_fetch,
             playlist_import::playlist_import_file,
-            playlist_import::playlist_import_match
+            playlist_import::playlist_import_match,
+            backup::backup_export,
+            backup::backup_export_file,
+            backup::backup_inspect,
+            backup::backup_restore,
+            handoff::handoff_start,
+            handoff::handoff_status,
+            handoff::handoff_stop
         ])
         .build(tauri::generate_context!())
         .expect("启动 Awake 失败")

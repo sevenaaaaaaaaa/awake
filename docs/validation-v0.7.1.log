@@ -1,0 +1,33 @@
+Awake 0.7.1 (desktop) — 2026-11-12 Asia/Shanghai
+
+PASS: cargo test --manifest-path rust/Cargo.toml -p awake-core -p awake-app --lib
+  awake-app: 64 passed, 0 failed, 10 ignored
+  awake-core: 37 passed, 0 failed
+  新增 13 项：加密备份固定向量逐字节一致、envelope 规范、roundtrip、
+  错误密码/篡改统一报错、跨平台 schema 拒绝、导出不含来源 Token、
+  安全副本与失败回滚；接力匹配（归一化/bigram/时长/本地文件优先）、
+  请求解析、Gate 限流/换码/过期、candidates 只暴露本地路径、HTTP 冒烟
+  （404/401/200/400）。
+
+PASS: 加密备份与桌面端互操作
+  固定向量与 docs/backup-vector.json 的 data 完全一致；导出写入 Downloads，
+  恢复先写 data_dir/backups/restore-<ms>/ 安全副本再原子替换 library/taste。
+
+PASS: npm run build --prefix ui（vue-tsc + vite，48 modules）
+
+PASS: ./Tools/build_rust_app.sh（release + ad-hoc 签名）
+  codesign --verify --deep --strict 通过；CFBundleShortVersionString = 0.7.1
+
+PASS: 桌面启动冒烟
+  open 后 frontend_ready.txt 写入 version=0.7.1 / tracks=9（WebView 挂载 + IPC 可用）；
+  capabilities/default.json（core:default）已随包，事件监听权限可用；不可用时 UI 回退轮询。
+
+PASS: 发布包
+  dist-rust/Awake-0.7.1-macos-arm64.zip（解压后签名校验通过）、
+  Awake-Telegram-Connector-0.7.1.zip、SHA256SUMS 校验通过。
+
+未验证：
+  真实 iPhone + Mac 的 mDNS 发现与 POST /handoff 往返、真实扬声器 seek 落点；
+  真实用户曲库上“导出 → 恢复”的 UI 点击流程（单测用临时目录）；
+  WKWebView 下载行为（主路径改为 Rust 直接写 Downloads，备用 Blob 与文本复制）；
+  CUE 桌面分轨播放仍未支持。

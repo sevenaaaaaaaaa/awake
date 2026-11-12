@@ -186,6 +186,7 @@ struct NowPlayingView: View {
   @Environment(\.dismiss) var dismiss
   @State private var editingInfo = false
   @State private var swiping = false
+  @State private var handingOff = false
   var body: some View {
     if swiping {
       SwipePlayerView(onClose: { swiping = false })
@@ -211,6 +212,13 @@ struct NowPlayingView: View {
               Button("整理封面、歌词与乐评") { editingInfo = true }
                 .accessibilityIdentifier("editPlayingMedia")
             }
+            Button {
+              handingOff = true
+            } label: {
+              Label("接力到电脑", systemImage: "airplayaudio")
+            }
+            .accessibilityIdentifier("handoffToMac")
+            .accessibilityHint("把正在播放的曲目和进度交给同一局域网的电脑继续播放")
             EnhancementBadge()
             Slider(
               value: Binding(get: { player.position }, set: { player.seek($0) }),
@@ -268,6 +276,7 @@ struct NowPlayingView: View {
         Button("完成") { dismiss() }
       }
     }.sheet(isPresented: $editingInfo) { if let song = player.song { MediaInfoView(song: song) } }
+    .sheet(isPresented: $handingOff) { HandoffSheet() }
     .overlay(alignment: .top) { EffectActivationOverlay(priority: 1) }
   }
 }
@@ -512,5 +521,167 @@ struct AwakeButtonStyle: ButtonStyle {
     ).padding(.horizontal, 18).padding(.vertical, 12).background(
       Color(hex: store.state.skin.colors.accent), in: Capsule()
     ).opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
+  }
+}
+
+/// 接力到电脑：发现设备、输入配对码、发送一次请求。
+/// 配对码只存在于内存，发送成功后立即清空，不写入档案或钥匙串。
+struct HandoffSheet: View {
+  @EnvironmentObject var player: MobilePlayer
+  @EnvironmentObject var store: MobileStore
+  @Environment(\.dismiss) private var dismiss
+  @StateObject private var browser = HandoffBrowser()
+  @State private var code = ""
+  @State private var selected: HandoffDevice?
+  @State private var manualAddress = ""
+  @State private var manualEndpoint: HandoffEndpoint?
+  @State private var manualNote = ""
+  @State private var status = ""
+  @State private var failed = false
+  @State private var sending = false
+
+  private var target: HandoffEndpoint? { manualEndpoint ?? selected?.endpoint }
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        if let song = player.song {
+          Section("当前曲目") {
+            VStack(alignment: .leading, spacing: 3) {
+              Text(song.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+              Text(song.artist + (song.album.isEmpty ? "" : " · " + song.album))
+                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+          }
+        }
+        Section {
+          if browser.devices.isEmpty {
+            HStack(spacing: 8) {
+              if browser.searching { ProgressView().controlSize(.small) }
+              Text(
+                browser.searching
+                  ? "正在搜索附近的电脑…"
+                  : (browser.note.isEmpty ? "没有找到电脑。请在电脑上点「接收接力」后重试。" : browser.note)
+              ).font(.subheadline).foregroundStyle(.secondary)
+            }
+          } else {
+            ForEach(browser.devices) { device in
+              Button {
+                selected = device
+                manualEndpoint = nil
+                manualNote = ""
+                failed = false
+                status = ""
+              } label: {
+                HStack {
+                  VStack(alignment: .leading, spacing: 3) {
+                    Text(device.name).font(.subheadline.weight(.semibold))
+                      .foregroundStyle(.primary).lineLimit(1)
+                    Text(device.displayAddress).font(.caption.monospaced())
+                      .foregroundStyle(.secondary)
+                  }
+                  Spacer()
+                  if manualEndpoint == nil, selected?.id == device.id {
+                    Image(systemName: "checkmark.circle.fill")
+                      .foregroundStyle(Color(hex: store.state.skin.colors.accent))
+                  }
+                }
+              }.buttonStyle(.plain).accessibilityIdentifier("handoffDevice-" + device.id)
+            }
+          }
+        } header: {
+          HStack {
+            Text("附近的电脑")
+            Spacer()
+            if browser.searching { ProgressView().controlSize(.mini) }
+          }
+        }
+        Section("配对码") {
+          TextField("电脑上显示的 6 位数字", text: $code)
+            .keyboardType(.numberPad)
+            .textContentType(.oneTimeCode)
+            .accessibilityIdentifier("handoffCode")
+            .onChange(of: code) { _, value in
+              let digits = HandoffRequest.sanitizedCode(value)
+              if digits != value { code = digits }
+            }
+        }
+        Section("手动输入地址") {
+          TextField("例如 192.168.1.8:8737", text: $manualAddress)
+            .keyboardType(.URL)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .accessibilityIdentifier("handoffManualAddress")
+          Button("使用这个地址") { useManualAddress() }
+            .accessibilityIdentifier("handoffUseManualAddress")
+          if !manualNote.isEmpty {
+            Text(manualNote).font(.caption).foregroundStyle(.secondary)
+          }
+        }
+        Section {
+          Button {
+            send()
+          } label: {
+            HStack(spacing: 8) {
+              if sending { ProgressView().controlSize(.small) }
+              Text(sending ? "正在发送…" : "发送")
+            }.frame(maxWidth: .infinity)
+          }
+          .disabled(sending || target == nil || code.count != 6 || player.song == nil)
+          .accessibilityIdentifier("handoffSend")
+          if !status.isEmpty {
+            Text(status).font(.subheadline).foregroundStyle(failed ? .red : .green)
+              .accessibilityIdentifier("handoffStatus")
+          }
+        } footer: {
+          Text("只把曲名、艺人、专辑、时长与进度发给电脑，不发音频、账号或 token；只连局域网，配对码不保存在手机上。")
+            .font(.caption2)
+        }
+      }
+      .navigationTitle("接力到电脑")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar { Button("完成") { dismiss() } }
+      .onAppear { browser.start() }
+      .onDisappear { browser.stop() }
+      .onChange(of: browser.devices) { _, devices in
+        if selected == nil { selected = devices.first }
+      }
+    }
+  }
+
+  private func useManualAddress() {
+    guard let endpoint = HandoffEndpoint.parse(manualAddress) else {
+      manualEndpoint = nil
+      manualNote = "格式应为 主机:端口，例如 192.168.1.8:8737"
+      return
+    }
+    guard endpoint.isLocalNetworkHost else {
+      manualEndpoint = nil
+      manualNote = "只支持局域网地址：192.168.x.x、10.x、172.16–31.x 或 电脑名.local"
+      return
+    }
+    manualEndpoint = endpoint
+    manualNote = "当前目标：" + endpoint.displayAddress
+    failed = false
+    status = ""
+  }
+
+  @MainActor private func send() {
+    guard let song = player.song, let endpoint = target else { return }
+    let position = player.position
+    let playing = player.playing
+    let pairing = code
+    sending = true
+    failed = false
+    status = "正在发送…"
+    Task {
+      let reply = await HandoffSender().send(
+        code: pairing, song: song, position: position, playing: playing, to: endpoint)
+      sending = false
+      failed = !reply.succeeded
+      status = reply.text
+      // 配对码只在一次请求里用，成功后立刻清空。
+      if reply.succeeded { code = "" }
+    }
   }
 }

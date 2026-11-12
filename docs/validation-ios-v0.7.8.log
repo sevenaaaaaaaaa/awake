@@ -1,0 +1,21 @@
+Awake iOS 0.7.8 — 2026-11-12 Asia/Shanghai
+build 15 · MARKETING_VERSION 0.7.8
+
+PASS: 全量 iOS 测试
+  xcodebuild test -scheme AwakeIOS（单元 + 界面）
+  64 项通过、0 失败；1 项在线歌单测试按设计跳过；
+  其中新增备份 7 项、接力 11 项：
+  - 备份：固定向量与桌面端逐字节一致、roundtrip/inspect/restore、错误密码与篡改统一报错、
+    跨平台/未知/更高版本 schema 拒绝、失败恢复不破坏曲库且不写安全副本、密码策略、m:ss。
+  - 接力：请求体字段与 8KB 上限、长字段截断与非法 position、响应 200/401/429/400 文案、
+    host:port 解析（含 http://、.local、IPv6）与仅局域网校验、URLProtocol 发送契约
+    （POST、Content-Type、timeout=5、真实 JSON）、错误密码/公网地址本地拒绝。
+
+PASS: 未签名 IPA 构建
+  ./Tools/build_ios_app.sh unsigned → ARCHIVE SUCCEEDED；
+  IPA 0.7.8 / build 15，arm64，CRC 与 SHA-256 校验通过。
+
+未验证：
+  真机 mDNS/NetService 发现、Local Network 授权弹窗与真实 HTTP 往返；
+  分享面板、文件选择器、恢复预览与“继续播放”的真实点击流程；
+  浅色皮肤/大字号布局；纯 IPv6 链路本地地址无回退。
