@@ -221,23 +221,27 @@ struct RouteInfo: Equatable {
       guard file.processingFormat.channelCount > 0, file.processingFormat.channelCount <= 8 else {
         throw AppFailure("不支持音频声道")
       }
+      let fileDuration = Double(file.length) / rate
+      let segmentStart = max(0, songs[at].0.segmentStart ?? 0)
+      let boundary = min(songs[at].0.segmentEnd ?? fileDuration, fileDuration)
+      guard boundary > segmentStart + 1 / rate else { throw AppFailure("音频片段范围无效") }
       engine.disconnectNodeOutput(node)
       engine.disconnectNodeOutput(eq)
       engine.disconnectNodeOutput(correction)
       engine.connect(node, to: eq, format: file.processingFormat)
       engine.connect(eq, to: correction, format: file.processingFormat)
       engine.connect(correction, to: engine.mainMixerNode, format: file.processingFormat)
-      duration = Double(file.length) / rate
+      duration = boundary - segmentStart
       guard duration > 0, duration < 86400 else { throw AppFailure("音轨为空或超过 24 小时") }
-      anchor = max(0, min(from, max(0, duration - 1 / rate)))
-      timelineOrigin = 0
-      position = anchor
-      lastPosition = anchor
+      anchor = segmentStart + max(0, min(from, max(0, duration - 1 / rate)))
+      timelineOrigin = segmentStart
+      position = anchor - segmentStart
+      lastPosition = position
       listened = 0
       song = songs[at].0
       files = [file]
       let start = AVAudioFramePosition(anchor * rate)
-      let count = AVAudioFrameCount(file.length - start)
+      let count = AVAudioFrameCount(max(0, (boundary - anchor) * rate))
       let token = generation
       node.scheduleSegment(
         file, startingFrame: start, frameCount: count, at: nil,
@@ -260,7 +264,8 @@ struct RouteInfo: Equatable {
     }
   }
   private func scheduleNext() {
-    guard queue.indices.contains(index + 1), files.count < 2,
+    guard queue.indices.contains(index + 1), queue[index].0.segmentStart == nil,
+      queue[index + 1].0.segmentStart == nil, files.count < 2,
       let next = try? AVAudioFile(forReading: queue[index + 1].1), let first = files.first,
       next.processingFormat.sampleRate == rate,
       next.processingFormat.channelCount == first.processingFormat.channelCount

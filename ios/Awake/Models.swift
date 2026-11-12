@@ -21,6 +21,16 @@ struct Song: Identifiable, Codable, Equatable {
   var lyrics: String?
   var comment: String?
   var mediaInfo: MediaInfo?
+  /// CUE 整轨分轨：同一音频文件内的起始/结束秒；为 nil 时按整个文件播放。
+  var segmentStart: Double?
+  var segmentEnd: Double?
+}
+struct Playlist: Identifiable, Codable, Equatable {
+  var id = UUID().uuidString
+  var name: String
+  var songIDs: [String] = []
+  var createdAt = Date()
+  var note = ""
 }
 struct MusicSource: Identifiable, Codable {
   var id = UUID().uuidString
@@ -209,6 +219,8 @@ struct LibraryState: Codable {
   var activeChains: [String: String] = [:]
   var ratings: [Rating] = []
   var benches: [BenchResult] = []
+  /// 旧档案没有这个字段，保持可选以兼容已有 library.json。
+  var playlists: [Playlist]?
   var skin = Skin.dark
   var customSkins: [Skin] = []
   var curatorCredentialEndpoint = ""

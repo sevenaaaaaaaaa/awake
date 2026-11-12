@@ -1,0 +1,50 @@
+Awake iOS 0.7.7 — 2026-11-12 Asia/Shanghai
+build 14 · MARKETING_VERSION 0.7.7
+
+PASS: 刷音乐入口与两种模式（界面测试 testSwipePlayerEntryAndModes）
+  曲库播放 → 打开正在播放 →「刷音乐」进入；
+  默认上下模式；切换到卡片模式做左滑、再切回上下模式做上滑；关闭后回到正在播放。
+  修复过程：fullScreenCover 从 sheet 内呈现会被拒绝，改为在正在播放页内切换内容；
+  卡片手势在只有一首歌时调用 move(to:index+1) 触发数组越界崩溃，已加边界保护。
+
+PASS: 导入歌单界面（testPlaylistImportSheetPresents）
+  曲库 →「导入歌单」；来源选择器与完成按钮可用。
+
+PASS: 歌单解析单元测试
+  testPlaylistTextM3UAndCsvParsing：文本「艺人 - 歌名」、行号前缀、M3U EXTINF、CSV 表头与引号。
+  testCueParsingBuildsSegmentsAndDerivesEnds：INDEX 01 mm:ss:ff（75 fps）、
+    下一轨起点作为上一轨 END、最后一轨暂不设 END、轨级/专辑级 PERFORMER 优先级。
+  testSongSegmentsAndPlaylistsRoundTrip：Song.segmentStart/End 与 Playlist 编解码往返。
+  testYouTubeTitleCleaningAndClockParsing："BELLAKEO (Video Oficial) - Peso Pluma, Anitta" →
+    标题 BELLAKEO、补出艺人；3:55 = 235s，1:02:03 = 3723s。
+
+PASS: 歌单匹配（testPlaylistMatcherPrefersExactThenFuzzy）
+  精确标题 + 艺人 + 时长匹配为高置信度；带 (Live) 后缀可匹配同一首；找不到时返回未匹配原因。
+
+PASS: 在线平台集成（AWAKE_PLAYLIST_INTEGRATION=1）
+  网易云公开歌单 2195404116：/api/v6/playlist/detail 取 trackIds 后再用 /api/song/detail
+    批量补全，断言曲目数 > 10（旧接口只给 10 首的问题已避开）。
+  QQ 音乐 7011264340：公开接口返回歌单名与曲目。
+  YouTube 播放列表 PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI：www.youtube.com 新版
+    lockupViewModel 解析成功（YouTube Music 在本地区被拦截，已改用 www）。
+  Apple Music「今日热门」公开页：serialized-server-data 中 trackLockup 的 items 解析成功。
+  未验证 Spotify：open.spotify.com 在多次请求后对开发机 RST，属主机级限流；
+    代码保留嵌入页解析并提示改用粘贴文本。
+
+PASS: 运行真实接口时的修正（依据 /tmp/playlist-research.md 实测）
+  网易云旧端点 root["playlist"] 与 ar/al/dt 均不存在 → 改为 v6 + song/detail 旧 schema。
+  Apple 页面没有 songName/durationInMillis → 改为 trackLockup.items +
+    title/artistName/duration(ms)/tertiaryLinks[0].title，并去掉 " - Single/EP/Album" 后缀。
+  YouTube music.youtube.com 返回拦截页 → 改用 www.youtube.com，并支持 continuation 续页。
+  QQ 增加 subcode 4000（隐私/受限）与 code 10（不存在）提示。
+
+PASS: 全量 iOS 测试
+  xcodebuild test -scheme AwakeIOS（含单元与界面测试）
+  48 项测试（单元 + 界面）全部通过，** TEST SUCCEEDED **，EXIT=0
+  含 WebDAV 行为矩阵（本地夹具运行中）与导入选择器回归。
+
+未验证：
+  真实用户歌单中的私密/地区受限内容；Spotify 完整歌单（主机限流）；Apple Music 跨区链接；
+  实体 iPhone 上的 CUE 整轨播放（虚拟分轨在模拟器以单元测试覆盖，真实 APE 无法解码）；
+  平台页面结构后续改版可能再次失效。
+  未使用任何账号 Cookie/Token，未下载平台版权音频。

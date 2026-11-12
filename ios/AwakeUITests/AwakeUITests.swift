@@ -62,6 +62,44 @@ final class AwakeUITests: XCTestCase {
     cancel.tap()
     XCTAssertTrue(app.buttons["song-qa-audio"].waitForExistence(timeout: 5))
   }
+  func testSwipePlayerEntryAndModes() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--uitesting"]
+    app.launch()
+    app.tabBars.buttons["曲库"].tap()
+    app.buttons["song-qa-audio"].tap()
+    let open = app.buttons["打开正在播放"]
+    XCTAssertTrue(open.waitForExistence(timeout: 5))
+    open.tap()
+    let entry = app.buttons["swipeModeEntry"]
+    XCTAssertTrue(entry.waitForExistence(timeout: 5))
+    entry.tap()
+    let close = app.descendants(matching: .any)["closeSwipe"]
+    XCTAssertTrue(close.waitForExistence(timeout: 8), app.debugDescription)
+    XCTAssertTrue(app.staticTexts["QA 自生成测试音频"].waitForExistence(timeout: 5))
+    // 切换到卡片模式并做一次左滑（没有下一首时也不应崩溃）。
+    app.segmentedControls.firstMatch.buttons.element(boundBy: 1).tap()
+    app.windows.firstMatch.swipeLeft()
+    XCTAssertTrue(close.waitForExistence(timeout: 5))
+    app.segmentedControls.firstMatch.buttons.element(boundBy: 0).tap()
+    app.windows.firstMatch.swipeUp()
+    XCTAssertTrue(close.waitForExistence(timeout: 5))
+    close.tap()
+    XCTAssertTrue(app.buttons["swipeModeEntry"].waitForExistence(timeout: 5))
+  }
+  func testPlaylistImportSheetPresents() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--uitesting"]
+    app.launch()
+    app.tabBars.buttons["曲库"].tap()
+    let entry = app.buttons["importPlaylist"]
+    XCTAssertTrue(entry.waitForExistence(timeout: 5))
+    entry.tap()
+    XCTAssertTrue(app.navigationBars["导入歌单"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["playlistSource"].waitForExistence(timeout: 5))
+    app.buttons["完成"].tap()
+    XCTAssertTrue(app.buttons["importPlaylist"].waitForExistence(timeout: 5))
+  }
   private func connectorFixtureIsRunning() -> Bool {
     let finished = expectation(description: "Check explicit loopback fixture")
     var available = false

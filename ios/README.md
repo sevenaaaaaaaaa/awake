@@ -1,4 +1,8 @@
-# Awake iOS 0.7.6
+# Awake iOS 0.7.7
+
+本轮新增「刷音乐」（仅从正在播放页进入，支持上下滑动与左右抽卡）与「导入歌单」（网易云 / QQ 音乐 / YouTube / Apple Music / Spotify 公开页面、M3U/PLS/CSV/JSON/TXT、CUE 虚拟分轨，并与本地曲库匹配）。详见[0.7.7 发行说明](../docs/releases/ios-v0.7.7.md)与[验证记录](../docs/validation-ios-v0.7.7.log)。本轮未签名安装包：`dist-ios/Awake-0.7.7-ios-arm64-unsigned.ipa`。
+
+## 0.7.6 · 导入入口与来源连接
 
 本轮修复导入入口并加强来源连接：设置页两个文件选择器冲突导致“导入文件夹”无反应，现改为每个按钮独立选择器；曲库新增“导入文件夹”，并支持从文件 App 用 Awake 打开音频。NAS / WebDAV 支持局域网 HTTP、同源重定向、Digest 认证与来源级“允许自签名证书”，错误提示带状态码与地址；Plex 支持账号登录获取服务器与 Token。详见[0.7.6 发行说明](../docs/releases/ios-v0.7.6.md)与[验证记录](../docs/validation-ios-v0.7.6.log)。
 

@@ -435,6 +435,123 @@ final class AwakeTests: XCTestCase {
       authorization.contains("response=\"6629fae49393a05397450978507c4ef1\""), authorization)
     XCTAssertTrue(authorization.contains("qop=auth"), authorization)
   }
+  func testPlaylistTextM3UAndCsvParsing() throws {
+    let text = PlaylistParser.text("1. 周杰伦 - 稻香\n2. 陈奕迅 - 富士山下\nAimer - 残響散歌")
+    XCTAssertEqual(text.count, 3)
+    XCTAssertEqual(text[0].artist, "周杰伦")
+    XCTAssertEqual(text[0].title, "稻香")
+    XCTAssertEqual(text[2].title, "残響散歌")
+
+    let m3u = PlaylistParser.m3u(
+      "#EXTM3U\n#EXTINF:225,周杰伦 - 稻香\nMusic/稻香.mp3\n#EXTINF:260,陈奕迅 - 富士山下\nMusic/富士山下.flac")
+    XCTAssertEqual(m3u.count, 2)
+    XCTAssertEqual(m3u[0].title, "稻香")
+    XCTAssertEqual(m3u[0].duration, 225)
+    XCTAssertEqual(m3u[0].fileName, "稻香.mp3")
+
+    let csv = PlaylistParser.csv("title,artist,album,duration\n稻香,周杰伦,魔杰座,225\n富士山下,陈奕迅,What's Going On...,260")
+    XCTAssertEqual(csv.count, 2)
+    XCTAssertEqual(csv[1].artist, "陈奕迅")
+    XCTAssertEqual(csv[1].duration, 260)
+  }
+  func testCueParsingBuildsSegmentsAndDerivesEnds() throws {
+    let cue = """
+      PERFORMER "Test Artist"
+      TITLE "Test Album"
+      FILE "album.flac" WAVE
+        TRACK 01 AUDIO
+          TITLE "First"
+          PERFORMER "Test Artist"
+          INDEX 01 00:00:00
+        TRACK 02 AUDIO
+          TITLE "Second"
+          INDEX 01 03:12:37
+        TRACK 03 AUDIO
+          TITLE "Third"
+          INDEX 01 07:00:00
+      """
+    let sheet = try PlaylistParser.cue(cue)
+    XCTAssertEqual(sheet.album, "Test Album")
+    XCTAssertEqual(sheet.fileName, "album.flac")
+    XCTAssertEqual(sheet.tracks.count, 3)
+    XCTAssertEqual(sheet.tracks[0].title, "First")
+    XCTAssertEqual(sheet.tracks[0].segmentStart, 0)
+    let second = 3 * 60 + 12 + 37.0 / 75
+    XCTAssertEqual(sheet.tracks[0].segmentEnd ?? -1, second, accuracy: 0.001)
+    XCTAssertEqual(sheet.tracks[1].segmentStart ?? -1, second, accuracy: 0.001)
+    XCTAssertEqual(sheet.tracks[1].duration, 7 * 60 - second, accuracy: 0.001)
+    XCTAssertNil(sheet.tracks[2].segmentEnd)
+    XCTAssertEqual(sheet.tracks[2].artist, "Test Artist")
+  }
+  func testOnlinePlaylistFetchersWhenEnabled() async throws {
+    guard ProcessInfo.processInfo.environment["AWAKE_PLAYLIST_INTEGRATION"] == "1" else {
+      throw XCTSkip("设置 AWAKE_PLAYLIST_INTEGRATION=1 才请求真实平台")
+    }
+    let netease = try await PlaylistFetch.netease("https://music.163.com/playlist?id=2195404116")
+    XCTAssertGreaterThan(netease.tracks.count, 10, "网易云应通过 trackIds 取到全量")
+    XCTAssertFalse(netease.name.isEmpty)
+    XCTAssertFalse(netease.tracks[0].artist.isEmpty)
+    let qq = try await PlaylistFetch.qq("7011264340")
+    XCTAssertGreaterThan(qq.tracks.count, 0)
+    XCTAssertFalse(qq.name.isEmpty)
+    let youtube = try await PlaylistFetch.youtube(
+      "https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI")
+    XCTAssertGreaterThan(youtube.tracks.count, 0)
+    let apple = try await PlaylistFetch.apple(
+      "https://music.apple.com/cn/playlist/%E4%BB%8A%E6%97%A5%E7%83%AD%E9%97%A8/pl.f4d106fed2bd41149aaacabb233eb5eb")
+    XCTAssertGreaterThan(apple.tracks.count, 0)
+  }
+  func testYouTubeTitleCleaningAndClockParsing() {
+    var artist = ""
+    let first = PlaylistFetch.cleanYoutubeTitle(
+      "BELLAKEO (Video Oficial) - Peso Pluma, Anitta", artist: &artist)
+    XCTAssertEqual(first, "BELLAKEO")
+    XCTAssertEqual(artist, "Peso Pluma, Anitta")
+    artist = "Known Artist"
+    let second = PlaylistFetch.cleanYoutubeTitle("Song Name (Official Video) - Someone", artist: &artist)
+    XCTAssertEqual(second, "Song Name")
+    XCTAssertEqual(artist, "Known Artist")
+    XCTAssertEqual(PlaylistFetch.clockSeconds("3:55"), 235)
+    XCTAssertEqual(PlaylistFetch.clockSeconds("1:02:03"), 3723)
+    XCTAssertEqual(PlaylistFetch.clockSeconds("not a time"), 0)
+  }
+  func testPlaylistMatcherPrefersExactThenFuzzy() {
+    var a = Song(title: "稻香", artist: "周杰伦", duration: 225)
+    a.id = "song-a"
+    var b = Song(title: "富士山下", artist: "陈奕迅", duration: 260)
+    b.id = "song-b"
+    let tracks = [
+      ImportedTrack(title: "稻香", artist: "周杰伦", duration: 224),
+      ImportedTrack(title: "稻香 (Live)", artist: "周杰伦"),
+      ImportedTrack(title: "完全不存在", artist: "某个路人"),
+    ]
+    let matches = PlaylistMatcher.match(tracks, songs: [a, b])
+    XCTAssertEqual(matches.count, 3)
+    XCTAssertEqual(matches[0].song?.id, "song-a")
+    XCTAssertGreaterThan(matches[0].score, 0.9)
+    XCTAssertEqual(matches[1].song?.id, "song-a")
+    XCTAssertNil(matches[2].song)
+    XCTAssertTrue(matches[2].reason.contains("没有"))
+  }
+  func testSongSegmentsAndPlaylistsRoundTrip() throws {
+    var song = Song(title: "Cue Track", artist: "A", album: "B", duration: 12)
+    song.segmentStart = 35.5
+    song.segmentEnd = 47.5
+    let data = try JSONEncoder().encode(song)
+    let decoded = try JSONDecoder().decode(Song.self, from: data)
+    XCTAssertEqual(decoded.segmentStart, 35.5)
+    XCTAssertEqual(decoded.segmentEnd, 47.5)
+    let playlist = Playlist(name: "导入", songIDs: [song.id], note: "网易云音乐")
+    let round = try JSONDecoder().decode(
+      Playlist.self, from: JSONEncoder().encode(playlist))
+    XCTAssertEqual(round.name, "导入")
+    XCTAssertEqual(round.songIDs, [song.id])
+    var state = LibraryState()
+    state.playlists = [playlist]
+    let stateData = try JSONEncoder().encode(state)
+    let stateBack = try JSONDecoder().decode(LibraryState.self, from: stateData)
+    XCTAssertEqual(stateBack.playlists?.first?.songIDs, [song.id])
+  }
   func testSelfSignedHTTPSRequiresExplicitTrust() async throws {
     var trusted = MusicSource(
       name: "tls", kind: "webdav", url: "https://127.0.0.1:8771/dav/", username: "u")

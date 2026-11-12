@@ -185,7 +185,17 @@ struct NowPlayingView: View {
   @EnvironmentObject var store: MobileStore
   @Environment(\.dismiss) var dismiss
   @State private var editingInfo = false
+  @State private var swiping = false
   var body: some View {
+    if swiping {
+      SwipePlayerView(onClose: { swiping = false })
+        .environmentObject(store)
+        .environmentObject(player)
+    } else {
+      nowPlaying
+    }
+  }
+  private var nowPlaying: some View {
     NavigationStack {
       ScrollView {
         VStack(spacing: 28) {
@@ -195,7 +205,12 @@ struct NowPlayingView: View {
               Text(song.title).font(.title2.bold()).multilineTextAlignment(.center)
               Text(song.artist).foregroundStyle(.secondary)
             }
-            Button("整理封面、歌词与乐评") { editingInfo = true }.accessibilityIdentifier("editPlayingMedia")
+            HStack(spacing: 12) {
+              Button("刷音乐") { swiping = true }
+                .accessibilityIdentifier("swipeModeEntry")
+              Button("整理封面、歌词与乐评") { editingInfo = true }
+                .accessibilityIdentifier("editPlayingMedia")
+            }
             EnhancementBadge()
             Slider(
               value: Binding(get: { player.position }, set: { player.seek($0) }),
@@ -399,8 +414,10 @@ struct SongRow: View {
 }
 struct LibraryView: View {
   @EnvironmentObject var store: MobileStore
+  @EnvironmentObject var player: MobilePlayer
   @State private var importing = false
   @State private var folderImporting = false
+  @State private var importingPlaylist = false
   @State private var query = ""
   var filtered: [Song] {
     store.state.songs.filter {
@@ -420,8 +437,36 @@ struct LibraryView: View {
           "把音乐带进来", systemImage: "square.and.arrow.down",
           description: Text("支持文件 App 中的本地、iCloud Drive 和已连接的网盘文件。"))
       }
+      if !(store.state.playlists ?? []).isEmpty {
+        Section("歌单") {
+          ForEach(store.state.playlists ?? []) { list in
+            Button {
+              Task { await playPlaylist(list) }
+            } label: {
+              HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                  Text(list.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                  Text("\(list.songIDs.count) 首 · \(list.note.isEmpty ? "本地歌单" : list.note)")
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "play.circle").font(.title3)
+              }
+            }.buttonStyle(.plain)
+              .accessibilityIdentifier("playlist-\(list.id)")
+              .contextMenu {
+                Button("删除歌单", role: .destructive) {
+                  store.state.playlists = (store.state.playlists ?? []).filter { $0.id != list.id }
+                  store.save()
+                }
+              }
+          }
+        }
+      }
       ForEach(filtered) { SongRow(song: $0).listRowBackground(Color.clear) }
     }.appSurface().navigationTitle("音乐资料库").searchable(text: $query, prompt: "曲名、艺人或专辑").toolbar {
+      Button("导入歌单", systemImage: "music.note.list") { importingPlaylist = true }
+        .accessibilityIdentifier("importPlaylist")
       Button("导入文件夹", systemImage: "folder.badge.plus") { folderImporting = true }
         .accessibilityIdentifier("importLibraryFolder")
         .fileImporter(isPresented: $folderImporting, allowedContentTypes: [.folder]) { result in
@@ -440,7 +485,21 @@ struct LibraryView: View {
           case .failure(let e): store.message = e.localizedDescription
           }
         }
+    }.sheet(isPresented: $importingPlaylist) {
+      PlaylistImportView().environmentObject(store).environmentObject(player)
     }
+  }
+  private func playPlaylist(_ list: Playlist) async {
+    let byID = Dictionary(uniqueKeysWithValues: store.state.songs.map { ($0.id, $0) })
+    let playable = list.songIDs.compactMap { byID[$0] }.compactMap { song -> (Song, URL)? in
+      guard let url = store.localURL(song) else { return nil }
+      return (song, url)
+    }
+    guard !playable.isEmpty else {
+      store.message = "这个歌单里的曲目还不在本机。请先播放或导入对应音频。"
+      return
+    }
+    player.play(playable, at: 0)
   }
 }
 
