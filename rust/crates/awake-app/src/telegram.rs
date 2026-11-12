@@ -53,10 +53,10 @@ pub fn connector(url: &str, secret: String) -> Result<Access, String> {
     if secret.trim().is_empty() {
         return Err("请输入连接器访问令牌".into());
     }
-    let access = Access {
-        source: MediaSource::new(SourceKind::Telegram, "Telegram", url.trim()),
+    let access = Access::new(
+        MediaSource::new(SourceKind::Telegram, "Telegram", url.trim()),
         secret,
-    };
+    );
     let base = access.base().map_err(|e| e.to_string())?;
     let host = base.host_str().unwrap_or("");
     let local = host == "localhost"
@@ -227,10 +227,10 @@ pub fn parse_configuration(text: &str, format: &str) -> Result<SourceConfigurati
     ) {
         return Err("配置导入支持 WebDAV、Plex 和 Telegram 连接器".into());
     }
-    let access = Access {
-        source: MediaSource::new(config.kind, &config.name, config.url.trim()),
-        secret: String::new(),
-    };
+    let access = Access::new(
+        MediaSource::new(config.kind, &config.name, config.url.trim()),
+        String::new(),
+    );
     access.base().map_err(|e| e.to_string())?;
     Ok(config)
 }

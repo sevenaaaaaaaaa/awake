@@ -51,6 +51,9 @@ pub struct MediaSource {
     /// Unix 毫秒
     pub last_scan: Option<i64>,
     pub track_count: usize,
+    /// 仅此来源放宽 HTTPS 证书校验（自签名 NAS）。默认关闭；不要对公网地址开启。
+    #[serde(default)]
+    pub trust_self_signed: bool,
 }
 
 impl MediaSource {
@@ -68,6 +71,7 @@ impl MediaSource {
             enabled: true,
             last_scan: None,
             track_count: 0,
+            trust_self_signed: false,
         }
     }
 }
@@ -329,6 +333,15 @@ mod tests {
         assert_eq!(a, b, "同输入必须同 ID");
         assert_ne!(a, c);
         assert_eq!(a.len(), 16, "ID 应为 16 位十六进制");
+    }
+
+    #[test]
+    fn old_sources_load_without_the_trust_flag() {
+        let json = r#"{"id":"x","kind":"webdav","name":"NAS","url":"https://nas.local/dav/","username":"u","password_key":"k","token":"","enabled":true,"last_scan":null,"track_count":0}"#;
+        let source: MediaSource = serde_json::from_str(json).unwrap();
+        assert!(!source.trust_self_signed, "旧曲库默认严格校验证书");
+        let newer = MediaSource::new(SourceKind::Webdav, "NAS", "https://nas.local/dav/");
+        assert!(!newer.trust_self_signed);
     }
 
     #[test]

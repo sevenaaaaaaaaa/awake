@@ -162,7 +162,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "awake-app"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "anyhow",
  "awake-core",
@@ -170,6 +170,7 @@ dependencies = [
  "cpal",
  "env_logger",
  "log",
+ "md-5",
  "objc2 0.5.3",
  "objc2-app-kit 0.2.2",
  "parking_lot",
@@ -179,13 +180,14 @@ dependencies = [
  "security-framework",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
 ]
 
 [[package]]
 name = "awake-cli"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "anyhow",
  "awake-core",
@@ -197,7 +199,7 @@ dependencies = [
 
 [[package]]
 name = "awake-core"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "anyhow",
  "cpal",
@@ -2100,6 +2102,16 @@ dependencies = [
  "log",
  "tendril",
  "web_atoms",
+]
+
+[[package]]
+name = "md-5"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
+dependencies = [
+ "cfg-if",
+ "digest",
 ]
 
 [[package]]

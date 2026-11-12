@@ -11,6 +11,9 @@ pub struct ConnectionRequest {
     pub url: String,
     pub username: String,
     pub secret: String,
+    /// 仅对该来源放宽 HTTPS 证书校验（自签名 NAS），默认关闭。
+    #[serde(default)]
+    pub trust_self_signed: bool,
 }
 pub fn access(source: &MediaSource) -> Result<Access, String> {
     let secret = if source.username.is_empty()
@@ -20,10 +23,7 @@ pub fn access(source: &MediaSource) -> Result<Access, String> {
     } else {
         vault::get(&source.password_key)?
     };
-    Ok(Access {
-        source: source.clone(),
-        secret,
-    })
+    Ok(Access::new(source.clone(), secret))
 }
 fn save(source: MediaSource, mut tracks: Vec<Track>, state: &AppState) -> Result<(), String> {
     let mut lib = state.library.lock();
@@ -80,6 +80,7 @@ pub async fn connect_source(
             })
     };
     source.username = req.username;
+    source.trust_self_signed = req.trust_self_signed;
     source.token.clear();
     if !req.name.trim().is_empty() {
         source.name = req.name.trim().into();
@@ -92,10 +93,7 @@ pub async fn connect_source(
     } else {
         req.secret
     };
-    let access = Access {
-        source: source.clone(),
-        secret: secret.clone(),
-    };
+    let access = Access::new(source.clone(), secret.clone());
     access.base().map_err(|e| e.to_string())?;
     let tracks =
         tauri::async_runtime::spawn_blocking(move || access.scan().map_err(|e| e.to_string()))

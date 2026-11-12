@@ -6,22 +6,38 @@ use awake_core::{
     pipeline::DecoderFactory,
     MediaSource, Track,
 };
+use parking_lot::Mutex;
 use reqwest::{
-    blocking::{Client, RequestBuilder},
-    header, Url,
+    blocking::{Client, RequestBuilder, Response},
+    header, Method, StatusCode, Url,
 };
+use sha2::Digest;
 use std::{
     io::{Read, Seek, SeekFrom},
     sync::Arc,
     time::Duration,
 };
 
+/// 同源重定向最多跟随的跳数。
+const MAX_REDIRECTS: usize = 3;
+const PROPFIND_BODY: &str =
+    "<?xml version=\"1.0\"?><d:propfind xmlns:d=\"DAV:\"><d:allprop/></d:propfind>";
+
 #[derive(Clone)]
 pub struct Access {
     pub source: MediaSource,
     pub secret: String,
+    /// Digest 认证的 nonce 与 nc 计数（按连接实例共享）。
+    digest: Arc<Mutex<DigestState>>,
 }
 impl Access {
+    pub fn new(source: MediaSource, secret: impl Into<String>) -> Self {
+        Self {
+            source,
+            secret: secret.into(),
+            digest: Arc::new(Mutex::new(DigestState::default())),
+        }
+    }
     pub fn base(&self) -> Result<Url> {
         let mut url = Url::parse(&self.source.url).context("来源地址无效")?;
         anyhow::ensure!(
@@ -45,9 +61,11 @@ impl Access {
             .connect_timeout(Duration::from_secs(8))
             .timeout(Duration::from_secs(25))
             .redirect(reqwest::redirect::Policy::none())
+            // 只有用户为这个来源明确勾选时才放宽证书校验，且只影响该来源自己的 Client。
+            .danger_accept_invalid_certs(self.source.trust_self_signed)
             .build()?)
     }
-    fn request(&self, client: &Client, method: reqwest::Method, url: Url) -> RequestBuilder {
+    fn request(&self, client: &Client, method: Method, url: Url) -> RequestBuilder {
         let req = client.request(method, url);
         if self.source.kind == SourceKind::Plex {
             req.header("X-Plex-Token", &self.secret)
@@ -76,25 +94,30 @@ impl Access {
         );
         Ok(url)
     }
-    fn bytes(&self, method: reqwest::Method, url: Url, depth: Option<u8>) -> Result<Vec<u8>> {
+    /// 发送请求并返回响应体与最终 URL（同源 301 / 302 / 307 / 308 最多跟随 3 跳）。
+    fn bytes(&self, method: Method, url: Url, depth: Option<u8>) -> Result<(Vec<u8>, Url)> {
         let client = self.client()?;
-        let mut request = self.request(&client, method, url);
-        if let Some(depth) = depth {
-            request = request
-                .header("Depth", depth.to_string())
-                .body(
-                    "<?xml version=\"1.0\"?><d:propfind xmlns:d=\"DAV:\"><d:allprop/></d:propfind>",
-                )
-                .header(header::CONTENT_TYPE, "application/xml");
-        }
-        let response = request
-            .send()
-            .map_err(|_| anyhow::anyhow!("来源连接失败，请检查网络和地址"))?;
-        anyhow::ensure!(
-            response.status().is_success(),
-            "来源返回 HTTP {}",
-            response.status().as_u16()
-        );
+        let (response, final_url) =
+            self.exchange(&client, &method, &url, |client, url, authorization| {
+                let mut request = self.request(client, method.clone(), url.clone());
+                if let Some(depth) = depth {
+                    request = request
+                        .header("Depth", depth.to_string())
+                        .body(PROPFIND_BODY)
+                        .header(header::CONTENT_TYPE, "application/xml; charset=utf-8");
+                }
+                if let Some(value) = authorization {
+                    request = request.header(header::AUTHORIZATION, value);
+                }
+                request
+            })?;
+        let status = response.status();
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("")
+            .to_string();
         let mut bytes = Vec::new();
         response
             .take(16 * 1024 * 1024 + 1)
@@ -103,7 +126,116 @@ impl Access {
             bytes.len() <= 16 * 1024 * 1024,
             "来源目录响应过大，请选择更小的根目录"
         );
-        Ok(bytes)
+        if !status.is_success() {
+            return Err(http_error(&final_url, status));
+        }
+        if looks_like_html(&content_type, &bytes) {
+            anyhow::bail!(html_error(&final_url, self.source.kind));
+        }
+        Ok((bytes, final_url))
+    }
+    /// 发一次请求；遇到 401 + Digest 挑战时用摘要凭据自动重试一次。
+    fn authorized<F>(
+        &self,
+        client: &Client,
+        method: &Method,
+        url: &Url,
+        build: &mut F,
+    ) -> Result<Response>
+    where
+        F: FnMut(&Client, &Url, Option<String>) -> RequestBuilder,
+    {
+        // 已缓存过挑战时先带上 Digest，避免每次 Range 都先吃一个 401。
+        let cached = self.cached_digest(method, url)?;
+        let response = build(client, url, cached)
+            .send()
+            .map_err(|error| network_error(&error))?;
+        if response.status() != StatusCode::UNAUTHORIZED || self.source.username.is_empty() {
+            return Ok(response);
+        }
+        let Some(challenge) = response
+            .headers()
+            .get(header::WWW_AUTHENTICATE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(parse_digest_challenge)
+        else {
+            return Ok(response);
+        };
+        // nonce 过期或首次认证时，用新挑战重试一次并更新缓存。
+        let authorization = self.digest_authorization(&challenge, method, url)?;
+        build(client, url, Some(authorization))
+            .send()
+            .map_err(|error| network_error(&error))
+    }
+    fn cached_digest(&self, method: &Method, url: &Url) -> Result<Option<String>> {
+        let challenge = self.digest.lock().challenge.clone();
+        match challenge {
+            Some(challenge) => Ok(Some(self.digest_authorization(&challenge, method, url)?)),
+            None => Ok(None),
+        }
+    }
+    /// 跟随同源重定向；跨源、带账号信息或非 HTTP(S) 的目标一律拒绝。
+    fn exchange<F>(
+        &self,
+        client: &Client,
+        method: &Method,
+        start: &Url,
+        mut build: F,
+    ) -> Result<(Response, Url)>
+    where
+        F: FnMut(&Client, &Url, Option<String>) -> RequestBuilder,
+    {
+        let base = self.base()?;
+        let mut url = start.clone();
+        for _ in 0..=MAX_REDIRECTS {
+            let response = self.authorized(client, method, &url, &mut build)?;
+            if !is_redirect(response.status()) {
+                return Ok((response, url));
+            }
+            let location = response
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "服务器返回 HTTP {} 重定向但缺少 Location（{}）",
+                        response.status().as_u16(),
+                        safe_url(&url)
+                    )
+                })?;
+            url = redirect_url(&base, &url, location)?;
+        }
+        anyhow::bail!(
+            "服务器重定向次数过多（最多 {MAX_REDIRECTS} 次），请直接填写最终地址：{}",
+            safe_url(start)
+        )
+    }
+    /// 为当前请求生成 Digest Authorization；同一连接内 nonce 计数递增。
+    fn digest_authorization(
+        &self,
+        challenge: &DigestChallenge,
+        method: &Method,
+        url: &Url,
+    ) -> Result<String> {
+        let mut state = self.digest.lock();
+        if state.nonce != challenge.nonce {
+            state.nonce = challenge.nonce.clone();
+            state.count = 0;
+        }
+        state.challenge = Some(challenge.clone());
+        state.count = state.count.wrapping_add(1).max(1);
+        let nc = format!("{:08x}", state.count);
+        drop(state);
+        let cnonce = awake_core::models::new_id().replace('-', "");
+        digest_header(
+            challenge,
+            &self.source.username,
+            &self.secret,
+            method.as_str(),
+            &request_uri(url),
+            &nc,
+            &cnonce,
+        )
     }
     pub fn decoder(&self, locator: &str) -> Result<StreamDecoder> {
         if self.source.kind == SourceKind::Telegram {
@@ -217,17 +349,34 @@ impl Access {
         let mut pending = vec![(base.clone(), 0)];
         let mut seen = std::collections::HashSet::new();
         let mut tracks = Vec::new();
+        let mut skipped = 0usize;
         while let Some((folder, depth)) = pending.pop() {
             if !seen.insert(folder.to_string()) {
                 continue;
             }
             anyhow::ensure!(seen.len() <= 5000 && depth <= 32, "目录层级或数量超出限制");
-            let xml = String::from_utf8(self.bytes(
-                reqwest::Method::from_bytes(b"PROPFIND")?,
-                folder.clone(),
-                Some(1),
-            )?)?;
-            let doc = roxmltree::Document::parse(&xml)?;
+            let (xml, folder_url) =
+                match self.bytes(Method::from_bytes(b"PROPFIND")?, folder.clone(), Some(1)) {
+                    Ok(value) => value,
+                    Err(error)
+                        if depth > 0 && matches!(status_of(&error), Some(403) | Some(404)) =>
+                    {
+                        // 单个条目 403 / 404 时跳过，不因一个目录拖垮整个来源。
+                        log::info!(
+                            "WebDAV 跳过无法读取的目录（HTTP {}）：{}",
+                            status_of(&error).unwrap_or_default(),
+                            safe_url(&folder)
+                        );
+                        skipped += 1;
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
+            let xml =
+                String::from_utf8(xml).context("WebDAV 返回的目录信息不是有效的 UTF-8 文本")?;
+            let doc = roxmltree::Document::parse(&xml).context(
+                "WebDAV 返回的目录信息不是有效的 XML，请确认地址指向 WebDAV 根目录而不是网页",
+            )?;
             for response in doc
                 .descendants()
                 .filter(|n| n.has_tag_name(("DAV:", "response")))
@@ -240,7 +389,7 @@ impl Access {
                 if href.is_empty() {
                     continue;
                 }
-                let url = folder.join(href)?;
+                let url = folder_url.join(href)?;
                 anyhow::ensure!(
                     url.origin() == base.origin()
                         && url.path().starts_with(base.path())
@@ -263,7 +412,7 @@ impl Access {
                     .descendants()
                     .any(|n| n.has_tag_name(("DAV:", "collection")));
                 if collection {
-                    if url != folder && !seen.contains(url.as_str()) {
+                    if url != folder_url && !seen.contains(url.as_str()) {
                         pending.push((url, depth + 1));
                     }
                     continue;
@@ -310,14 +459,16 @@ impl Access {
         }
         tracks.sort_by(|a, b| a.locator.cmp(&b.locator));
         tracks.dedup_by(|a, b| a.locator == b.locator);
+        if tracks.is_empty() && skipped > 0 {
+            anyhow::bail!(
+                "目录可以访问，但所有子目录都返回 403 / 404（{skipped} 个），请检查账号权限或根目录设置"
+            );
+        }
         Ok(tracks)
     }
     fn plex(&self) -> Result<Vec<Track>> {
-        let sections: serde_json::Value = serde_json::from_slice(&self.bytes(
-            reqwest::Method::GET,
-            self.url("library/sections")?,
-            None,
-        )?)?;
+        let (data, _) = self.bytes(Method::GET, self.url("library/sections")?, None)?;
+        let sections: serde_json::Value = parse_json(&data, "Plex 目录")?;
         let dirs = sections["MediaContainer"]["Directory"]
             .as_array()
             .ok_or_else(|| anyhow::anyhow!("Plex 目录格式无效"))?;
@@ -334,8 +485,8 @@ impl Access {
                     .append_pair("type", "10")
                     .append_pair("X-Plex-Container-Start", &offset.to_string())
                     .append_pair("X-Plex-Container-Size", "500");
-                let data: serde_json::Value =
-                    serde_json::from_slice(&self.bytes(reqwest::Method::GET, url, None)?)?;
+                let (bytes, _) = self.bytes(Method::GET, url, None)?;
+                let data: serde_json::Value = parse_json(&bytes, "Plex 曲目列表")?;
                 let rows = data["MediaContainer"]["Metadata"]
                     .as_array()
                     .ok_or_else(|| anyhow::anyhow!("Plex 曲目列表格式无效"))?;
@@ -373,6 +524,377 @@ impl Access {
         Ok(tracks)
     }
 }
+fn is_redirect(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::MOVED_PERMANENTLY
+            | StatusCode::FOUND
+            | StatusCode::TEMPORARY_REDIRECT
+            | StatusCode::PERMANENT_REDIRECT
+    )
+}
+
+/// 解析同源重定向目标；跨源或带账号信息时拒绝，避免凭据被带出站点。
+fn redirect_url(base: &Url, current: &Url, location: &str) -> Result<Url> {
+    let target = current
+        .join(location)
+        .map_err(|_| anyhow::anyhow!("服务器返回了无效的重定向地址，已停止连接"))?;
+    anyhow::ensure!(
+        target.origin() == base.origin(),
+        "服务器重定向到了其他站点（{}），为保护凭据已停止连接",
+        safe_url(&target)
+    );
+    anyhow::ensure!(
+        target.username().is_empty() && target.password().is_none(),
+        "重定向地址包含账号信息，已停止连接"
+    );
+    Ok(target)
+}
+
+/// 诊断信息里去掉查询参数与账号，避免 Plex token 等进入日志或界面。
+fn safe_url(url: &Url) -> String {
+    let mut cleaned = url.clone();
+    cleaned.set_query(None);
+    cleaned.set_fragment(None);
+    let _ = cleaned.set_username("");
+    let _ = cleaned.set_password(None);
+    cleaned.to_string()
+}
+
+fn request_uri(url: &Url) -> String {
+    match url.query() {
+        Some(query) => format!("{}?{query}", url.path()),
+        None => url.path().to_string(),
+    }
+}
+
+fn network_error(error: &reqwest::Error) -> anyhow::Error {
+    let location = error
+        .url()
+        .map(safe_url)
+        .unwrap_or_else(|| "来源地址".into());
+    let text = error.to_string().to_lowercase();
+    if error.is_timeout() {
+        anyhow::anyhow!("连接超时：服务器没有在限定时间内响应（{location}），请检查地址与网络")
+    } else if text.contains("certificate") || text.contains("tls") || text.contains("handshake") {
+        anyhow::anyhow!(
+            "HTTPS 证书校验失败（{location}）：如果这是你自己的 NAS，请勾选“允许自签名证书”后重试"
+        )
+    } else if error.is_connect() {
+        anyhow::anyhow!("无法连接服务器（{location}）：请检查地址、端口与网络")
+    } else if error.is_body() || error.is_decode() {
+        anyhow::anyhow!("读取服务器响应失败（{location}）：请稍后重试")
+    } else {
+        anyhow::anyhow!("来源连接失败（{location}）：请检查地址与网络")
+    }
+}
+
+/// 带 HTTP 状态码的错误，便于上层对单个条目 403 / 404 做跳过处理。
+#[derive(Debug)]
+struct HttpStatusError {
+    status: u16,
+    message: String,
+}
+impl std::fmt::Display for HttpStatusError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+impl std::error::Error for HttpStatusError {}
+
+fn http_error(url: &Url, status: StatusCode) -> anyhow::Error {
+    anyhow::Error::new(HttpStatusError {
+        status: status.as_u16(),
+        message: format!(
+            "来源返回 HTTP {}（{}）：{}",
+            status.as_u16(),
+            safe_url(url),
+            status_hint(status)
+        ),
+    })
+}
+
+fn status_of(error: &anyhow::Error) -> Option<u16> {
+    error
+        .downcast_ref::<HttpStatusError>()
+        .map(|error| error.status)
+}
+
+fn status_hint(status: StatusCode) -> &'static str {
+    match status.as_u16() {
+        401 => {
+            "需要认证：请检查账号和密码；若服务器启用 Digest 认证，请确认账号密码与服务器设置一致"
+        }
+        403 => "服务器拒绝访问：请检查该路径是否允许读取，或账号是否有下载权限",
+        404 => "路径不存在：请确认 WebDAV 根地址与目录名，并留意结尾斜杠",
+        405 => "服务器不接受该请求方法：这个地址可能不是 WebDAV 服务，或服务器禁用了 WebDAV",
+        429 => "请求过于频繁，请稍后再试",
+        500..=599 => "服务器内部错误，请稍后重试",
+        _ => "请检查服务器地址、账号与此来源的连接设置",
+    }
+}
+
+fn html_error(url: &Url, kind: SourceKind) -> String {
+    match kind {
+        SourceKind::Webdav => format!(
+            "服务器返回了 HTML 页面而不是 WebDAV 目录数据（HTTP 200，{}）：地址可能指向登录页或普通网站，请填写 WebDAV 根地址，例如 https://nas:5006/dav/",
+            safe_url(url)
+        ),
+        SourceKind::Plex => format!(
+            "服务器返回了 HTML 页面而不是 Plex 数据（HTTP 200，{}）：请确认服务器地址与 Token，或重新用 Plex 账号登录",
+            safe_url(url)
+        ),
+        _ => format!(
+            "服务器返回了 HTML 页面而不是预期的数据（HTTP 200，{}）：请确认地址是否正确",
+            safe_url(url)
+        ),
+    }
+}
+
+fn looks_like_html(content_type: &str, body: &[u8]) -> bool {
+    if content_type.to_ascii_lowercase().contains("text/html") {
+        return true;
+    }
+    let head = &body[..body.len().min(512)];
+    let text = String::from_utf8_lossy(head)
+        .trim_start()
+        .to_ascii_lowercase();
+    text.starts_with("<!doctype html") || text.starts_with("<html")
+}
+
+fn parse_json(bytes: &[u8], what: &str) -> Result<serde_json::Value> {
+    serde_json::from_slice(bytes)
+        .with_context(|| format!("{what}格式无效：请确认服务器地址、Token 与服务器类型"))
+}
+
+#[derive(Debug, Default)]
+struct DigestState {
+    nonce: String,
+    count: u32,
+    challenge: Option<DigestChallenge>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DigestChallenge {
+    realm: String,
+    nonce: String,
+    opaque: Option<String>,
+    qop: Option<String>,
+    algorithm: Option<String>,
+}
+
+/// 从 WWW-Authenticate 头里取 Digest 挑战（可与其他认证方案同时出现）。
+fn parse_digest_challenge(header: &str) -> Option<DigestChallenge> {
+    let lower = header.to_ascii_lowercase();
+    let bytes = header.as_bytes();
+    let mut start = None;
+    for (index, _) in lower.match_indices("digest") {
+        let boundary = index == 0 || matches!(bytes[index - 1], b' ' | b'\t' | b',');
+        if !boundary {
+            continue;
+        }
+        let rest = header[index + "digest".len()..].trim_start();
+        let rest_lower = rest.to_ascii_lowercase();
+        if rest.starts_with('=')
+            || !(rest_lower.contains("realm=") || rest_lower.contains("nonce="))
+        {
+            continue;
+        }
+        start = Some(index + "digest".len());
+        break;
+    }
+    let params = parse_auth_params(&header[start?..]);
+    let mut realm = None;
+    let mut nonce = None;
+    let mut opaque = None;
+    let mut qop = None;
+    let mut algorithm = None;
+    for (key, value) in params {
+        match key.as_str() {
+            "realm" => realm = Some(value),
+            "nonce" => nonce = Some(value),
+            "opaque" => opaque = Some(value),
+            "qop" => qop = Some(value),
+            "algorithm" => algorithm = Some(value),
+            _ => {}
+        }
+    }
+    Some(DigestChallenge {
+        realm: realm?,
+        nonce: nonce?,
+        opaque,
+        qop,
+        algorithm,
+    })
+}
+
+fn parse_auth_params(input: &str) -> Vec<(String, String)> {
+    let bytes = input.as_bytes();
+    let mut params = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        while index < bytes.len() && matches!(bytes[index], b' ' | b'\t' | b',') {
+            index += 1;
+        }
+        if index >= bytes.len() {
+            break;
+        }
+        let key_start = index;
+        while index < bytes.len() && bytes[index] != b'=' && bytes[index] != b',' {
+            index += 1;
+        }
+        if index >= bytes.len() || bytes[index] != b'=' {
+            break;
+        }
+        let key = input[key_start..index].trim().to_ascii_lowercase();
+        index += 1;
+        while index < bytes.len() && bytes[index] == b' ' {
+            index += 1;
+        }
+        if index < bytes.len() && bytes[index] == b'"' {
+            index += 1;
+            let value_start = index;
+            let mut value_end = None;
+            while index < bytes.len() {
+                if bytes[index] == b'\\' {
+                    index += 2;
+                    continue;
+                }
+                if bytes[index] == b'"' {
+                    value_end = Some(index);
+                    index += 1;
+                    break;
+                }
+                index += 1;
+            }
+            let Some(value_end) = value_end else {
+                break;
+            };
+            let value = input[value_start..value_end]
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\");
+            params.push((key, value));
+        } else {
+            let value_start = index;
+            while index < bytes.len() && bytes[index] != b',' {
+                index += 1;
+            }
+            params.push((key, input[value_start..index].trim().to_string()));
+        }
+    }
+    params
+}
+
+fn digest_hex(algorithm: &str, value: &str) -> Result<String> {
+    match algorithm {
+        "MD5" => Ok(format!("{:x}", md5::Md5::digest(value.as_bytes()))),
+        "SHA-256" => Ok(format!("{:x}", sha2::Sha256::digest(value.as_bytes()))),
+        _ => anyhow::bail!("不支持的摘要算法"),
+    }
+}
+
+/// RFC 2617 / 7616 的 response 计算；qop 为 None 时使用旧式无 qop 形式。
+fn digest_response(
+    algorithm: &str,
+    session: bool,
+    username: &str,
+    password: &str,
+    realm: &str,
+    nonce: &str,
+    method: &str,
+    uri: &str,
+    qop: Option<&str>,
+    nc: &str,
+    cnonce: &str,
+) -> Result<String> {
+    let mut ha1 = digest_hex(algorithm, &format!("{username}:{realm}:{password}"))?;
+    if session {
+        ha1 = digest_hex(algorithm, &format!("{ha1}:{nonce}:{cnonce}"))?;
+    }
+    let ha2 = digest_hex(algorithm, &format!("{method}:{uri}"))?;
+    match qop {
+        Some(qop) => digest_hex(
+            algorithm,
+            &format!("{ha1}:{nonce}:{nc}:{cnonce}:{qop}:{ha2}"),
+        ),
+        None => digest_hex(algorithm, &format!("{ha1}:{nonce}:{ha2}")),
+    }
+}
+
+fn quote_auth(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn digest_header(
+    challenge: &DigestChallenge,
+    username: &str,
+    password: &str,
+    method: &str,
+    uri: &str,
+    nc: &str,
+    cnonce: &str,
+) -> Result<String> {
+    let requested = challenge.algorithm.as_deref().unwrap_or("MD5");
+    let (algorithm, session) = match requested.to_ascii_uppercase().as_str() {
+        "MD5" => ("MD5", false),
+        "SHA-256" => ("SHA-256", false),
+        "MD5-SESS" => ("MD5", true),
+        "SHA-256-SESS" => ("SHA-256", true),
+        other => {
+            anyhow::bail!("服务器要求的摘要认证算法不受支持：{other}（当前支持 MD5 / SHA-256）")
+        }
+    };
+    let qop = match challenge.qop.as_deref() {
+        None => None,
+        Some(value) => {
+            let offered: Vec<String> = value
+                .split(',')
+                .map(|item| item.trim().to_ascii_lowercase())
+                .filter(|item| !item.is_empty())
+                .collect();
+            if offered.iter().any(|item| item == "auth") {
+                Some("auth")
+            } else if offered.is_empty() {
+                None
+            } else {
+                anyhow::bail!("服务器只支持摘要认证 qop=auth-int，当前连接方式无法使用");
+            }
+        }
+    };
+    let response = digest_response(
+        algorithm,
+        session,
+        username,
+        password,
+        &challenge.realm,
+        &challenge.nonce,
+        method,
+        uri,
+        qop,
+        nc,
+        cnonce,
+    )?;
+    let mut header = format!(
+        "Digest username=\"{}\", realm=\"{}\", nonce=\"{}\", uri=\"{}\", algorithm={}, response=\"{}\"",
+        quote_auth(username),
+        quote_auth(&challenge.realm),
+        quote_auth(&challenge.nonce),
+        quote_auth(uri),
+        challenge.algorithm.as_deref().unwrap_or("MD5"),
+        response
+    );
+    if let Some(qop) = qop {
+        header.push_str(&format!(
+            ", qop={qop}, nc={nc}, cnonce=\"{}\"",
+            quote_auth(cnonce)
+        ));
+    }
+    if let Some(opaque) = &challenge.opaque {
+        header.push_str(&format!(", opaque=\"{}\"", quote_auth(opaque)));
+    }
+    Ok(header)
+}
+
 fn percent_decode(value: &str) -> Result<String> {
     let mut out = Vec::new();
     let bytes = value.as_bytes();
@@ -449,18 +971,42 @@ impl HttpSource {
     }
     fn fill(&mut self, start: u64) -> Result<()> {
         let end = start.saturating_add(524287);
-        let response = self
-            .access
-            .request(&self.client, reqwest::Method::GET, self.url.clone())
-            .header(header::RANGE, format!("bytes={start}-{end}"))
-            .header(header::ACCEPT_ENCODING, "identity")
-            .send()
-            .map_err(|_| anyhow::anyhow!("远程音频读取失败，请检查来源连接"))?;
-        anyhow::ensure!(
-            response.status() == reqwest::StatusCode::PARTIAL_CONTENT,
-            "服务器不支持可定位的 HTTP Range 播放（HTTP {}）；请使用挂载目录",
-            response.status().as_u16()
-        );
+        let access = self.access.clone();
+        let client = self.client.clone();
+        let (response, final_url) = access.exchange(
+            &client,
+            &Method::GET,
+            &self.url,
+            |client, url, authorization| {
+                let mut request = access
+                    .request(client, Method::GET, url.clone())
+                    .header(header::RANGE, format!("bytes={start}-{end}"))
+                    .header(header::ACCEPT_ENCODING, "identity");
+                if let Some(value) = authorization {
+                    request = request.header(header::AUTHORIZATION, value);
+                }
+                request
+            },
+        )?;
+        // 记住重定向后的地址，后续 Range 请求不必重复跳转。
+        self.url = final_url.clone();
+        let status = response.status();
+        if status != StatusCode::PARTIAL_CONTENT {
+            let hint = if status == StatusCode::OK {
+                "服务器忽略了 Range 请求，无法定位播放；请换用支持 HTTP Range 的 WebDAV 服务或挂载目录"
+            } else if status == StatusCode::UNAUTHORIZED {
+                "需要认证：请检查账号密码，或服务器启用了 Digest 认证"
+            } else if status == StatusCode::FORBIDDEN {
+                "服务器拒绝读取该音频：请检查文件权限与账号授权"
+            } else {
+                "请检查来源连接与文件权限"
+            };
+            anyhow::bail!(
+                "远程音频读取失败（HTTP {}，{}）：{hint}",
+                status.as_u16(),
+                safe_url(&final_url)
+            );
+        }
         let range = response
             .headers()
             .get(header::CONTENT_RANGE)
@@ -612,18 +1158,91 @@ mod tests {
                     let first = req.lines().next().unwrap_or("");
                     let target = first.split_whitespace().nth(1).unwrap_or("");
                     let (status, content_type, body, extra) = if first.starts_with("PROPFIND") {
-                        if !req
-                            .to_lowercase()
-                            .contains("authorization: basic dxnlcjpwyxnz")
-                        {
-                            ("401 Unauthorized", "text/plain", vec![], String::new())
-                        } else {
-                            let href = if target.starts_with("/outside/") {
-                                String::from("https://example.invalid/private.wav")
+                        let lower = req.to_lowercase();
+                        let dav_body = |href: &str| {
+                            format!("<d:multistatus xmlns:d='DAV:'><d:response><d:href>{href}</d:href><d:propstat><d:prop><d:getcontentlength>1382400044</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>").into_bytes()
+                        };
+                        if target.starts_with("/moved/") && !target.starts_with("/moved/final/") {
+                            (
+                                "302 Found",
+                                "text/plain",
+                                Vec::new(),
+                                "Location: /moved/final/\r\n".to_string(),
+                            )
+                        } else if target.starts_with("/cross/") {
+                            (
+                                "302 Found",
+                                "text/plain",
+                                Vec::new(),
+                                "Location: https://example.invalid/dav/\r\n".to_string(),
+                            )
+                        } else if target.starts_with("/html/") {
+                            (
+                                "200 OK",
+                                "text/html",
+                                b"<!DOCTYPE html><html>login</html>".to_vec(),
+                                String::new(),
+                            )
+                        } else if target.starts_with("/digest/") {
+                            let challenge = "WWW-Authenticate: Digest realm=\"dav\", nonce=\"abc123\", qop=\"auth\", algorithm=MD5, opaque=\"xyz\"\r\n";
+                            if !lower.contains("authorization: digest") {
+                                (
+                                    "401 Unauthorized",
+                                    "text/plain",
+                                    Vec::new(),
+                                    challenge.to_string(),
+                                )
+                            } else if lower.contains("authorization: digest username=\"user\"")
+                                && lower.contains("nc=")
+                                && lower.contains("qop=auth")
+                                && lower.contains("opaque=\"xyz\"")
+                            {
+                                (
+                                    "207 Multi-Status",
+                                    "application/xml",
+                                    dav_body("/digest/%E9%9F%B3%E4%B9%90.wav"),
+                                    String::new(),
+                                )
                             } else {
-                                String::from("/dav/%E9%9F%B3%E4%B9%90.wav")
-                            };
-                            ("207 Multi-Status","application/xml",format!("<d:multistatus xmlns:d='DAV:'><d:response><d:href>{href}</d:href><d:propstat><d:prop><d:getcontentlength>1382400044</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>").into_bytes(),String::new())
+                                (
+                                    "401 Unauthorized",
+                                    "text/plain",
+                                    Vec::new(),
+                                    challenge.to_string(),
+                                )
+                            }
+                        } else if target.starts_with("/skip/locked") {
+                            ("403 Forbidden", "text/plain", Vec::new(), String::new())
+                        } else if target.starts_with("/skip/") {
+                            (
+                                "207 Multi-Status",
+                                "application/xml",
+                                b"<d:multistatus xmlns:d='DAV:'><d:response><d:href>/skip/locked/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response><d:response><d:href>/skip/ok.wav</d:href><d:propstat><d:prop><d:getcontentlength>1234</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>".to_vec(),
+                                String::new(),
+                            )
+                        } else if !lower.contains("authorization: basic dxnlcjpwyxnz") {
+                            ("401 Unauthorized", "text/plain", Vec::new(), String::new())
+                        } else if target.starts_with("/outside/") {
+                            (
+                                "207 Multi-Status",
+                                "application/xml",
+                                dav_body("https://example.invalid/private.wav"),
+                                String::new(),
+                            )
+                        } else if target.starts_with("/moved/") {
+                            (
+                                "207 Multi-Status",
+                                "application/xml",
+                                dav_body("/moved/final/%E9%9F%B3%E4%B9%90.wav"),
+                                String::new(),
+                            )
+                        } else {
+                            (
+                                "207 Multi-Status",
+                                "application/xml",
+                                dav_body("/dav/%E9%9F%B3%E4%B9%90.wav"),
+                                String::new(),
+                            )
                         }
                     } else if target.starts_with("/telegram") && target.ends_with("/sponsored") {
                         (
@@ -698,10 +1317,7 @@ mod tests {
     fn access(server: &Server, kind: SourceKind, path: &str) -> Access {
         let mut source = MediaSource::new(kind, "test", format!("{}{path}", server.base));
         source.username = "user".into();
-        Access {
-            source,
-            secret: "pass".into(),
-        }
+        Access::new(source, "pass")
     }
     #[test]
     fn authenticated_webdav_ranges_and_seek_are_bounded() {
@@ -838,5 +1454,207 @@ mod tests {
         let mut bad = access(&server, SourceKind::Plex, "/");
         bad.source.url = format!("{}/?token=secret", server.base);
         assert!(bad.base().is_err());
+    }
+
+    #[test]
+    fn digest_challenge_parsing_and_rfc_vector() {
+        let challenge = parse_digest_challenge(
+            "Basic realm=\"x\", Digest realm=\"testrealm@host.com\", qop=\"auth,auth-int\", nonce=\"dcd98b7102dd2f0e8b11d0f600bfb0c093\", opaque=\"5ccc069c403ebaf9f0171e9517f40e41\", algorithm=MD5",
+        )
+        .unwrap();
+        assert_eq!(challenge.realm, "testrealm@host.com");
+        assert_eq!(challenge.nonce, "dcd98b7102dd2f0e8b11d0f600bfb0c093");
+        assert_eq!(challenge.qop.as_deref(), Some("auth,auth-int"));
+        assert_eq!(
+            challenge.opaque.as_deref(),
+            Some("5ccc069c403ebaf9f0171e9517f40e41")
+        );
+        assert_eq!(challenge.algorithm.as_deref(), Some("MD5"));
+        // RFC 2617 §3.5 的 MD5 + qop=auth 示例。
+        let response = digest_response(
+            "MD5",
+            false,
+            "Mufasa",
+            "Circle Of Life",
+            "testrealm@host.com",
+            "dcd98b7102dd2f0e8b11d0f600bfb0c093",
+            "GET",
+            "/dir/index.html",
+            Some("auth"),
+            "00000001",
+            "0a4f113b",
+        )
+        .unwrap();
+        assert_eq!(response, "6629fae49393a05397450978507c4ef1");
+        assert_eq!(
+            digest_hex("MD5", "abc").unwrap(),
+            "900150983cd24fb0d6963f7d28e17f72"
+        );
+        assert_eq!(
+            digest_hex("SHA-256", "abc").unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert!(digest_hex("SHA-1", "abc").is_err());
+    }
+
+    #[test]
+    fn digest_header_uses_challenge_fields_and_counts_nonces() {
+        let mut source =
+            MediaSource::new(SourceKind::Webdav, "test", "https://nas.local:5006/dav/");
+        source.username = "user".into();
+        let access = Access::new(source, "pass");
+        let url = Url::parse("https://nas.local:5006/dav/").unwrap();
+        let challenge = parse_digest_challenge(
+            "Digest realm=\"dav\", nonce=\"n1\", qop=\"auth\", algorithm=SHA-256, opaque=\"op\"",
+        )
+        .unwrap();
+        let first = access
+            .digest_authorization(&challenge, &Method::GET, &url)
+            .unwrap();
+        assert!(first.starts_with("Digest "));
+        assert!(first.contains("username=\"user\""));
+        assert!(first.contains("algorithm=SHA-256"));
+        assert!(first.contains("nc=00000001"));
+        assert!(first.contains("qop=auth"));
+        assert!(first.contains("opaque=\"op\""));
+        let second = access
+            .digest_authorization(&challenge, &Method::GET, &url)
+            .unwrap();
+        assert!(second.contains("nc=00000002"), "nonce 计数需要自增");
+
+        let renewed =
+            parse_digest_challenge("Digest realm=\"dav\", nonce=\"n2\", qop=\"auth\"").unwrap();
+        let third = access
+            .digest_authorization(&renewed, &Method::GET, &url)
+            .unwrap();
+        assert!(third.contains("nc=00000001"), "新 nonce 应重置计数");
+
+        let legacy = parse_digest_challenge("Digest realm=\"dav\", nonce=\"old\"").unwrap();
+        let legacy_header = access
+            .digest_authorization(&legacy, &Method::GET, &url)
+            .unwrap();
+        assert!(
+            !legacy_header.contains("qop=") && !legacy_header.contains("nc="),
+            "无 qop 的旧式 Digest 不发送 qop / nc"
+        );
+    }
+
+    #[test]
+    fn redirect_targets_must_stay_on_the_same_origin() {
+        let base = Url::parse("https://nas.local:5006/dav/").unwrap();
+        let current = base.clone();
+        assert_eq!(
+            redirect_url(&base, &current, "music/").unwrap().as_str(),
+            "https://nas.local:5006/dav/music/"
+        );
+        for location in [
+            "https://evil.example/dav/",
+            "http://nas.local:5006/dav/",
+            "https://user:pass@nas.local:5006/dav/",
+            "ftp://nas.local/dav/",
+        ] {
+            let error = redirect_url(&base, &current, location).unwrap_err();
+            assert!(
+                error.to_string().contains("其他站点")
+                    || error.to_string().contains("账号信息")
+                    || error.to_string().contains("无效"),
+                "{location}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn html_and_sensitive_urls_are_recognized() {
+        assert!(looks_like_html("text/html; charset=utf-8", b""));
+        assert!(looks_like_html(
+            "application/xml",
+            b"<!DOCTYPE html><html></html>"
+        ));
+        assert!(!looks_like_html(
+            "application/xml",
+            b"<?xml version=\"1.0\"?><d:multistatus/>"
+        ));
+        let url = Url::parse("https://nas.local/dav/?X-Plex-Token=secret").unwrap();
+        assert!(!safe_url(&url).contains("secret"));
+        assert!(status_hint(StatusCode::FORBIDDEN).contains("权限"));
+        assert!(status_hint(StatusCode::METHOD_NOT_ALLOWED).contains("WebDAV"));
+    }
+
+    #[test]
+    fn follows_same_origin_redirect_for_propfind() {
+        let server = Server::new();
+        let access = access(&server, SourceKind::Webdav, "/moved/");
+        let tracks = access.scan().unwrap();
+        assert_eq!(tracks.len(), 1);
+        // locator 保持 WebDAV 返回的百分号编码，播放时再拼接到最终 URL。
+        assert_eq!(tracks[0].locator, "final/%E9%9F%B3%E4%B9%90.wav");
+        let logs = server.requests.lock().unwrap();
+        assert!(logs
+            .iter()
+            .any(|request| request.starts_with("PROPFIND /moved/ ")));
+        assert!(logs
+            .iter()
+            .any(|request| request.starts_with("PROPFIND /moved/final/ ")));
+    }
+
+    #[test]
+    fn refuses_cross_origin_redirect_without_retrying() {
+        let server = Server::new();
+        let error = access(&server, SourceKind::Webdav, "/cross/")
+            .scan()
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("其他站点"), "{error}");
+        assert_eq!(server.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn answers_digest_challenge_and_keeps_credentials_in_headers() {
+        let server = Server::new();
+        let access = access(&server, SourceKind::Webdav, "/digest/");
+        assert_eq!(access.scan().unwrap().len(), 1);
+        // 第二次扫描应复用缓存的 nonce，首个请求就带 Digest（不再先吃 401）。
+        assert_eq!(access.scan().unwrap().len(), 1);
+        let logs = server.requests.lock().unwrap();
+        let digest = logs
+            .iter()
+            .filter(|request| request.to_lowercase().contains("authorization: digest"))
+            .count();
+        assert_eq!(digest, 2, "每次扫描只发一次 Digest 请求");
+        assert_eq!(
+            logs.len(),
+            3,
+            "首次扫描先吃 401 再认证；第二次复用 nonce 直接成功"
+        );
+        assert!(logs
+            .iter()
+            .all(|request| !request.lines().next().unwrap_or("").contains("pass")));
+    }
+
+    #[test]
+    fn forbidden_subfolder_is_skipped_and_readable_tracks_survive() {
+        let server = Server::new();
+        let tracks = access(&server, SourceKind::Webdav, "/skip/")
+            .scan()
+            .unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].title, "ok");
+        assert!(server
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|request| request.starts_with("PROPFIND /skip/locked/ ")));
+    }
+
+    #[test]
+    fn html_login_page_reports_webdav_hint() {
+        let server = Server::new();
+        let error = access(&server, SourceKind::Webdav, "/html/")
+            .scan()
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("HTML"), "{error}");
+        assert!(error.contains("WebDAV"), "{error}");
     }
 }

@@ -26,6 +26,7 @@ mod headphone_catalog;
 mod intelligence;
 mod media_info;
 mod playback;
+mod plex;
 mod remote;
 mod telegram;
 mod vault;
@@ -639,6 +640,11 @@ pub fn run() {
             intelligence::reveal_generation,
             feeds::subscribe_feed,
             connections::connect_source,
+            plex::plex_pin_create,
+            plex::plex_pin_poll,
+            plex::plex_open_auth,
+            plex::plex_resources,
+            plex::plex_sections,
             connections::refresh_remote_source,
             connections::source_refresh_status,
             connections::set_source_auto_refresh,

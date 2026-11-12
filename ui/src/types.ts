@@ -68,6 +68,7 @@ export interface Source {
   name: string;
   url: string;
   track_count: number;
+  trust_self_signed?: boolean;
 }
 export interface Playlist {
   id: string;

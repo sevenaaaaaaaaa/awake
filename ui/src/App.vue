@@ -158,6 +158,144 @@ const sourceLabel = (kind: string) =>
   })[kind] || kind;
 const telegramReady = computed(() => /\/v1\/libraries\/[a-f0-9]{24}\/?$/.test(sourcePath.value));
 const activeTelegramSource = computed(() => s.sources.find(source => source.id === s.now?.source_id && source.kind === "telegram"));
+interface PlexServer {
+  name: string;
+  client_identifier: string;
+  url: string;
+  token: string;
+  local: boolean;
+  relay: boolean;
+}
+interface PlexSection {
+  key: string;
+  title: string;
+}
+const trustSelfSigned = ref(false);
+const plex = reactive({
+  busy: false,
+  polling: false,
+  status: "",
+  error: "",
+  servers: [] as PlexServer[],
+  sections: [] as PlexSection[],
+  serverIndex: -1,
+  sectionIndex: -1,
+});
+let plexTimer: number | undefined;
+function plexClientId(): string {
+  const stored = localStorage.getItem("awake-plex-client-id");
+  if (stored) return stored;
+  const id = (
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  ).toUpperCase();
+  localStorage.setItem("awake-plex-client-id", id);
+  return id;
+}
+function stopPlexPoll() {
+  if (plexTimer !== undefined) window.clearTimeout(plexTimer);
+  plexTimer = undefined;
+  plex.polling = false;
+}
+function cancelPlexLogin() {
+  stopPlexPoll();
+  plex.status = "已停止等待 Plex 授权";
+}
+async function loadPlexSections() {
+  const server = plex.servers[plex.serverIndex];
+  if (!server) return;
+  plex.sections = [];
+  plex.sectionIndex = -1;
+  try {
+    plex.sections = await call<PlexSection[]>("plex_sections", {
+      token: server.token,
+      url: server.url,
+    });
+    if (plex.sections.length) {
+      plex.sectionIndex = 0;
+      plex.status = "选择服务器与音乐库，确认后点击“连接曲库”";
+    } else {
+      plex.status = "这个服务器上没有 Plex 音乐库";
+    }
+  } catch (e) {
+    plex.error = String(e);
+  }
+}
+async function applyPlexServer() {
+  const server = plex.servers[plex.serverIndex];
+  if (!server) return;
+  sourcePath.value = `${server.url.replace(/\/+$/, "")}/`;
+  sourceSecret.value = server.token;
+  sourceName.value = server.name;
+  plex.status = "服务器地址与 Token 已填入，可点击“连接曲库”";
+  await loadPlexSections();
+}
+function applyPlexSection() {
+  const server = plex.servers[plex.serverIndex];
+  const section = plex.sections[plex.sectionIndex];
+  if (server && section) sourceName.value = `${server.name} · ${section.title}`;
+}
+async function loadPlexResources(clientId: string, token: string) {
+  plex.status = "正在读取 Plex 服务器…";
+  plex.servers = await call<PlexServer[]>("plex_resources", { clientId, token });
+  if (!plex.servers.length) {
+    plex.status = "这个 Plex 账号下没有可用的服务器，请确认服务器在线并已分享给该账号";
+    return;
+  }
+  plex.serverIndex = 0;
+  // 默认选中第一个服务器并填入地址 / Token；不做自动连接或扫描。
+  await applyPlexServer();
+}
+async function startPlexLogin() {
+  if (!desktop || plex.busy || plex.polling) return;
+  plex.busy = true;
+  plex.error = "";
+  plex.status = "";
+  plex.servers = [];
+  plex.sections = [];
+  plex.serverIndex = -1;
+  plex.sectionIndex = -1;
+  try {
+    const clientId = plexClientId();
+    const pin = await call<{ id: number; code: string; auth_token: string | null }>(
+      "plex_pin_create",
+      { clientId },
+    );
+    await call("plex_open_auth", { clientId, code: pin.code });
+    plex.polling = true;
+    plex.status = "已在浏览器打开 Plex 登录页；完成授权后这里会自动继续";
+    const deadline = Date.now() + 1_800_000;
+    const poll = async () => {
+      if (!plex.polling) return;
+      if (Date.now() > deadline) {
+        stopPlexPoll();
+        plex.error = "Plex 登录超时，请重新开始";
+        return;
+      }
+      try {
+        const result = await call<{ id: number; code: string; auth_token: string | null }>(
+          "plex_pin_poll",
+          { clientId, id: pin.id, code: pin.code },
+        );
+        if (result.auth_token) {
+          stopPlexPoll();
+          plex.status = "Plex 账号已授权";
+          await loadPlexResources(clientId, result.auth_token);
+          return;
+        }
+      } catch (e) {
+        plex.error = String(e);
+      }
+      if (plex.polling) plexTimer = window.setTimeout(poll, 2000);
+    };
+    plexTimer = window.setTimeout(poll, 2000);
+  } catch (e) {
+    plex.error = String(e);
+    stopPlexPoll();
+  } finally {
+    plex.busy = false;
+  }
+}
 const sourceConfigError = ref("");
 async function importSourceConfig(event: Event) {
   const input = event.target as HTMLInputElement;
@@ -205,6 +343,7 @@ async function connectSource() {
           url: sourcePath.value,
           username: sourceUsername.value,
           secret: sourceSecret.value,
+          trust_self_signed: trustSelfSigned.value,
         },
       });
       sourceSecret.value = "";
@@ -456,6 +595,12 @@ function keydown(e: KeyboardEvent) {
     void s.previous();
   }
 }
+watch(sourceKind, (kind) => {
+  if (kind !== "plex") stopPlexPoll();
+});
+watch(sourceOpen, (open) => {
+  if (!open) stopPlexPoll();
+});
 watch(commandOpen, (open) => {
   if (open) setTimeout(() => commandInput.value?.focus(), 0);
 });
@@ -492,7 +637,10 @@ watch(
   },
 );
 onMounted(() => window.addEventListener("keydown", keydown));
-onUnmounted(() => window.removeEventListener("keydown", keydown));
+onUnmounted(() => {
+  window.removeEventListener("keydown", keydown);
+  stopPlexPoll();
+});
 </script>
 
 <template>
@@ -1909,6 +2057,65 @@ onUnmounted(() => window.removeEventListener("keydown", keydown));
                   sourceKind === 'plex' ? '服务器访问令牌' : '仅存入系统钥匙串'
                 " /></label
           ></template>
+          <div v-if="sourceKind === 'plex' && desktop" class="plex-login">
+            <button
+              type="button"
+              class="text-button"
+              :disabled="plex.busy || plex.polling"
+              @click="startPlexLogin"
+            >
+              <Icon name="shield" />{{
+                plex.polling ? "等待 Plex 授权…" : "用 Plex 账号登录"
+              }}
+            </button>
+            <button
+              v-if="plex.polling"
+              type="button"
+              class="text-button"
+              @click="cancelPlexLogin"
+            >
+              取消登录
+            </button>
+            <p v-if="plex.status" class="muted">{{ plex.status }}</p>
+            <p v-if="plex.error" class="job-error" role="alert">{{ plex.error }}</p>
+            <template v-if="plex.servers.length">
+              <label
+                >Plex 服务器<select
+                  v-model.number="plex.serverIndex"
+                  @change="applyPlexServer"
+                >
+                  <option
+                    v-for="(server, index) in plex.servers"
+                    :key="server.url"
+                    :value="index"
+                  >
+                    {{ server.name
+                    }}{{ server.local ? "（本地）" : server.relay ? "（中继）" : "（远程）" }}
+                  </option>
+                </select></label
+              >
+              <label v-if="plex.sections.length"
+                >音乐库<select
+                  v-model.number="plex.sectionIndex"
+                  @change="applyPlexSection"
+                >
+                  <option
+                    v-for="(section, index) in plex.sections"
+                    :key="section.key"
+                    :value="index"
+                  >
+                    {{ section.title }}
+                  </option>
+                </select></label
+              >
+            </template>
+          </div>
+          <label
+            v-if="['webdav', 'plex'].includes(sourceKind)"
+            class="checkbox-label"
+            ><input v-model="trustSelfSigned" type="checkbox" />允许自签名 HTTPS
+            证书（仅此来源）</label
+          >
           <p v-if="sourceKind === 'smb'" class="muted">
             先在 Finder
             或网盘客户端挂载，再选择目录。未挂载网盘可使用服务商提供的

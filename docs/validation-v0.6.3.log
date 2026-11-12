@@ -1,0 +1,20 @@
+Awake 0.6.3 (desktop) — 2026-11-12 Asia/Shanghai
+
+PASS: cargo test --manifest-path rust/Cargo.toml -p awake-core -p awake-app --lib
+  awake-app: 31 passed, 0 failed, 5 ignored
+  awake-core: 37 passed, 0 failed
+  新增覆盖：Digest RFC 2617 向量与 nonce 计数、SHA-256、无 qop、同源重定向判定与跨源拒绝、
+  HTML 识别、mock 服务器重定向跟随、403 子目录跳过、Plex resources/sections 解析、
+  旧 library.json（无 trust_self_signed 字段）反序列化。
+
+PASS: npm run build --prefix ui（vue-tsc --noEmit + vite build）
+
+PASS: ./Tools/build_rust_app.sh（release + ad-hoc 签名，codesign --verify --deep --strict 通过）
+
+PASS: Plex PIN 协议连通性（curl，未使用真实账号）
+  POST https://plex.tv/api/v2/pins?strong=true -> HTTP 200，返回 id / code（24 位）/ authToken=null
+
+未验证：
+  真实 NAS 上的 Digest / 自签名证书 / 重定向 / 403 组合；
+  真实 Plex 账号完成浏览器授权、服务器发现与音乐库扫描；
+  http 服务器 301 跳到 https 的情形按“跨站重定向”拒绝，用户应直接填写 https 地址。
