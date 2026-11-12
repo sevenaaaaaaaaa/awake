@@ -1,4 +1,4 @@
-# Awake 0.6.3
+# Awake 0.7.0
 
 **让好音乐，越来越合拍。** macOS 本地播放器：流式音频、后端连续队列、自有音乐来源、可解释的偏好学习，以及用户主动触发的 AI 策展和创作。
 
@@ -6,8 +6,12 @@
 
 ## 下载
 
-- **[macOS 0.6.3（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.6.3)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.6.3.md)
+- **[macOS 0.7.0（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.7.0)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.7.0.md)
 - **[iOS 0.7.7 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.7.7)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.7.7.md)
+
+## 0.7.0 · 刷音乐与歌单导入（桌面）
+
+底部播放条有当前曲目时出现「刷音乐」：上下模式用滚轮 / ↑↓ / 拖动切换，卡片模式用指针拖动左右抽卡（右滑喜欢、左滑跳过）。侧栏「我的歌单」新增导入：支持网易云、QQ 音乐、YouTube、Apple Music、Spotify、M3U / PLS / CSV / JSON / TXT 与 CUE；只取元数据并与本地曲库匹配，可勾选、只看未匹配、手动指定后创建歌单。在线实测网易云 305 首、QQ 76 首、YouTube 147 首（续页）、Apple Music 74 首、Spotify 50 首。CUE 已解析分段元数据，桌面分轨播放留待下一版（iOS 0.7.7 已支持）。详见 [桌面发行说明](docs/releases/v0.7.0.md)。
 
 ## iOS 0.7.7 · 刷音乐与平台歌单导入
 
@@ -156,6 +160,8 @@ open dist-rust/Awake.app
 密码与 API 密钥写入 macOS 系统钥匙串；不会通过查询曲库/配置接口回传到前端。曲库和档案先写临时文件再原子替换；后台来源更新失败保留旧内容。损坏的听歌档案会保留恢复副本。
 
 ## 验证
+
+0.7.0 本轮（桌面）：刷音乐全窗口两种模式、平台歌单导入与本地匹配；离线 51 + 37 项测试通过，在线 5 个平台真实歌单全部通过（网易云 305 / QQ 76 / YouTube 147 / Apple 74 / Spotify 50）。详见[桌面 0.7.0 验证记录](docs/validation-v0.7.0.log)。CUE 分轨播放在桌面留待下一版。
 
 0.7.7 本轮（iOS）：刷音乐两种模式、平台歌单导入与本地匹配、CUE 虚拟分轨；单元测试覆盖解析/匹配/CUE，在线集成测试验证网易云全量曲目、QQ、YouTube、Apple Music 返回结果。详见[iOS 0.7.7 验证记录](docs/validation-ios-v0.7.7.log)。
 
