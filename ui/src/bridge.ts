@@ -9,6 +9,9 @@ import {
   type Playback,
   type Playlist,
   type ListenEvent,
+  type ImportedPlaylist,
+  type ImportedTrack,
+  type ImportMatch,
 } from "./types";
 export const desktop = isTauri();
 export const artUrl = (path: string | null) =>
@@ -156,6 +159,12 @@ export async function call<T = unknown>(
       break;
     case "scan_library":
       throw new Error("浏览器中请使用“导入音频”；文件夹扫描请在桌面版使用。");
+    case "playlist_import_fetch":
+    case "playlist_import_file":
+    case "playlist_import_match":
+      throw new Error(
+        "歌单导入需要桌面版后端支持，浏览器预览里暂不可用。",
+      );
     case "play_track": {
       const t = tracks.find(
         (t) =>
@@ -291,6 +300,33 @@ export async function call<T = unknown>(
       throw new Error(`浏览器模式暂不支持 ${command}`);
   }
   return result as T;
+}
+
+// 歌单导入：命令契约由 Rust 端实现，字段为 snake_case。
+// Tauri v2 会把 JS 的 camelCase 参数映射到 Rust 的 snake_case；
+// 这里同时带上 snake_case 键，兼容未开启默认映射的后端命令。
+export async function playlistImportFetch(
+  source: string,
+  input: string,
+): Promise<ImportedPlaylist> {
+  return call<ImportedPlaylist>("playlist_import_fetch", { source, input });
+}
+
+export async function playlistImportFile(
+  fileName: string,
+  content: string,
+): Promise<ImportedPlaylist> {
+  return call<ImportedPlaylist>("playlist_import_file", {
+    fileName,
+    file_name: fileName,
+    content,
+  });
+}
+
+export async function playlistImportMatch(
+  tracks: ImportedTrack[],
+): Promise<ImportMatch[]> {
+  return call<ImportMatch[]>("playlist_import_match", { tracks });
 }
 
 export async function importAudio(input: FileList) {

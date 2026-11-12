@@ -1,0 +1,32 @@
+Awake 0.7.0 (desktop) — 2026-11-12 Asia/Shanghai
+
+PASS: cargo test --manifest-path rust/Cargo.toml -p awake-core -p awake-app --lib
+  awake-app: 51 passed, 0 failed, 10 ignored
+  awake-core: 37 passed, 0 failed
+  新增 20 项离线测试：文本/M3U/PLS/CSV/JSON/CUE 解析、匹配精确/模糊/未匹配、
+  CUE 75fps 与下一轨 END、YouTube 嵌套续页 token 解析等。
+
+PASS: 在线平台测试（单独 --ignored 运行，真实公开歌单）
+  网易云 2195404116：305 首（v6 trackIds + song/detail 分 2 批全量）
+  QQ 7011264340：76 首（fcg 公开接口，Referer 必需）
+  YouTube PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI：147 首（首屏 100 + 续页 47）
+  Apple Music 今日热门：74 首（serialized-server-data / trackLockup）
+  Spotify Today's Top Hits：50 首（embed __NEXT_DATA__，上限 100）
+
+PASS: npm run build --prefix ui（vue-tsc --noEmit + vite build，exit 0）
+
+PASS: ./Tools/build_rust_app.sh（release + ad-hoc 签名）
+  codesign --verify --deep --strict 通过；CFBundleShortVersionString = 0.7.0
+
+PASS: 桌面启动冒烟
+  open dist-rust/Awake.app 后 frontend_ready.txt 写入 version=0.7.0（WebView 挂载 + IPC 可用）
+
+界面验证（浏览器预览，由 UI 交付时完成）：
+  刷音乐 overlay 覆盖整窗；上下模式滚轮/↑↓/拖动切歌；卡片模式拖动显示标记并收藏切歌；
+  Esc/关闭退出；导入弹窗来源切换、复核、只看未匹配、手动指定、创建歌单全流程；
+  1100px / 390px 布局检查。Tauri 真实端到端（真实曲库匹配、save_playlist）仍需在桌面 App 内复验。
+
+未验证：
+  CUE 分轨播放（0.7.0 桌面未实现，只保留分段元数据与提示）；
+  真实用户超大歌单/限流/私密歌单；YouTube 多页链式续页（本次仅 1 次续页）；
+  Apple Music 专辑字段（单曲时常等于歌名）。

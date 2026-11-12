@@ -78,6 +78,28 @@ export interface Playlist {
   track_ids: string[];
   smart: boolean;
 }
+export interface ImportedTrack {
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  file_name: string | null;
+  segment_start: number | null;
+  segment_end: number | null;
+  number: number | null;
+}
+export interface ImportedPlaylist {
+  name: string;
+  source: string;
+  tracks: ImportedTrack[];
+  note: string | null;
+}
+export interface ImportMatch {
+  track: ImportedTrack;
+  song_id: string | null;
+  score: number;
+  reason: string;
+}
 export interface ListenEvent {
   track_id: string;
   seconds: number;

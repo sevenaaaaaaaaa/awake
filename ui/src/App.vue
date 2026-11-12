@@ -16,6 +16,8 @@ import TelegramSource from "./TelegramSource.vue";
 import TelegramSponsored from "./TelegramSponsored.vue";
 import Artwork from "./Artwork.vue";
 import TrackList from "./TrackList.vue";
+import SwipeMode from "./SwipeMode.vue";
+import PlaylistImport from "./PlaylistImport.vue";
 import { useAwake } from "./useAwake";
 import { call, desktop } from "./bridge";
 import {
@@ -47,7 +49,9 @@ const album = ref<Album | null>(null),
   playlistId = ref(""),
   queueOpen = ref(false),
   commandOpen = ref(false),
-  sourceOpen = ref(false);
+  sourceOpen = ref(false),
+  swipeOpen = ref(false),
+  importOpen = ref(false);
 const sourcePath = ref(""),
   saveOpen = ref(false),
   playlistName = ref(""),
@@ -470,6 +474,63 @@ function openPlaylist(p: Playlist) {
   playlistId.value = p.id;
   go("playlist");
 }
+const swipeQueue = computed<Track[]>(() =>
+  s.queue.length > 1 ? s.queue : s.tracks.length ? s.tracks : s.queue,
+);
+const swipeIndex = computed(() => {
+  const index = swipeQueue.value.findIndex((t) => t.id === s.now?.id);
+  return index < 0 ? 0 : index;
+});
+const swipeNextTrack = computed<Track | null>(() => {
+  const list = swipeQueue.value;
+  return list.length > 1
+    ? list[(swipeIndex.value + 1) % list.length]
+    : null;
+});
+const swipePreviousTrack = computed<Track | null>(() => {
+  const list = swipeQueue.value;
+  return list.length > 1
+    ? list[(swipeIndex.value - 1 + list.length) % list.length]
+    : null;
+});
+function openSwipe() {
+  if (!s.now) {
+    s.toast("先播放一首音乐，再来刷音乐。");
+    return;
+  }
+  swipeOpen.value = true;
+}
+async function swipeStep(direction: 1 | -1) {
+  const track = s.now;
+  if (!track) return;
+  const list = swipeQueue.value;
+  if (list.length < 2) {
+    s.toast("队列里只有这一首音乐，先去曲库添加更多吧。");
+    return;
+  }
+  const index = list.findIndex((t) => t.id === track.id);
+  const current = index < 0 ? 0 : index;
+  const target = list[(current + direction + list.length) % list.length];
+  if (target && target.id !== track.id) await s.start(target, list);
+}
+async function swipeNext() {
+  await swipeStep(1);
+}
+async function swipePrevious() {
+  await swipeStep(-1);
+}
+async function swipeLike(track: Track) {
+  if (!s.favorites.has(track.id)) void s.favorite(track);
+  // 拖动期间如果歌曲自然播完，就不要再额外跳一首。
+  if (s.now?.id === track.id) await swipeStep(1);
+}
+function toggleSwipeFavorite() {
+  if (s.now) void s.favorite(s.now);
+}
+function onPlaylistImported(playlist: Playlist) {
+  importOpen.value = false;
+  openPlaylist(playlist);
+}
 async function importChange(e: Event) {
   const files = (e.target as HTMLInputElement).files;
   if (files) await s.importFiles(files);
@@ -564,6 +625,8 @@ function trapFocus(e: KeyboardEvent) {
   }
 }
 function keydown(e: KeyboardEvent) {
+  // 刷音乐 / 歌单导入自己处理方向键与空格，避免一次按键触发两次。
+  if ((swipeOpen.value || importOpen.value) && e.key !== "Escape") return;
   const target = e.target as HTMLElement;
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
     e.preventDefault();
@@ -575,6 +638,8 @@ function keydown(e: KeyboardEvent) {
     sourceOpen.value = false;
     saveOpen.value = false;
     queueOpen.value = false;
+    swipeOpen.value = false;
+    importOpen.value = false;
     return;
   }
   if (
@@ -595,6 +660,22 @@ function keydown(e: KeyboardEvent) {
     void s.previous();
   }
 }
+watch(
+  () => s.now,
+  (track) => {
+    if (!track) swipeOpen.value = false;
+  },
+);
+watch(swipeOpen, async (open) => {
+  if (open) return;
+  await nextTick();
+  document.getElementById("swipe-launch")?.focus();
+});
+watch(importOpen, async (open) => {
+  if (open) return;
+  await nextTick();
+  document.getElementById("playlist-import-launch")?.focus();
+});
 watch(sourceKind, (kind) => {
   if (kind !== "plex") stopPlexPoll();
 });
@@ -680,16 +761,26 @@ onUnmounted(() => {
       </nav>
       <div class="nav-caption between">
         <span>我的歌单</span
-        ><button
-          class="tiny-button"
-          aria-label="创建歌单"
-          @click="
-            go('agent');
-            openSave();
-          "
+        ><span class="caption-actions"
+          ><button
+            id="playlist-import-launch"
+            class="tiny-button"
+            aria-label="导入歌单"
+            title="从网易云 / QQ / YouTube / 文件等导入歌单"
+            @click="importOpen = true"
+          >
+            <Icon name="folder" :size="15" /></button
+          ><button
+            class="tiny-button"
+            aria-label="创建歌单"
+            @click="
+              go('agent');
+              openSave();
+            "
+          >
+            <Icon name="plus" :size="15" />
+          </button></span
         >
-          <Icon name="plus" :size="15" />
-        </button>
       </div>
       <div class="playlist-nav">
         <button
@@ -744,7 +835,7 @@ onUnmounted(() => {
           ><Icon name="chevron" :size="14" />
         </button>
         <div class="version-line">
-          <span>为好音乐而生</span><span>0.6.2 / PERSONAL</span>
+          <span>为好音乐而生</span><span>0.7.0 / PERSONAL</span>
         </div>
       </div>
     </aside>
@@ -1924,6 +2015,16 @@ onUnmounted(() => {
       </div>
       <div class="player-right">
         <button
+          v-if="s.now"
+          id="swipe-launch"
+          class="swipe-launch"
+          aria-label="刷音乐"
+          title="刷音乐（全窗口）"
+          @click="openSwipe"
+        >
+          <Icon name="spark" :size="16" /><span>刷音乐</span>
+        </button>
+        <button
           class="icon-btn"
           :class="{ selected: queueOpen }"
           aria-label="播放队列"
@@ -2211,6 +2312,34 @@ onUnmounted(() => {
         ></template>
       </section>
     </div>
+
+    <PlaylistImport
+      v-if="importOpen"
+      :tracks="s.tracks"
+      :save-playlist="s.savePlaylist"
+      @close="importOpen = false"
+      @created="onPlaylistImported"
+    />
+    <SwipeMode
+      v-if="swipeOpen && s.now"
+      :track="s.now"
+      :next-track="swipeNextTrack"
+      :previous-track="swipePreviousTrack"
+      :position="s.playback.position"
+      :total="s.playback.duration || s.now.duration"
+      :playing="s.playing"
+      :loading="s.loading"
+      :favorite="s.favorites.has(s.now.id)"
+      :index="swipeIndex"
+      :total-tracks="swipeQueue.length"
+      @close="swipeOpen = false"
+      @next="swipeNext"
+      @previous="swipePrevious"
+      @toggle="s.toggle()"
+      @seek="s.seek($event)"
+      @like="swipeLike"
+      @toggle-favorite="toggleSwipeFavorite"
+    />
   </div>
   <MediaInspector v-if="editingMedia" :key="editingMedia.id" :track="editingMedia" @close="editingMedia = null" @saved="s.refresh()" />
 </template>

@@ -8,6 +8,7 @@
 //! - `playback_status` 当前播放状态
 //! - `set_eq_curve`  设置 31 段 EQ
 //! - `analyze_track` 返回一首的频谱画像
+//! - `playlist_import_*` 抓取或解析歌单，并与本地曲库匹配
 
 use awake_core::{
     decode, eq, group_albums, library, models::SourceKind, Library, MediaSource, Track,
@@ -26,6 +27,7 @@ mod headphone_catalog;
 mod intelligence;
 mod media_info;
 mod playback;
+mod playlist_import;
 mod plex;
 mod remote;
 mod telegram;
@@ -679,7 +681,10 @@ pub fn run() {
             set_eq_curve,
             analyze_track,
             load_lyrics,
-            pick_music_folder
+            pick_music_folder,
+            playlist_import::playlist_import_fetch,
+            playlist_import::playlist_import_file,
+            playlist_import::playlist_import_match
         ])
         .build(tauri::generate_context!())
         .expect("启动 Awake 失败")
