@@ -1,4 +1,4 @@
-# Awake 0.8.0
+# Awake 0.8.1
 
 **让好音乐，越来越合拍。** macOS 本地播放器：流式音频、后端连续队列、自有音乐来源、可解释的偏好学习，以及用户主动触发的 AI 策展和创作。
 
@@ -6,8 +6,12 @@
 
 ## 下载
 
-- **[macOS 0.8.0（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.8.0)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.8.0.md)
+- **[macOS 0.8.1 通用版（Apple 芯片 + Intel，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.8.1)**：同一个安装包同时支持 Apple Silicon 与 Intel Mac；解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.8.1.md)
 - **[iOS 0.7.8 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.7.8)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.7.8.md)
+
+## 0.8.1 · macOS 通用安装包与书架修复
+
+安装包改为 **arm64 + x86_64 通用二进制**，Intel Mac 与 Apple Silicon 共用一个 Awake.app；构建脚本默认双架构编译并用 lipo 校验。修复 0.8.0 的书架遗漏：没有专辑标签的有声书按文件夹归并，应用自己生成的有声书 / 广播剧按来源归并，标题去掉任务 UUID 前缀。其余内容与 0.8.0 相同。详见 [0.8.1 发行说明](docs/releases/v0.8.1.md)。
 
 ## 0.8.0 · 听书、AI 拆书、新闻播报与本周总结
 
@@ -71,7 +75,7 @@ npm ci --prefix ui
 open dist-rust/Awake.app
 ```
 
-要求 macOS 14+、Rust/Cargo、Node/npm、Python 3 和 Xcode Command Line Tools。本地构建产物在 `dist-rust/Awake.app`，使用 ad-hoc 签名。
+要求 macOS 14+、Rust/Cargo、Node/npm、Python 3 和 Xcode Command Line Tools。本地构建产物在 `dist-rust/Awake.app`，使用 ad-hoc 签名。构建脚本默认生成 **arm64 + x86_64 通用包**；需要安装 rustup 的 `x86_64-apple-darwin` 标准库（`rustup target add x86_64-apple-darwin`），并会自动显式使用 rustup stable 的 rustc（避免 Homebrew rust 只有宿主架构的问题）。
 
 浏览器预览：`npm run dev --prefix ui`，访问 `http://127.0.0.1:1420`。浏览器可导入真实音频、播放、EQ 和本地歌单；原生流式队列、服务器连接、系统钥匙串、参数耳机校正和云端服务调用由桌面后端提供。浏览器导入音频仅存在于当前会话。
 

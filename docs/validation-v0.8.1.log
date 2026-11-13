@@ -1,0 +1,29 @@
+Awake 0.8.1 验证记录
+
+时间：2026-11-13
+环境：macOS 27.3、Apple Silicon (arm64)、Xcode 27.2、Rust 1.95.0（rustup stable，显式 RUSTC）、Node 24.16.0
+构建：npm run build --prefix ui；./Tools/build_rust_app.sh
+      → aarch64-apple-darwin 与 x86_64-apple-darwin 双架构 release 编译
+      → lipo -create 合并为通用二进制
+      → lipo -info 显示 x86_64 arm64
+      → codesign --verify --deep --strict 通过（ad-hoc）
+
+启动
+- arm64：/Applications/Awake.app 启动，frontend_ready version=0.8.1 tracks=11
+- x86_64：用 Rosetta 运行通用二进制 + 独立 HOME，frontend_ready version=0.8.1
+  （只验证启动与 WebView 挂载，不等同于 Intel 原生声卡验收）
+
+自动测试
+- awake-core：42 项通过
+- awake-app：73 项通过，10 项忽略（真实声卡 / 长音轨 / 外部条件）
+- 0 失败
+
+本轮功能复核
+- 书架：用真实 library.json 运行 books::shelf，生成书籍「未命名有声书」2 章、10.4 秒出现在书架；
+  无标签文件夹按目录归并，来源名「有声书 · 书名」用于标题，任务 UUID 前缀被去掉。
+- 其余 0.8.0 功能（Plex 多线路/分区、本地文件导入、歌单待匹配、AI 拆书/拆剧、新闻播报、本周总结、为你生成）未改动。
+
+未验证
+- 真实 Intel Mac 硬件上的原生启动、音频设备与长播。
+- 真实 Plex 账号、复杂 MIME 邮件、两小时以上长篇合成。
+- iOS 0.7.8 未包含本轮桌面新功能，仍为独立轨道。

@@ -1141,7 +1141,7 @@ onUnmounted(() => {
           ><Icon name="chevron" :size="14" />
         </button>
         <div class="version-line">
-          <span>为好音乐而生</span><span>0.8.0 / PERSONAL</span>
+          <span>为好音乐而生</span><span>0.8.1 / PERSONAL</span>
         </div>
       </div>
     </aside>
