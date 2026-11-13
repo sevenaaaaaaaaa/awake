@@ -2,7 +2,7 @@
 //!
 //! 完全本地推断：标签 / 文件名 / 时长 / 有声书扩展名。不会上传任何内容。
 
-use crate::models::Track;
+use crate::models::{MediaSource, Track};
 use crate::taste::BookState;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -139,6 +139,15 @@ fn folder_title(locator: &str) -> Option<String> {
     Some(strip_uuid_prefix(&name))
 }
 
+fn clean_source_title(name: &str, fallback: &str) -> String {
+    let cleaned = name
+        .split_once(" · ")
+        .map(|(_, title)| title.trim())
+        .filter(|title| !title.is_empty())
+        .unwrap_or(fallback);
+    cleaned.to_string()
+}
+
 fn strip_uuid_prefix(name: &str) -> String {
     let bytes = name.as_bytes();
     if bytes.len() > 37 && bytes[36] == b'-' {
@@ -189,21 +198,34 @@ fn chapter_order(a: &Track, b: &Track) -> std::cmp::Ordering {
 }
 
 /// 按书归并曲库，返回听书书架。include_all 为真时也包含不像有声书的专辑。
-pub fn shelf(tracks: &[Track], states: &HashMap<String, BookState>, include_all: bool) -> Vec<Book> {
+pub fn shelf(
+    tracks: &[Track],
+    states: &HashMap<String, BookState>,
+    sources: &[MediaSource],
+    include_all: bool,
+) -> Vec<Book> {
+    let source_name = |id: &str| {
+        sources
+            .iter()
+            .find(|s| s.id == id)
+            .map(|s| s.name.clone())
+            .unwrap_or_default()
+    };
     let mut groups: HashMap<String, Vec<Track>> = HashMap::new();
     let mut titles: HashMap<String, String> = HashMap::new();
     for track in tracks {
+        let name = source_name(&track.source_id);
+        let generated = track.source_id.starts_with("book-");
         let (key, title) = if !track.album.trim().is_empty() {
             (track.album_key(), track.album.clone())
-        } else if !track.is_remote {
-            match folder_title(&track.locator) {
-                Some(folder) => (
-                    format!("dir:{}:{}", track.source_id, folder),
-                    folder,
-                ),
-                None if track.duration >= 900.0 => (track.id.clone(), track.title.clone()),
-                None => continue,
-            }
+        } else if let Some(folder) = folder_title(&track.locator) {
+            (format!("dir:{}:{}", track.source_id, folder), folder)
+        } else if generated || marker(&name) {
+            // 生成的有声书与扁平目录：同一来源视为一本书，标题取来源名。
+            (
+                format!("source:{}", track.source_id),
+                clean_source_title(&name, &track.title),
+            )
         } else if track.duration >= 900.0 {
             (track.id.clone(), track.title.clone())
         } else {
@@ -321,7 +343,7 @@ mod tests {
                 updated_at: 99,
             },
         );
-        let books = shelf(&tracks, &states, false);
+        let books = shelf(&tracks, &states, &[], false);
         assert_eq!(books.len(), 1);
         let book = &books[0];
         assert_eq!(book.title, "三体");
@@ -339,11 +361,31 @@ mod tests {
         let mut second = track("b", "", "002-第二章", 4.0);
         second.locator = "27df07d4-8971-4eca-be37-aac39599827b-测试书/002-第二章.m4a".into();
         second.source_id = "book-27df07d4".into();
-        let books = shelf(&[second, first], &HashMap::new(), false);
+        let books = shelf(&[second, first], &HashMap::new(), &[], false);
         assert_eq!(books.len(), 1);
         assert_eq!(books[0].title, "测试书");
         assert_eq!(books[0].chapters.len(), 2);
         assert_eq!(strip_uuid_prefix("abc-普通目录"), "abc-普通目录");
+    }
+
+    #[test]
+    fn groups_flat_generated_files_by_source_name() {
+        let mut first = track("a", "", "001", 5.0);
+        first.locator = "001-第一章.m4a".into();
+        first.source_id = "book-x".into();
+        let mut second = track("b", "", "002", 4.0);
+        second.locator = "002-第二章.m4a".into();
+        second.source_id = "book-x".into();
+        let mut source = MediaSource::new(
+            crate::models::SourceKind::Local,
+            "有声书 · 测试书",
+            "/tmp/books",
+        );
+        source.id = "book-x".into();
+        let books = shelf(&[first, second], &HashMap::new(), &[source], false);
+        assert_eq!(books.len(), 1);
+        assert_eq!(books[0].title, "测试书");
+        assert_eq!(books[0].chapters.len(), 2);
     }
 
     #[test]
@@ -357,7 +399,7 @@ mod tests {
         let mut m4b = vec![track("b", "书", "整本", 60.0)];
         m4b[0].locator = "book.m4b".into();
         assert!(looks_like_book(&m4b));
-        assert!(shelf(&music, &HashMap::new(), false).is_empty());
-        assert_eq!(shelf(&music, &HashMap::new(), true).len(), 1);
+        assert!(shelf(&music, &HashMap::new(), &[], false).is_empty());
+        assert_eq!(shelf(&music, &HashMap::new(), &[], true).len(), 1);
     }
 }

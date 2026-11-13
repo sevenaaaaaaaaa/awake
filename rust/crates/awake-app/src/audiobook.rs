@@ -9,9 +9,14 @@ pub fn audiobook_shelf(
     include_all: Option<bool>,
     state: State<'_, AppState>,
 ) -> Vec<books::Book> {
-    let tracks = state.library.lock().snapshot.tracks.clone();
+    let snapshot = state.library.lock().snapshot.clone();
     let states = state.taste.lock().books.clone();
-    books::shelf(&tracks, &states, include_all.unwrap_or(false))
+    books::shelf(
+        &snapshot.tracks,
+        &states,
+        &snapshot.sources,
+        include_all.unwrap_or(false),
+    )
 }
 
 #[tauri::command]
