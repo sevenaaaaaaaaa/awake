@@ -7,7 +7,11 @@
 ## 下载
 
 - **[macOS 0.8.1 通用版（Apple 芯片 + Intel，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.8.1)**：同一个安装包同时支持 Apple Silicon 与 Intel Mac；解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.8.1.md)
-- **[iOS 0.7.8 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.7.8)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.7.8.md)
+- **[iOS 0.8.0 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.8.0)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.8.0.md)
+
+## iOS 0.8.0 · 听书、AI 拆书与新闻播报
+
+iPhone / iPad 新增「听书与播报」：按专辑或书名归并长音频，章节自然排序，记住章节与位置并可继续听；AI 拆书 / 拆剧把文本分成章节，用系统语音直接朗读（拆剧为角色分配不同语音与音高）；新闻链接、正文与 .eml 邮件可导入并生成 AI 新闻播报。首页新增「本周总结」，曲库新增固定的「为你生成」动态歌单。iOS 首版朗读不导出音频文件，真机锁屏与长篇小说听感需自行验收。详见 [iOS 0.8.0 发行说明](docs/releases/ios-v0.8.0.md)。
 
 ## 0.8.1 · macOS 通用安装包与书架修复
 

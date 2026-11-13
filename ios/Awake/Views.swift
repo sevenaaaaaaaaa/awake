@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct RootView: View {
   @EnvironmentObject var store: MobileStore
   @EnvironmentObject var player: MobilePlayer
+  @Environment(\.scenePhase) private var scenePhase
   @State private var tab = 0
   var body: some View {
     TabView(selection: $tab) {
@@ -55,9 +56,20 @@ struct RootView: View {
       Task { await store.importFiles([url]) }
     }
     .task {
-      player.onListen = { song, seconds in store.recordListen(song, seconds: seconds) }
+      player.onListen = { song, seconds in
+        store.recordListen(song, seconds: seconds)
+        store.updateBookProgress(song: song, position: player.position, duration: player.duration)
+      }
+      player.onProgress = { song, position, duration in
+        store.updateBookProgress(song: song, position: position, duration: duration)
+      }
       player.artworkResolver = { song in store.artworkURL(song.artwork) }
       applyChain(announce: false)
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase != .active, let song = player.song {
+        store.updateBookProgress(song: song, position: player.position, duration: player.duration)
+      }
     }
   }
   private func applyChain(announce: Bool = true) {
@@ -360,6 +372,34 @@ struct HomeView: View {
               .vertical, 12)
           }.buttonStyle(.bordered)
         }
+        HStack {
+          NavigationLink {
+            BooksHubView()
+          } label: {
+            Label("听书与播报", systemImage: "book.closed").frame(maxWidth: .infinity).padding(.vertical, 12)
+          }.buttonStyle(.bordered)
+          NavigationLink {
+            WeeklySummaryView()
+          } label: {
+            Label("本周总结", systemImage: "chart.bar").frame(maxWidth: .infinity).padding(.vertical, 12)
+          }.buttonStyle(.bordered)
+        }
+        Panel {
+          HStack {
+            VStack(alignment: .leading, spacing: 6) {
+              Text("为你生成").font(.headline)
+              Text("每天按最近聆听、完整播放与收藏重新排序。").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+              if let first = store.recommendations().first {
+                Task { await playSong(first, store: store, player: player) }
+              }
+            } label: {
+              Label("播放", systemImage: "play.fill")
+            }.buttonStyle(.bordered).disabled(store.state.songs.isEmpty)
+          }
+        }
         Text("下一次心动").font(.title3.bold())
         if store.state.songs.isEmpty {
           ContentUnavailableView(
@@ -446,6 +486,27 @@ struct LibraryView: View {
           "把音乐带进来", systemImage: "square.and.arrow.down",
           description: Text("支持文件 App 中的本地、iCloud Drive 和已连接的网盘文件。"))
       }
+      Section("推荐歌单") {
+        Button {
+          Task {
+            guard let first = store.recommendations().first else {
+              store.message = "曲库里还没有可播放的音乐。"
+              return
+            }
+            await playSong(first, store: store, player: player)
+          }
+        } label: {
+          HStack {
+            VStack(alignment: .leading, spacing: 3) {
+              Text("为你生成").font(.subheadline.weight(.semibold))
+              Text("动态 · 每天按聆听与收藏重排").font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "sparkles").foregroundStyle(Color(hex: store.state.skin.colors.accent))
+            Image(systemName: "play.circle").font(.title3)
+          }
+        }.buttonStyle(.plain).accessibilityIdentifier("forYouPlaylist")
+      }
       if !(store.state.playlists ?? []).isEmpty {
         Section("歌单") {
           ForEach(store.state.playlists ?? []) { list in
@@ -474,6 +535,11 @@ struct LibraryView: View {
       }
       ForEach(filtered) { SongRow(song: $0).listRowBackground(Color.clear) }
     }.appSurface().navigationTitle("音乐资料库").searchable(text: $query, prompt: "曲名、艺人或专辑").toolbar {
+      NavigationLink {
+        BooksHubView()
+      } label: {
+        Label("听书", systemImage: "book.closed")
+      }.accessibilityIdentifier("openBooksHub")
       Button("导入歌单", systemImage: "music.note.list") { importingPlaylist = true }
         .accessibilityIdentifier("importPlaylist")
       Button("导入文件夹", systemImage: "folder.badge.plus") { folderImporting = true }

@@ -349,4 +349,32 @@ final class AwakeUITests: XCTestCase {
     attachment.lifetime = .keepAlways
     add(attachment)
   }
+
+  func testBooksHubAndWeeklySummaryOpen() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--uitesting"]
+    app.launch()
+    let books = app.buttons["听书与播报"]
+    for _ in 0..<4 { if !books.isHittable { app.swipeUp() } }
+    XCTAssertTrue(books.waitForExistence(timeout: 5))
+    books.tap()
+    XCTAssertTrue(app.navigationBars["听书与播报"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["书架"].waitForExistence(timeout: 3))
+    let shelf = XCTAttachment(screenshot: app.screenshot())
+    shelf.name = "iOS bookshelf"
+    shelf.lifetime = .keepAlways
+    add(shelf)
+    app.buttons["AI 拆书 / 拆剧"].tap()
+    XCTAssertTrue(app.buttons["预览分章"].waitForExistence(timeout: 5))
+    app.navigationBars["听书与播报"].buttons.firstMatch.tap()
+    let weekly = app.buttons["本周总结"]
+    for _ in 0..<4 { if !weekly.isHittable { app.swipeUp() } }
+    XCTAssertTrue(weekly.waitForExistence(timeout: 5))
+    weekly.tap()
+    XCTAssertTrue(app.navigationBars["本周总结"].waitForExistence(timeout: 5))
+    let summary = XCTAttachment(screenshot: app.screenshot())
+    summary.name = "iOS weekly summary"
+    summary.lifetime = .keepAlways
+    add(summary)
+  }
 }

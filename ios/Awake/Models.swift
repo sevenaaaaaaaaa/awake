@@ -231,6 +231,8 @@ struct LibraryState: Codable {
   var curatorModel = ""
   var musicURL = "https://api.elevenlabs.io/v1/music"
   var musicModel = "music_v1"
+  /// 听书进度：key 为书（专辑键或单曲 ID）。
+  var bookProgress: [String: BookProgress]?
 }
 struct AppFailure: LocalizedError {
   var message: String
@@ -279,6 +281,8 @@ enum Secrets {
   @Published var message = ""
   @Published var busy = false
   @Published var generationRunning = false
+  @Published var speechPlans: [SpeechPlan] = []
+  @Published var newsItems: [NewsItem] = []
   var generationTask: Task<Void, Never>?
   var jobs: [CreationJob] {
     get { state.creations ?? [] }
@@ -293,6 +297,8 @@ enum Secrets {
       .appendingPathComponent("Awake", isDirectory: true)
     do {
       try FileManager.default.createDirectory(at: music, withIntermediateDirectories: true)
+      speechPlans = SpeechPlanStore.load(self.root)
+      newsItems = NewsStore.load(self.root)
       let path = self.root.appendingPathComponent("library.json")
       if FileManager.default.fileExists(atPath: path.path) {
         do {
@@ -362,6 +368,28 @@ enum Secrets {
     state.listens = Array(state.listens.suffix(5000))
     save()
   }
+  func books() -> [Book] {
+    BookShelf.shelf(state.songs, progress: state.bookProgress ?? [:])
+  }
+  func weeklySummary(now: Date = Date()) -> WeeklySummary {
+    WeeklySummary.make(
+      songs: state.songs, listens: state.listens, progress: state.bookProgress ?? [:], now: now)
+  }
+  /// 播放/暂停时把当前章节与位置写进听书进度。
+  func updateBookProgress(song: Song, position: Double, duration: Double) {
+    guard position.isFinite, position >= 0 else { return }
+    let shelf = books()
+    guard let book = BookShelf.book(containing: song, in: shelf) else { return }
+    var progress = state.bookProgress ?? [:]
+    let finished = (progress[book.id]?.finished ?? false)
+      || (book.chapters.last?.id == song.id && duration > 0 && position >= duration * 0.98)
+    progress[book.id] = BookProgress(
+      songID: song.id, position: position, finished: finished, updatedAt: Date())
+    state.bookProgress = progress
+    save()
+  }
+  func saveSpeechPlans() { SpeechPlanStore.save(speechPlans, root: root) }
+  func saveNews() { NewsStore.save(newsItems, root: root) }
   func recommendations() -> [Song] {
     let byID = Dictionary(uniqueKeysWithValues: state.songs.map { ($0.id, $0) })
     var artists: [String: Double] = [:]

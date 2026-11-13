@@ -32,6 +32,8 @@ struct RouteInfo: Equatable {
   }
   var unreportedSeconds: Double { listened }
   var onListen: ((Song, Double) -> Void)?
+  /// 每 15 秒与暂停时报告当前曲目/位置/总时长，供听书进度使用。
+  var onProgress: ((Song, Double, Double) -> Void)?
   var artworkResolver: ((Song) -> URL?)?
   private var systemArtworkKey = ""
   private var systemArtwork: MPMediaItemArtwork?
@@ -40,7 +42,8 @@ struct RouteInfo: Equatable {
   private var queue: [(Song, URL)] = [], index = 0, generation = 0
   private var files: [AVAudioFile] = [], rate: Double = 48000, anchor: Double = 0,
     timelineOrigin: Double = 0, queuedNext = false
-  private var listened: Double = 0, lastPosition: Double = 0, timer: Timer?
+  private var listened: Double = 0, lastPosition: Double = 0, lastProgressReport: Double = -100,
+    timer: Timer?
   private var observers: [NSObjectProtocol] = []
   private var gains = Array(repeating: Float(0), count: 31), apo = ""
   private var snapshot = EQSnapshot()
@@ -237,6 +240,7 @@ struct RouteInfo: Equatable {
       timelineOrigin = segmentStart
       position = anchor - segmentStart
       lastPosition = position
+      lastProgressReport = -100
       listened = 0
       song = songs[at].0
       files = [file]
@@ -309,6 +313,7 @@ struct RouteInfo: Equatable {
     tick()
     node.pause()
     playing = false
+    if let song { onProgress?(song, position, duration) }
     flushListen()
     nowPlaying()
   }
@@ -363,6 +368,10 @@ struct RouteInfo: Equatable {
     if delta.isFinite, delta > 0, delta <= duration { listened += delta }
     lastPosition = next
     position = next
+    if let song, next - lastProgressReport >= 15 {
+      lastProgressReport = next
+      onProgress?(song, next, duration)
+    }
     nowPlaying()
   }
   private func routeChanged(_ notification: Notification) {
