@@ -93,6 +93,7 @@ fn apply(
             source_ids: feed.source_ids.clone(),
             track_ids: ids,
             smart: false,
+            entries: Vec::new(),
         };
         taste.playlists.retain(|p| p.id != playlist.id);
         taste.playlists.push(playlist);

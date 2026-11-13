@@ -1,7 +1,7 @@
 use crate::AppState;
 use awake_core::{
     eq::EqCurve,
-    taste::{CreationBrief, ListenEvent, Playlist, Recommendation, Taste},
+    taste::{CreationBrief, ListenEvent, Playlist, PlaylistEntry, Recommendation, Taste},
 };
 use serde::Serialize;
 use tauri::State;
@@ -96,10 +96,103 @@ pub fn validated_curve(gains: &[f32]) -> Result<EqCurve, String> {
     Ok(curve)
 }
 
+pub const FOR_YOU_ID: &str = "awake-for-you";
+
+fn norm(text: &str) -> String {
+    text.chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_lowercase()
+}
+
+/// 确保内置的「为你生成」歌单存在；不会覆盖用户改过的同名歌单。
+fn ensure_for_you(state: &AppState) {
+    if state
+        .taste
+        .lock()
+        .playlists
+        .iter()
+        .any(|p| p.id == FOR_YOU_ID)
+    {
+        return;
+    }
+    let _ = mutate(state, |taste| {
+        if taste.playlists.iter().all(|p| p.id != FOR_YOU_ID) {
+            taste.playlists.insert(
+                0,
+                Playlist {
+                    id: FOR_YOU_ID.into(),
+                    name: "为你生成".into(),
+                    prompt: String::new(),
+                    source_ids: Vec::new(),
+                    track_ids: Vec::new(),
+                    smart: true,
+                    entries: Vec::new(),
+                },
+            );
+        }
+        Ok(())
+    });
+}
+
+/// 把导入歌单里的条目重新匹配到当前曲库；匹配不到时保留条目信息。
+fn resolve_entries(taste: &mut Taste, tracks: &[awake_core::Track]) {
+    use std::collections::HashMap;
+    let mut exact: HashMap<(String, String), String> = HashMap::new();
+    let mut by_title: HashMap<String, Option<String>> = HashMap::new();
+    for track in tracks {
+        exact.insert((norm(&track.title), norm(&track.artist)), track.id.clone());
+        let key = norm(&track.title);
+        by_title
+            .entry(key)
+            .and_modify(|value| *value = None)
+            .or_insert_with(|| Some(track.id.clone()));
+    }
+    let ids: std::collections::HashSet<&str> =
+        tracks.iter().map(|t| t.id.as_str()).collect();
+    for playlist in &mut taste.playlists {
+        for entry in &mut playlist.entries {
+            if entry.title.trim().is_empty() && entry.track_id.is_none() {
+                continue;
+            }
+            let current_valid = entry
+                .track_id
+                .as_deref()
+                .is_some_and(|id| ids.contains(id));
+            if current_valid {
+                continue;
+            }
+            let found = exact
+                .get(&(norm(&entry.title), norm(&entry.artist)))
+                .cloned()
+                .or_else(|| by_title.get(&norm(&entry.title)).cloned().flatten());
+            entry.track_id = found;
+        }
+        // 旧数据只有 track_ids：补齐条目，让页面能同时展示未匹配曲目。
+        if playlist.entries.is_empty() {
+            playlist.entries = playlist
+                .track_ids
+                .iter()
+                .map(|id| {
+                    let track = tracks.iter().find(|t| &t.id == id);
+                    PlaylistEntry {
+                        track_id: Some(id.clone()),
+                        title: track.map(|t| t.title.clone()).unwrap_or_default(),
+                        artist: track.map(|t| t.artist.clone()).unwrap_or_default(),
+                        album: track.map(|t| t.album.clone()).unwrap_or_default(),
+                    }
+                })
+                .collect();
+        }
+    }
+}
+
 #[tauri::command]
 pub fn get_taste(state: State<'_, AppState>) -> Taste {
-    let mut taste = state.taste.lock().clone();
+    ensure_for_you(&state);
     let tracks = state.library.lock().snapshot.tracks.clone();
+    let mut taste = state.taste.lock().clone();
+    resolve_entries(&mut taste, &tracks);
     for playlist in &mut taste.playlists {
         if playlist.smart {
             playlist.track_ids = state
@@ -108,6 +201,19 @@ pub fn get_taste(state: State<'_, AppState>) -> Taste {
                 .recommend(&tracks, &playlist.prompt, &playlist.source_ids, 30)
                 .into_iter()
                 .map(|r| r.track.id)
+                .collect();
+            playlist.entries = playlist
+                .track_ids
+                .iter()
+                .map(|id| {
+                    let track = tracks.iter().find(|t| &t.id == id);
+                    PlaylistEntry {
+                        track_id: Some(id.clone()),
+                        title: track.map(|t| t.title.clone()).unwrap_or_default(),
+                        artist: track.map(|t| t.artist.clone()).unwrap_or_default(),
+                        album: track.map(|t| t.album.clone()).unwrap_or_default(),
+                    }
+                })
                 .collect();
         }
     }
@@ -172,8 +278,22 @@ pub fn save_playlist(
     mut playlist: Playlist,
     state: State<'_, AppState>,
 ) -> Result<Playlist, String> {
-    if playlist.name.trim().is_empty() {
+    playlist.name = playlist.name.trim().chars().take(80).collect();
+    if playlist.name.is_empty() {
         return Err("请给歌单起一个名字".into());
+    }
+    if playlist.track_ids.len() > 5000 || playlist.entries.len() > 5000 {
+        return Err("歌单最多保存 5000 首".into());
+    }
+    let mut seen = std::collections::HashSet::new();
+    playlist.track_ids.retain(|id| seen.insert(id.clone()));
+    for entry in &mut playlist.entries {
+        entry.title = entry.title.trim().chars().take(200).collect();
+        entry.artist = entry.artist.trim().chars().take(200).collect();
+        entry.album = entry.album.trim().chars().take(200).collect();
+    }
+    if playlist.track_ids.is_empty() && playlist.entries.is_empty() {
+        return Err("歌单里还没有曲目".into());
     }
     if playlist.id.is_empty() {
         playlist.id = awake_core::models::new_id();
@@ -258,6 +378,47 @@ mod tests {
         assert!(validated_curve(&[f32::NAN; 31]).is_err());
         assert!(validated_curve(&[0.0; 30]).is_err());
     }
+    #[test]
+    fn imported_entries_remap_to_library_and_keep_pending() {
+        let track: awake_core::Track = serde_json::from_value(serde_json::json!({
+            "id": "t1", "title": "夜空中最亮的星", "artist": "逃跑计划",
+            "album_artist": "逃跑计划", "album": "世界", "genre": "",
+            "year": null, "track_number": null, "disc_number": null,
+            "duration": 252.0, "sample_rate": 44100, "bit_depth": 16,
+            "channels": 2, "codec": "flac", "source_id": "s", "locator": "a.flac",
+            "file_size": 1, "modified": 0, "artwork_path": null,
+            "play_count": 0, "favorite": false, "last_played": null,
+            "added_at": 0, "is_remote": false
+        }))
+        .unwrap();
+        let mut taste = Taste::default();
+        taste.playlists.push(Playlist {
+            id: "p".into(),
+            name: "导入".into(),
+            prompt: String::new(),
+            source_ids: Vec::new(),
+            track_ids: Vec::new(),
+            smart: false,
+            entries: vec![
+                PlaylistEntry {
+                    track_id: None,
+                    title: "夜空中最亮的星 ".into(),
+                    artist: "逃跑计划".into(),
+                    album: String::new(),
+                },
+                PlaylistEntry {
+                    track_id: None,
+                    title: "曲库里没有".into(),
+                    artist: "某艺人".into(),
+                    album: String::new(),
+                },
+            ],
+        });
+        resolve_entries(&mut taste, std::slice::from_ref(&track));
+        assert_eq!(taste.playlists[0].entries[0].track_id.as_deref(), Some("t1"));
+        assert!(taste.playlists[0].entries[1].track_id.is_none());
+    }
+
     #[test]
     fn profile_persists_and_failed_save_does_not_change_memory() {
         let dir = std::env::temp_dir().join(format!(

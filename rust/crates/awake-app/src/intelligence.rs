@@ -214,6 +214,65 @@ fn curate_http(
         .collect();
     resolve(proposal, &owned)
 }
+
+/// 通用 JSON 对话调用（供听书拆章、新闻摘要使用）。只在用户主动发起时调用。
+pub(crate) fn chat_json(
+    service: &Service,
+    key: &str,
+    system: &str,
+    user: &str,
+    timeout_secs: u64,
+) -> Result<serde_json::Value, String> {
+    let root = endpoint(&service.endpoint)?;
+    let mut root = root.to_string();
+    if !root.ends_with('/') {
+        root.push('/');
+    }
+    let url = reqwest::Url::parse(&root)
+        .map_err(|_| "服务路径无效".to_string())?
+        .join("chat/completions")
+        .map_err(|_| "服务路径无效".to_string())?;
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(timeout_secs))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "无法建立 AI 连接")?;
+    let messages = serde_json::json!([
+        {"role": "system", "content": system},
+        {"role": "user", "content": user}
+    ]);
+    let send = |with_format: bool| {
+        let mut body = serde_json::json!({"model": service.model, "messages": messages});
+        if with_format {
+            body["response_format"] = serde_json::json!({"type": "json_object"});
+        }
+        client.post(url.clone()).bearer_auth(key).json(&body).send()
+    };
+    let response = match send(true) {
+        Ok(response) if response.status().as_u16() == 400 => send(false).map_err(|_| "AI 请求失败或超时")?,
+        Ok(response) => response,
+        Err(_) => return Err("AI 请求失败或超时".into()),
+    };
+    if !response.status().is_success() {
+        return Err(format!("AI 服务返回 HTTP {}", response.status().as_u16()));
+    }
+    let mut bytes = Vec::new();
+    response
+        .take(4 * 1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "AI 响应读取失败")?;
+    if bytes.len() > 4 * 1024 * 1024 {
+        return Err("AI 响应超过限制".into());
+    }
+    let response: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "AI 响应不是有效 JSON")?;
+    let text = response["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or("AI 响应缺少内容")?;
+    serde_json::from_str(text).map_err(|_| "AI 返回的内容不是 JSON".into())
+}
+
 #[derive(Serialize)]
 pub struct Curation {
     pub mode: String,

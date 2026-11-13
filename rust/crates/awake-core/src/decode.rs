@@ -313,6 +313,8 @@ pub struct StreamDecoder {
     track_id: u32,
     time_base: symphonia::core::units::TimeBase,
     skip_until: u64,
+    /// 容器缺少声道布局时，先用第一个音频包推断声道数并缓存。
+    pending: Option<Vec<f32>>,
 }
 
 impl StreamDecoder {
@@ -339,17 +341,46 @@ impl StreamDecoder {
             .iter()
             .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
             .ok_or_else(|| anyhow!("文件里没有音轨"))?;
-        let params = &track.codec_params;
+        let track_id = track.id;
+        let params = track.codec_params.clone();
         let rate = params.sample_rate.ok_or_else(|| anyhow!("未知采样率"))?;
-        let channels = params
-            .channels
-            .ok_or_else(|| anyhow!("未知声道布局"))?
-            .count();
+        let mut decoder = symphonia::default::get_codecs().make(&params, &DecoderOptions::default())?;
+        let mut pending = None;
+        // 某些 AAC 容器（例如 afconvert 输出）没有写声道布局；用第一个包的实际声道数补上。
+        let channels = match params.channels {
+            Some(layout) => layout.count(),
+            None => {
+                let mut channels = None;
+                while channels.is_none() {
+                    match reader.next_packet() {
+                        Ok(packet) if packet.track_id() == track_id => {
+                            let buf = decoder.decode(&packet)?;
+                            let count = buf.spec().channels.count();
+                            anyhow::ensure!(count > 0 && count <= 8, "不支持的声道数");
+                            let mut samples = symphonia::core::audio::SampleBuffer::<f32>::new(
+                                buf.frames() as u64,
+                                *buf.spec(),
+                            );
+                            samples.copy_interleaved_ref(buf);
+                            pending = Some(samples.samples().to_vec());
+                            channels = Some(count);
+                        }
+                        Ok(_) => continue,
+                        Err(symphonia::core::errors::Error::IoError(e))
+                            if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                        {
+                            break
+                        }
+                        Err(e) => return Err(e.into()),
+                    }
+                }
+                channels.ok_or_else(|| anyhow!("未知声道布局"))?
+            }
+        };
         anyhow::ensure!(
             (8000..=768000).contains(&rate) && channels > 0 && channels <= 8,
             "不支持的音频格式"
         );
-        let decoder = symphonia::default::get_codecs().make(params, &DecoderOptions::default())?;
         let format = TrackFormat {
             tags,
             path: path.to_path_buf(),
@@ -362,7 +393,6 @@ impl StreamDecoder {
             bits_per_sample: params.bits_per_sample,
             duration_secs: params.n_frames.map(|n| n as f64 / rate as f64),
         };
-        let track_id = track.id;
         let time_base = params
             .time_base
             .unwrap_or(symphonia::core::units::TimeBase::new(1, rate));
@@ -373,6 +403,7 @@ impl StreamDecoder {
             track_id,
             time_base,
             skip_until: 0,
+            pending,
         })
     }
     pub fn seek(&mut self, seconds: f64) -> Result<()> {
@@ -389,10 +420,14 @@ impl StreamDecoder {
             },
         )?;
         self.decoder.reset();
+        self.pending = None;
         self.skip_until = (seconds * self.format.sample_rate as f64).round() as u64;
         Ok(())
     }
     pub fn next_packet(&mut self) -> Result<Option<Vec<f32>>> {
+        if let Some(samples) = self.pending.take() {
+            return Ok(Some(samples));
+        }
         loop {
             let packet = match self.reader.next_packet() {
                 Ok(packet) => packet,

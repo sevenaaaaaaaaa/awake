@@ -472,8 +472,23 @@ impl Access {
         let dirs = sections["MediaContainer"]["Directory"]
             .as_array()
             .ok_or_else(|| anyhow::anyhow!("Plex 目录格式无效"))?;
+        let wanted = self.source.section.trim();
+        let is_music = |s: &&serde_json::Value| {
+            matches!(s["type"].as_str(), Some("artist") | Some("music"))
+        };
+        if !wanted.is_empty()
+            && !dirs
+                .iter()
+                .any(|s| is_music(&s) && s["key"].as_str() == Some(wanted))
+        {
+            anyhow::bail!("Plex 音乐库分区不存在或已删除，请重新选择音乐库");
+        }
         let mut tracks = Vec::new();
-        for section in dirs.iter().filter(|s| s["type"] == "artist") {
+        for section in dirs
+            .iter()
+            .filter(is_music)
+            .filter(|s| wanted.is_empty() || s["key"].as_str() == Some(wanted))
+        {
             let key = section["key"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Plex 目录缺少 ID"))?;

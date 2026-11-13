@@ -72,8 +72,147 @@ fn collect_checked(root: &Path) -> Result<Vec<PathBuf>> {
             }
         }
     }
-    out.sort();
+    out.sort_by(|a, b| {
+        let an = a.strip_prefix(root).unwrap_or(a).to_string_lossy();
+        let bn = b.strip_prefix(root).unwrap_or(b).to_string_lossy();
+        crate::books::natural_cmp(&an, &bn)
+    });
     Ok(out)
+}
+
+/// 从显式文件清单建立曲目（「本地文件」来源）。
+///
+/// locator 使用绝对路径，因此播放、歌词与频谱都可以直接定位；
+/// 不复制、不移动用户的文件。
+pub fn scan_local_files(
+    paths: &[PathBuf],
+    source_id: &str,
+    existing: &HashMap<String, Track>,
+    artwork_dir: Option<&Path>,
+) -> Result<Vec<Track>> {
+    let mut artwork_cache: HashMap<PathBuf, Option<PathBuf>> = HashMap::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut tracks = Vec::new();
+    for file in paths {
+        if !file.is_file() || !is_audio_file(file) {
+            continue;
+        }
+        let canonical = file.canonicalize().unwrap_or_else(|_| file.clone());
+        if !seen.insert(canonical.clone()) {
+            continue;
+        }
+        let locator = canonical.to_string_lossy().to_string();
+        let track = track_from_file(
+            &canonical,
+            source_id,
+            &locator,
+            existing,
+            artwork_dir,
+            &mut artwork_cache,
+        );
+        tracks.push(track);
+    }
+    tracks.sort_by(|a, b| crate::books::natural_cmp(&a.locator, &b.locator));
+    propagate_album_art(&mut tracks);
+    Ok(tracks)
+}
+
+/// 读取单个文件并构造曲目。复用增量规则：size 与 mtime 未变时沿用已有元数据。
+fn track_from_file(
+    file: &Path,
+    source_id: &str,
+    locator: &str,
+    existing: &HashMap<String, Track>,
+    artwork_dir: Option<&Path>,
+    artwork_cache: &mut HashMap<PathBuf, Option<PathBuf>>,
+) -> Track {
+    let meta = std::fs::metadata(file).ok();
+    let size = meta.as_ref().map(|m| m.len() as i64).unwrap_or(0);
+    let modified = meta
+        .as_ref()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+
+    if let Some(cached) = existing.get(locator) {
+        if cached.file_size == size && (cached.modified - modified).abs() < 1000 {
+            let mut cached = cached.clone();
+            if cached.media_info.is_none() {
+                if cached.artwork_path.is_none() {
+                    cached.artwork_path = ["jpg", "jpeg", "png", "webp"]
+                        .iter()
+                        .map(|ext| file.with_extension(ext))
+                        .find(|p| p.is_file())
+                        .or_else(|| file.parent().and_then(folder_artwork))
+                        .map(|p| p.to_string_lossy().into_owned());
+                }
+                if let Some(lyrics) = sidecar_lyrics(file) {
+                    cached.lyrics = lyrics;
+                }
+            }
+            return cached;
+        }
+    }
+
+    let tags = read_tags(file);
+    let id = Track::make_id(source_id, locator);
+    let dir = file.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let folder_cover = artwork_cache
+        .entry(dir.clone())
+        .or_insert_with(|| folder_artwork(&dir))
+        .clone();
+    let sidecar = ["jpg", "jpeg", "png", "webp"]
+        .iter()
+        .map(|extension| file.with_extension(extension))
+        .find(|p| p.is_file())
+        .or(folder_cover);
+    let artwork_path = if let (Some(data), Some(out_dir)) = (tags.artwork.as_ref(), artwork_dir) {
+        if !data.is_empty() {
+            persist_artwork(data, &id, out_dir)
+                .or_else(|| sidecar.as_ref().map(|p| p.to_string_lossy().to_string()))
+        } else {
+            sidecar.as_ref().map(|p| p.to_string_lossy().to_string())
+        }
+    } else {
+        sidecar.as_ref().map(|p| p.to_string_lossy().to_string())
+    };
+
+    let mut track = Track {
+        id,
+        title: tags.title.clone(),
+        artist: tags.artist.clone(),
+        album_artist: tags.album_artist.clone(),
+        album: tags.album.clone(),
+        genre: tags.genre.clone(),
+        year: tags.year,
+        track_number: tags.track_number,
+        disc_number: tags.disc_number,
+        duration: tags.duration,
+        sample_rate: tags.sample_rate,
+        bit_depth: tags.bit_depth,
+        channels: tags.channels,
+        codec: tags.codec.clone(),
+        source_id: source_id.to_string(),
+        locator: locator.to_string(),
+        file_size: size,
+        modified,
+        artwork_path,
+        play_count: existing.get(locator).map(|t| t.play_count).unwrap_or(0),
+        favorite: existing.get(locator).map(|t| t.favorite).unwrap_or(false),
+        last_played: existing.get(locator).and_then(|t| t.last_played),
+        added_at: existing
+            .get(locator)
+            .map(|t| t.added_at)
+            .unwrap_or_else(now_ms),
+        is_remote: false,
+        origin_url: None,
+        comment: tags.comment.clone(),
+        lyrics: sidecar_lyrics(file).unwrap_or_else(|| tags.lyrics.clone()),
+        media_info: None,
+    };
+    apply_tags(&mut track, &tags);
+    track
 }
 
 /// 找同目录封面文件。
@@ -140,107 +279,26 @@ pub fn scan_local_source(
 
     for (index, file) in files.iter().enumerate() {
         let locator = make_locator(root, file);
-        let meta = std::fs::metadata(file).ok();
-        let size = meta.as_ref().map(|m| m.len() as i64).unwrap_or(0);
-        let modified = meta
-            .as_ref()
-            .and_then(|m| m.modified().ok())
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
-
-        // 增量：size 与 mtime 都没变就直接复用
-        if let Some(cached) = existing.get(&locator) {
-            if cached.file_size == size && (cached.modified - modified).abs() < 1000 {
-                let mut cached = cached.clone();
-                if cached.media_info.is_none() {
-                    if cached.artwork_path.is_none() {
-                        cached.artwork_path = ["jpg", "jpeg", "png", "webp"]
-                            .iter()
-                            .map(|ext| file.with_extension(ext))
-                            .find(|p| p.is_file())
-                            .or_else(|| file.parent().and_then(folder_artwork))
-                            .map(|p| p.to_string_lossy().into_owned());
-                    }
-                    if let Some(lyrics) = sidecar_lyrics(file) {
-                        cached.lyrics = lyrics;
-                    }
-                }
-                progress(index + 1, total, &cached.title);
-                tracks.push(cached);
-                continue;
-            }
-        }
-
-        let tags = read_tags(file);
-        let id = Track::make_id(source_id, &locator);
-
-        let dir = file.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-        let folder_cover = artwork_cache
-            .entry(dir.clone())
-            .or_insert_with(|| folder_artwork(&dir))
-            .clone();
-
-        let sidecar = ["jpg", "jpeg", "png", "webp"]
-            .iter()
-            .map(|extension| file.with_extension(extension))
-            .find(|p| p.is_file())
-            .or(folder_cover);
-        // 内嵌 > 与音频同名的封面 > 目录封面。
-        let artwork_path = if let (Some(data), Some(out_dir)) = (tags.artwork.as_ref(), artwork_dir)
-        {
-            if !data.is_empty() {
-                persist_artwork(data, &id, out_dir)
-                    .or_else(|| sidecar.as_ref().map(|p| p.to_string_lossy().to_string()))
-            } else {
-                sidecar.as_ref().map(|p| p.to_string_lossy().to_string())
-            }
-        } else {
-            sidecar.as_ref().map(|p| p.to_string_lossy().to_string())
-        };
-
-        let mut track = Track {
-            id,
-            title: tags.title.clone(),
-            artist: tags.artist.clone(),
-            album_artist: tags.album_artist.clone(),
-            album: tags.album.clone(),
-            genre: tags.genre.clone(),
-            year: tags.year,
-            track_number: tags.track_number,
-            disc_number: tags.disc_number,
-            duration: tags.duration,
-            sample_rate: tags.sample_rate,
-            bit_depth: tags.bit_depth,
-            channels: tags.channels,
-            codec: tags.codec.clone(),
-            source_id: source_id.to_string(),
-            locator: locator.clone(),
-            file_size: size,
-            modified,
-            artwork_path,
-            play_count: existing.get(&locator).map(|t| t.play_count).unwrap_or(0),
-            favorite: existing.get(&locator).map(|t| t.favorite).unwrap_or(false),
-            last_played: existing.get(&locator).and_then(|t| t.last_played),
-            added_at: existing
-                .get(&locator)
-                .map(|t| t.added_at)
-                .unwrap_or_else(now_ms),
-            is_remote: false,
-            origin_url: None,
-            comment: tags.comment.clone(),
-            lyrics: sidecar_lyrics(file).unwrap_or_else(|| tags.lyrics.clone()),
-            media_info: None,
-        };
-        apply_tags(&mut track, &tags);
-
+        let track = track_from_file(
+            file,
+            source_id,
+            &locator,
+            existing,
+            artwork_dir,
+            &mut artwork_cache,
+        );
+        progress(index + 1, total, &track.title);
         tracks.push(track);
-        progress(index + 1, total, &tags.title);
     }
 
-    // 专辑封面传播：同专辑里有封面的，补到没有的条目上
+    propagate_album_art(&mut tracks);
+    Ok(tracks)
+}
+
+/// 专辑封面传播：同专辑里有封面的，补到没有的条目上。
+fn propagate_album_art(tracks: &mut [Track]) {
     let mut album_art: HashMap<String, String> = HashMap::new();
-    for t in &tracks {
+    for t in tracks.iter() {
         if let Some(art) = &t.artwork_path {
             if t.album.trim().is_empty() {
                 continue;
@@ -248,15 +306,13 @@ pub fn scan_local_source(
             album_art.insert(t.album_key(), art.clone());
         }
     }
-    for t in &mut tracks {
+    for t in tracks.iter_mut() {
         if t.artwork_path.is_none() && !t.album.trim().is_empty() {
             if let Some(art) = album_art.get(&t.album_key()) {
                 t.artwork_path = Some(art.clone());
             }
         }
     }
-
-    Ok(tracks)
 }
 
 /// 把内嵌封面写到缓存目录，返回文件路径。
@@ -504,6 +560,29 @@ mod tests {
         // 全部命中缓存时，标题应与第一次完全一致（说明走的是复用分支）
         assert_eq!(second[0].title, first[0].title);
         assert_eq!(reused, 9, "第二次扫描应全部命中增量缓存");
+    }
+
+    #[test]
+    fn explicit_files_use_absolute_locators_and_skip_missing() {
+        let dir = crate::test_audio::directory();
+        let a = dir.join("chapter-1.wav");
+        let b = dir.join("chapter-10.wav");
+        crate::test_audio::wav(&a, 48000, 2, &vec![0; 480]);
+        crate::test_audio::wav(&b, 48000, 2, &vec![0; 480]);
+        let missing = dir.join("gone.wav");
+        let tracks = scan_local_files(
+            &[b.clone(), a.clone(), missing],
+            "local-files",
+            &HashMap::new(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(tracks.len(), 2, "不存在的文件应被跳过");
+        assert!(tracks.iter().all(|t| std::path::Path::new(&t.locator).is_absolute()));
+        assert!(tracks[0].locator.ends_with("chapter-1.wav"));
+        assert!(tracks[1].locator.ends_with("chapter-10.wav"));
+        assert_eq!(tracks[0].source_id, "local-files");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

@@ -14,6 +14,9 @@ pub struct ConnectionRequest {
     /// 仅对该来源放宽 HTTPS 证书校验（自签名 NAS），默认关闭。
     #[serde(default)]
     pub trust_self_signed: bool,
+    /// Plex 音乐库分区 key；留空则扫描整个服务器的全部音乐分区。
+    #[serde(default)]
+    pub section: String,
 }
 pub fn access(source: &MediaSource) -> Result<Access, String> {
     let secret = if source.username.is_empty()
@@ -51,7 +54,7 @@ fn save(source: MediaSource, mut tracks: Vec<Track>, state: &AppState) -> Result
 pub async fn connect_source(
     req: ConnectionRequest,
     state: State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<usize, String> {
     if !matches!(
         req.kind,
         SourceKind::Webdav | SourceKind::Plex | SourceKind::Telegram
@@ -81,6 +84,13 @@ pub async fn connect_source(
     };
     source.username = req.username;
     source.trust_self_signed = req.trust_self_signed;
+    if req.kind == SourceKind::Plex {
+        let section = req.section.trim().to_string();
+        if !section.is_empty() && !section.chars().all(|c| c.is_ascii_digit()) {
+            return Err("Plex 音乐库编号无效，请重新选择".into());
+        }
+        source.section = section;
+    }
     source.token.clear();
     if !req.name.trim().is_empty() {
         source.name = req.name.trim().into();
@@ -104,10 +114,15 @@ pub async fn connect_source(
     }
     source.track_count = tracks.len();
     source.last_scan = Some(awake_core::models::now_ms());
-    save(source, tracks, &state)
+    let count = tracks.len();
+    save(source, tracks, &state)?;
+    Ok(count)
 }
 #[tauri::command]
-pub async fn refresh_remote_source(id: String, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn refresh_remote_source(
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
     let mut source = state
         .library
         .lock()
@@ -124,7 +139,9 @@ pub async fn refresh_remote_source(id: String, state: State<'_, AppState>) -> Re
             .map_err(|e| e.to_string())??;
     source.track_count = tracks.len();
     source.last_scan = Some(awake_core::models::now_ms());
-    save(source, tracks, &state)
+    let count = tracks.len();
+    save(source, tracks, &state)?;
+    Ok(count)
 }
 
 #[derive(Clone, Default, serde::Serialize)]
@@ -207,14 +224,33 @@ pub fn start_refresh_worker(
                         access(&source)?.scan().map_err(|e| e.to_string())?
                     } else {
                         let existing = library.lock().tracks_by_locator(&source.id);
-                        awake_core::scan_local_source(
-                            std::path::Path::new(&source.url),
-                            &source.id,
-                            &existing,
-                            Some(&data_dir.join("artwork")),
-                            |_, _, _| {},
-                        )
-                        .map_err(|e| e.to_string())?
+                        if source.files.is_empty() {
+                            awake_core::scan_local_source(
+                                std::path::Path::new(&source.url),
+                                &source.id,
+                                &existing,
+                                Some(&data_dir.join("artwork")),
+                                |_, _, _| {},
+                            )
+                            .map_err(|e| e.to_string())?
+                        } else {
+                            let files: Vec<std::path::PathBuf> = source
+                                .files
+                                .iter()
+                                .map(std::path::PathBuf::from)
+                                .filter(|p| p.is_file())
+                                .collect();
+                            if files.is_empty() {
+                                return Err("手动导入的文件已不存在".into());
+                            }
+                            awake_core::scan_local_files(
+                                &files,
+                                &source.id,
+                                &existing,
+                                Some(&data_dir.join("artwork")),
+                            )
+                            .map_err(|e| e.to_string())?
+                        }
                     };
                     let mut lib = library.lock();
                     let current = lib

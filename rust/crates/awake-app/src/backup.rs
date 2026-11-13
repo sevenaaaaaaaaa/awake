@@ -553,6 +553,7 @@ mod tests {
             source_ids: vec![],
             track_ids: vec!["t1".into()],
             smart: false,
+            entries: Vec::new(),
         });
         taste.favorites.insert("t1".into());
         BackupPayload {

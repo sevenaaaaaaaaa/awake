@@ -54,6 +54,12 @@ pub struct MediaSource {
     /// 仅此来源放宽 HTTPS 证书校验（自签名 NAS）。默认关闭；不要对公网地址开启。
     #[serde(default)]
     pub trust_self_signed: bool,
+    /// Plex 音乐库分区 key（空表示整个服务器的全部音乐分区）。
+    #[serde(default)]
+    pub section: String,
+    /// 「本地文件」来源的显式文件清单；为空表示按 url 目录递归扫描。
+    #[serde(default)]
+    pub files: Vec<String>,
 }
 
 impl MediaSource {
@@ -72,6 +78,8 @@ impl MediaSource {
             last_scan: None,
             track_count: 0,
             trust_self_signed: false,
+            section: String::new(),
+            files: Vec::new(),
         }
     }
 }

@@ -13,6 +13,12 @@ import {
   type Playlist,
   type Services,
   type ListeningContext,
+  type Book,
+  type WeeklySummary,
+  type SpeechJob,
+  type SpeechPlan,
+  type PlaylistEntry,
+  type ScanResult,
 } from "./types";
 
 export function useAwake() {
@@ -36,6 +42,9 @@ export function useAwake() {
     curating = ref(false);
   const taste = ref<Taste>(emptyTaste()),
     recommendations = ref<Recommendation[]>([]);
+  const books = ref<Book[]>([]),
+    weekly = ref<WeeklySummary | null>(null),
+    speechJobs = ref<SpeechJob[]>([]);
   const playback = ref<Playback>({
     state: "idle",
     current: null,
@@ -146,8 +155,109 @@ export function useAwake() {
     sources.value = lib.sources;
     if (now.value) now.value = lib.tracks.find(t => t.id === now.value?.id) ?? now.value;
     await refreshTaste();
+    await refreshBooks();
     if (desktop)
       libraryRevision = await call<number | null>("library_revision");
+  }
+  async function refreshBooks(includeAll = false) {
+    if (!desktop) {
+      books.value = [];
+      return;
+    }
+    try {
+      books.value = await call<Book[]>("audiobook_shelf", { includeAll });
+    } catch {
+      books.value = [];
+    }
+  }
+  async function refreshWeekly(since: number, until: number) {
+    if (!desktop) {
+      weekly.value = null;
+      return;
+    }
+    weekly.value = await call<WeeklySummary>("weekly_summary", { since, until });
+  }
+  let lastBookSave = 0;
+  async function saveBookProgress(force = false) {
+    if (!desktop || !now.value) return;
+    const track = now.value;
+    const book = books.value.find((b) =>
+      b.chapters.some((chapter) => chapter.id === track.id),
+    );
+    if (!book) return;
+    const tick = performance.now();
+    if (!force && tick - lastBookSave < 15_000) return;
+    lastBookSave = tick;
+    const index = book.chapters.findIndex((chapter) => chapter.id === track.id);
+    if (index < 0) return;
+    const before = book.chapters
+      .slice(0, index)
+      .reduce((sum, chapter) => sum + chapter.duration, 0);
+    const listened = before + playback.value.position;
+    const finished =
+      book.finished ||
+      listened >= book.total_seconds * 0.999 ||
+      (index === book.chapters.length - 1 &&
+        playback.value.duration > 0 &&
+        playback.value.position >= playback.value.duration * 0.98);
+    book.current_track = track.id;
+    book.position = playback.value.position;
+    book.listened_seconds = Math.min(listened, book.total_seconds);
+    book.finished = finished;
+    book.updated_at = Date.now();
+    await call("audiobook_progress", {
+      bookId: book.id,
+      trackId: track.id,
+      position: playback.value.position,
+      finished,
+    }).catch(() => {});
+  }
+  async function planSpeech(req: {
+    title: string;
+    author: string;
+    mode: "book" | "drama";
+    text: string;
+    voice: string;
+    useCloud: boolean;
+  }) {
+    return run(() =>
+      call<SpeechPlan>("speech_plan", {
+        req: {
+          title: req.title,
+          author: req.author,
+          mode: req.mode,
+          text: req.text,
+          voice: req.voice,
+          use_cloud: req.useCloud,
+        },
+      }),
+    );
+  }
+  async function renderSpeech(planId: string, voice: string) {
+    return run(async () => {
+      const job = await call<SpeechJob>("speech_render", {
+        planId,
+        voice,
+      });
+      speechJobs.value = [job, ...speechJobs.value];
+      return job;
+    });
+  }
+  async function refreshSpeechJobs() {
+    if (!desktop) return;
+    try {
+      const next = await call<SpeechJob[]>("speech_status");
+      for (const job of next) {
+        const previous = speechJobs.value.find((item) => item.id === job.id);
+        if (job.state === "done" && previous && previous.state !== "done") {
+          toast("《" + job.title + "》已合成，已加入歌单");
+          await refresh();
+        }
+      }
+      speechJobs.value = next;
+    } catch {
+      /* 轮询失败不影响播放 */
+    }
   }
   async function finishBrowser(completed = false, skipped = false) {
     if (desktop || !now.value || browserListened <= 0) return;
@@ -405,6 +515,7 @@ export function useAwake() {
       }
       if (ended) {
         if (!desktop) await next(false);
+        if (desktop) void saveBookProgress(true);
         await refreshTaste();
       }
       if (tick - lastDeviceCheck > 5000 && !transition && !loading.value) {
@@ -412,6 +523,8 @@ export function useAwake() {
         await checkDevice();
         if (desktop) {
           sourceStatuses.value = await call("source_refresh_status");
+          void saveBookProgress();
+          await refreshSpeechJobs();
           const revision = await call<number | null>("library_revision");
           if (revision !== libraryRevision) await refresh();
           await refreshTaste();
@@ -438,12 +551,43 @@ export function useAwake() {
       return;
     }
     busy.value = true;
+    let result: ScanResult | undefined;
     await run(async () => {
-      await call("scan_library", { req: { path: path.trim(), name, kind } });
+      result = await call<ScanResult>("scan_library", {
+        req: { path: path.trim(), name, kind },
+      });
       await refresh();
-      toast(`已更新曲库，共 ${tracks.value.length} 首`);
+      const skipped = result.skipped?.length ?? 0;
+      toast(
+        "已扫描 " +
+          result.tracks.length +
+          " 首音乐" +
+          (skipped ? "，跳过 " + skipped + " 个文件" : ""),
+      );
     });
     busy.value = false;
+    return result;
+  }
+  async function importPaths(paths: string[]) {
+    if (!paths.length) return;
+    busy.value = true;
+    let result: ScanResult | undefined;
+    await run(async () => {
+      result = await call<ScanResult>("import_local_files", {
+        paths,
+        append: true,
+      });
+      await refresh();
+      const skipped = result.skipped?.length ?? 0;
+      toast(
+        "已导入 " +
+          result.tracks.length +
+          " 首本地音乐" +
+          (skipped ? "，跳过 " + skipped + " 个文件" : ""),
+      );
+    });
+    busy.value = false;
+    return result;
   }
   async function setSourceAuto(source: Source, enabled: boolean) {
     await run(async () => {
@@ -456,9 +600,11 @@ export function useAwake() {
     if (["webdav", "plex", "telegram"].includes(source.kind)) {
       busy.value = true;
       await run(async () => {
-        await call("refresh_remote_source", { id: source.id });
+        const count = await call<number>("refresh_remote_source", {
+          id: source.id,
+        });
         await refresh();
-        toast("来源曲库已更新");
+        toast("来源曲库已更新：" + count + " 首");
       });
       busy.value = false;
     } else await scan(source.url, source.name, source.kind);
@@ -477,6 +623,7 @@ export function useAwake() {
     smart: boolean,
     items: Track[],
     customPrompt = prompt.value,
+    entries?: PlaylistEntry[],
   ) {
     return run(async () => {
       const saved = await call<Playlist>("save_playlist", {
@@ -487,6 +634,14 @@ export function useAwake() {
           source_ids: [...sourceFilter.value],
           track_ids: items.map((t) => t.id),
           smart,
+          entries:
+            entries ??
+            items.map((t) => ({
+              track_id: t.id,
+              title: t.title,
+              artist: t.artist,
+              album: t.album,
+            })),
         },
       });
       await refreshTaste();
@@ -512,7 +667,7 @@ export function useAwake() {
       });
     await checkDevice();
     await call("frontend_ready", {
-      version: "0.7.1",
+      version: "0.8.0",
       tracks: tracks.value.length,
     }).catch(() => {});
     timer = window.setInterval(() => void poll(), 350);
@@ -555,6 +710,16 @@ export function useAwake() {
     learned,
     toast,
     run,
+    books,
+    weekly,
+    speechJobs,
+    refreshBooks,
+    refreshWeekly,
+    saveBookProgress,
+    planSpeech,
+    renderSpeech,
+    refreshSpeechJobs,
+    importPaths,
     refresh,
     refreshTaste,
     updateRecommendations,

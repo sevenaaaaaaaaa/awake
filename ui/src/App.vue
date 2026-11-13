@@ -19,8 +19,12 @@ import TrackList from "./TrackList.vue";
 import SwipeMode from "./SwipeMode.vue";
 import PlaylistImport from "./PlaylistImport.vue";
 import DataTransfer from "./DataTransfer.vue";
+import BooksView from "./BooksView.vue";
+import WeeklySummary from "./WeeklySummary.vue";
 import { useAwake } from "./useAwake";
 import { call, desktop } from "./bridge";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { listen } from "@tauri-apps/api/event";
 import {
   duration,
   format,
@@ -28,6 +32,9 @@ import {
   type Track,
   type Album,
   type Playlist,
+  type PlaylistEntry,
+  type Book,
+  type WeeklySummary as Weekly,
 } from "./types";
 
 const s = reactive(useAwake());
@@ -42,6 +49,8 @@ type View =
   | "sound"
   | "studio"
   | "stage"
+  | "books"
+  | "summary"
   | "playlist";
 const view = ref<View>("home"),
   libraryMode = ref("albums"),
@@ -171,6 +180,7 @@ interface PlexServer {
   token: string;
   local: boolean;
   relay: boolean;
+  connection: string;
 }
 interface PlexSection {
   key: string;
@@ -180,8 +190,10 @@ const trustSelfSigned = ref(false);
 const plex = reactive({
   busy: false,
   polling: false,
+  probing: false,
   status: "",
   error: "",
+  token: "",
   servers: [] as PlexServer[],
   sections: [] as PlexSection[],
   serverIndex: -1,
@@ -233,7 +245,29 @@ async function applyPlexServer() {
   sourcePath.value = `${server.url.replace(/\/+$/, "")}/`;
   sourceSecret.value = server.token;
   sourceName.value = server.name;
-  plex.status = "服务器地址与 Token 已填入，可点击“连接曲库”";
+  plex.error = "";
+  plex.sections = [];
+  plex.sectionIndex = -1;
+  if (!desktop) {
+    plex.status = "服务器地址与 Token 已填入，可点击“连接曲库”";
+    return;
+  }
+  plex.probing = true;
+  try {
+    const reachable = await call<boolean>("plex_probe", {
+      url: server.url,
+      token: server.token,
+    });
+    if (!reachable) throw new Error("服务器拒绝了这次访问");
+    plex.status = "线路可用，正在读取音乐库…";
+  } catch (reason) {
+    plex.error =
+      "这条线路连不上（" +
+      String(reason).replace(/^Error: /, "") +
+      "），换一条线路再试。";
+  } finally {
+    plex.probing = false;
+  }
   await loadPlexSections();
 }
 function applyPlexSection() {
@@ -243,6 +277,7 @@ function applyPlexSection() {
 }
 async function loadPlexResources(clientId: string, token: string) {
   plex.status = "正在读取 Plex 服务器…";
+  plex.token = token;
   plex.servers = await call<PlexServer[]>("plex_resources", { clientId, token });
   if (!plex.servers.length) {
     plex.status = "这个 Plex 账号下没有可用的服务器，请确认服务器在线并已分享给该账号";
@@ -252,6 +287,50 @@ async function loadPlexResources(clientId: string, token: string) {
   // 默认选中第一个服务器并填入地址 / Token；不做自动连接或扫描。
   await applyPlexServer();
 }
+async function retryPlexResources() {
+  if (!plex.token) {
+    plex.error = "请先重新用 Plex 账号登录";
+    return;
+  }
+  plex.error = "";
+  try {
+    await loadPlexResources(plexClientId(), plex.token);
+  } catch (reason) {
+    plex.error = "读取 Plex 服务器失败：" + String(reason).replace(/^Error: /, "");
+  }
+}
+
+async function connectPlex() {
+  const server = plex.servers[plex.serverIndex];
+  if (!server || s.busy) return;
+  const section = plex.sections[plex.sectionIndex];
+  s.busy = true;
+  await s.run(async () => {
+    const count = await call<number>("connect_source", {
+      req: {
+        kind: "plex",
+        name: section ? `${server.name} · ${section.title}` : server.name,
+        url: server.url,
+        username: "",
+        secret: server.token,
+        trust_self_signed: trustSelfSigned.value,
+        section: section?.key ?? "",
+      },
+    });
+    sourceSecret.value = "";
+    await s.refresh();
+    s.toast(
+      "Plex 曲库已连接：" +
+        count +
+        " 首" +
+        (section ? "（" + section.title + "）" : "") +
+        "，可在音乐来源里查看",
+    );
+    sourceOpen.value = false;
+  });
+  s.busy = false;
+}
+
 async function startPlexLogin() {
   if (!desktop || plex.busy || plex.polling) return;
   plex.busy = true;
@@ -342,7 +421,7 @@ async function connectSource() {
   } else {
     s.busy = true;
     await s.run(async () => {
-      await call("connect_source", {
+      const count = await call<number>("connect_source", {
         req: {
           kind: sourceKind.value,
           name: sourceName.value,
@@ -350,11 +429,15 @@ async function connectSource() {
           username: sourceUsername.value,
           secret: sourceSecret.value,
           trust_self_signed: trustSelfSigned.value,
+          section:
+            sourceKind.value === "plex"
+              ? plex.sections[plex.sectionIndex]?.key ?? ""
+              : "",
         },
       });
       sourceSecret.value = "";
       await s.refresh();
-      s.toast("音乐来源已连接");
+      s.toast("音乐来源已连接：" + count + " 首，可在音乐来源里查看");
     });
     s.busy = false;
   }
@@ -423,12 +506,105 @@ const filtered = computed(() =>
 const favoriteTracks = computed(() =>
   s.tracks.filter((t) => s.favorites.has(t.id)),
 );
-const playlistTracks = computed(
-  () =>
-    activePlaylist.value?.track_ids.flatMap(
-      (id) => s.tracks.find((t) => t.id === id) || [],
-    ) || [],
+const playlistEntries = computed(() => {
+  const playlist = activePlaylist.value;
+  if (!playlist) return [];
+  const entries =
+    playlist.entries && playlist.entries.length
+      ? playlist.entries
+      : playlist.track_ids.map((id) => {
+          const track = s.tracks.find((t) => t.id === id);
+          return {
+            track_id: id,
+            title: track?.title || "",
+            artist: track?.artist || "",
+            album: track?.album || "",
+          };
+        });
+  return entries.map((entry) => ({
+    ...entry,
+    track: entry.track_id
+      ? s.tracks.find((t) => t.id === entry.track_id)
+      : undefined,
+  }));
+});
+const playlistTracks = computed(() =>
+  playlistEntries.value.flatMap((entry) => (entry.track ? [entry.track] : [])),
 );
+const unmatchedEntries = computed(() =>
+  playlistEntries.value
+    .map((entry, index) => ({ ...entry, index }))
+    .filter((entry) => !entry.track),
+);
+const pinnedPlaylist = computed(() =>
+  s.taste.playlists.find((playlist) => playlist.id === "awake-for-you"),
+);
+const userPlaylists = computed(() =>
+  s.taste.playlists.filter((playlist) => playlist.id !== "awake-for-you"),
+);
+const weekly = ref<Weekly | null>(null),
+  weeklyLoading = ref(false),
+  pendingBookSeek = ref<number | null>(null);
+function weekRange(): [number, number] {
+  const now = new Date();
+  const offset = (now.getDay() + 6) % 7;
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  return [start.getTime(), end.getTime()];
+}
+async function loadWeekly() {
+  if (!desktop) {
+    weekly.value = null;
+    return;
+  }
+  weeklyLoading.value = true;
+  await s.run(async () => {
+    const [since, until] = weekRange();
+    await s.refreshWeekly(since, until);
+    weekly.value = s.weekly;
+  });
+  weeklyLoading.value = false;
+}
+async function resumeBook(book: Book) {
+  const track =
+    book.chapters.find((chapter) => chapter.id === book.current_track) ||
+    book.chapters[0];
+  if (!track) return;
+  pendingBookSeek.value = book.position > 3 ? book.position : null;
+  await s.start(track, book.chapters);
+}
+function playBookChapter(track: Track, chapters: Track[]) {
+  pendingBookSeek.value = null;
+  void s.start(track, chapters);
+}
+watch(
+  () => s.playback.state,
+  (state) => {
+    if (state === "playing" && pendingBookSeek.value !== null) {
+      const position = pendingBookSeek.value;
+      pendingBookSeek.value = null;
+      void s.seek(position);
+    }
+  },
+);
+function playWeeklyTrack(id: string) {
+  const track = s.tracks.find((item) => item.id === id);
+  if (track) void s.start(track, s.tracks);
+}
+async function openRecommended(name: string, prompt: string) {
+  const existing = s.taste.playlists.find(
+    (playlist) => playlist.name === name,
+  );
+  if (existing) {
+    openPlaylist(existing);
+    return;
+  }
+  await s.run(async () => {
+    const saved = await s.savePlaylist(name, true, [], prompt);
+    if (saved) openPlaylist(saved);
+  });
+}
 const title = computed(
   () =>
     album.value?.title ||
@@ -442,6 +618,8 @@ const title = computed(
       sound: "声音实验室",
       studio: "灵感工作室",
       stage: "此刻，沉浸",
+      books: "听书与播报",
+      summary: "本周总结",
       playlist: activePlaylist.value?.name || "我的歌单",
     }[view.value],
 );
@@ -461,21 +639,57 @@ const nav = [
   { id: "home", icon: "home", name: "为你而鸣" },
   { id: "library", icon: "disc", name: "音乐资料库" },
   { id: "favorites", icon: "heart", name: "喜欢的音乐" },
+  { id: "books", icon: "book", name: "听书与播报" },
   { id: "agent", icon: "spark", name: "听歌搭子" },
+  { id: "summary", icon: "chart", name: "本周总结" },
 ] as const;
+function resetScroll() {
+  requestAnimationFrame(() =>
+    document.getElementById("main-content")?.scrollTo({ top: 0 }),
+  );
+}
 function go(v: View) {
   view.value = v;
   album.value = null;
   query.value = "";
+  resetScroll();
 }
 function openAlbum(a: Album) {
   album.value = a;
   view.value = "library";
+  resetScroll();
 }
 function openPlaylist(p: Playlist) {
   playlistId.value = p.id;
   go("playlist");
 }
+function openPlaylistById(id: string) {
+  const playlist = s.taste.playlists.find((item) => item.id === id);
+  if (playlist) openPlaylist(playlist);
+}
+async function removePlaylistEntry(index: number) {
+  const playlist = activePlaylist.value;
+  if (!playlist) return;
+  const entries = playlistEntries.value
+    .filter((_entry, i) => i !== index)
+    .map((entry) => ({
+      track_id: entry.track_id ?? null,
+      title: entry.title,
+      artist: entry.artist,
+      album: entry.album,
+    }));
+  const track_ids = entries.flatMap((entry) =>
+    entry.track_id ? [entry.track_id] : [],
+  );
+  await s.run(async () => {
+    await call("save_playlist", {
+      playlist: { ...playlist, entries, track_ids },
+    });
+    await s.refreshTaste();
+    s.toast("已从歌单移除");
+  });
+}
+
 const swipeQueue = computed<Track[]>(() =>
   s.queue.length > 1 ? s.queue : s.tracks.length ? s.tracks : s.queue,
 );
@@ -533,6 +747,14 @@ function onPlaylistImported(playlist: Playlist) {
   importOpen.value = false;
   openPlaylist(playlist);
 }
+function saveImportedPlaylist(
+  name: string,
+  smart: boolean,
+  items: Track[],
+  entries: PlaylistEntry[],
+) {
+  return s.savePlaylist(name, smart, items, s.prompt, entries);
+}
 async function importChange(e: Event) {
   const files = (e.target as HTMLInputElement).files;
   if (files) await s.importFiles(files);
@@ -545,8 +767,26 @@ function addMusic() {
 async function pickFolder() {
   await s.run(async () => {
     const path = await call<string | null>("pick_music_folder");
-    if (path) sourcePath.value = path;
+    if (path) {
+      sourcePath.value = path;
+      s.toast("已选择文件夹，点“连接曲库”开始扫描");
+    }
   });
+}
+async function pickFiles() {
+  await s.run(async () => {
+    const paths = await call<string[]>("pick_music_files");
+    if (!paths.length) return;
+    const result = await s.importPaths(paths);
+    if (result && !s.fault) {
+      sourceOpen.value = false;
+    }
+  });
+}
+async function handleDrop(paths: string[]) {
+  if (!paths.length) return;
+  if (paths.length === 1) await s.scan(paths[0]);
+  else await s.importPaths(paths);
 }
 watch([sourceOpen, saveOpen], async ([source, save]) => {
   if (source || save) {
@@ -729,9 +969,54 @@ watch(
     if (results[1].status === "fulfilled") lyrics.value = results[1].value;
   },
 );
-onMounted(() => window.addEventListener("keydown", keydown));
+let dropCleanup: (() => void) | undefined;
+const scanProgress = ref<{ done: number; total: number; title: string } | null>(
+  null,
+);
+let scanCleanup: (() => void) | undefined;
+function browserDragOver(event: DragEvent) {
+  event.preventDefault();
+}
+function browserDrop(event: DragEvent) {
+  event.preventDefault();
+  const files = event.dataTransfer?.files;
+  if (files?.length) void s.importFiles(files);
+}
+watch(view, (value) => {
+  if (value === "summary") void loadWeekly();
+});
+onMounted(() => {
+  window.addEventListener("keydown", keydown);
+  if (desktop) {
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "drop") void handleDrop(event.payload.paths);
+      })
+      .then((unlisten) => (dropCleanup = unlisten))
+      .catch(() => {});
+  } else {
+    window.addEventListener("dragover", browserDragOver);
+    window.addEventListener("drop", browserDrop);
+  }
+  void listen<{ done: number; total: number; title: string }>(
+    "awake://scan-progress",
+    (event) => {
+      scanProgress.value = event.payload;
+      if (event.payload.done >= event.payload.total) {
+        window.setTimeout(() => (scanProgress.value = null), 1500);
+      }
+    },
+  )
+    .then((unlisten) => (scanCleanup = unlisten))
+    .catch(() => {});
+  void loadWeekly();
+});
 onUnmounted(() => {
   window.removeEventListener("keydown", keydown);
+  window.removeEventListener("dragover", browserDragOver);
+  window.removeEventListener("drop", browserDrop);
+  dropCleanup?.();
+  scanCleanup?.();
   stopPlexPoll();
 });
 </script>
@@ -796,7 +1081,16 @@ onUnmounted(() => {
       </div>
       <div class="playlist-nav">
         <button
-          v-for="p in s.taste.playlists"
+          v-if="pinnedPlaylist"
+          class="nav-item playlist-link pinned"
+          :class="{ active: view === 'playlist' && playlistId === pinnedPlaylist.id }"
+          @click="openPlaylist(pinnedPlaylist)"
+        >
+          <Icon name="spark" /><span>{{ pinnedPlaylist.name }}</span
+          ><span class="small-tag">每日</span>
+        </button>
+        <button
+          v-for="p in userPlaylists"
           :key="p.id"
           class="nav-item playlist-link"
           :class="{ active: view === 'playlist' && playlistId === p.id }"
@@ -847,7 +1141,7 @@ onUnmounted(() => {
           ><Icon name="chevron" :size="14" />
         </button>
         <div class="version-line">
-          <span>为好音乐而生</span><span>0.7.1 / PERSONAL</span>
+          <span>为好音乐而生</span><span>0.8.0 / PERSONAL</span>
         </div>
       </div>
     </aside>
@@ -876,6 +1170,13 @@ onUnmounted(() => {
           </button>
         </div>
       </header>
+      <div v-if="scanProgress" class="scan-status" role="status">
+        <span class="spinner" />
+        <span
+          >正在扫描 {{ scanProgress.title || "曲库" }} ·
+          {{ scanProgress.done }} / {{ scanProgress.total }}</span
+        >
+      </div>
       <main id="main-content" class="main-content">
       <TelegramSponsored v-if="activeTelegramSource && view !== 'sources'" :source-id="activeTelegramSource.id" />
         <Appearance v-if="view === 'appearance'" :services="s.services" />
@@ -1022,11 +1323,71 @@ onUnmounted(() => {
               ><strong>音乐在你那里，体验从这里开始。</strong
               ><small>{{
                 desktop
-                  ? "添加本地音乐文件夹，保留你的目录与文件。"
+                  ? "添加本地音乐文件夹或直接选择文件，也可以把文件拖进窗口。"
                   : "导入音频即可试听；浏览器内的音频仅保留在本次会话。"
               }}</small></span
             ><Icon name="arrow" :size="20" />
           </button>
+          <div class="section-heading">
+            <div>
+              <h2>推荐歌单</h2>
+              <p>其中有一份，是每天照着你的聆听重新生成的。</p>
+            </div>
+            <button class="text-button" @click="go('summary')">
+              本周总结 <Icon name="chart" />
+            </button>
+          </div>
+          <div class="recommend-grid">
+            <button
+              class="recommend-card for-you"
+              @click="pinnedPlaylist && openPlaylist(pinnedPlaylist)"
+            >
+              <span class="recommend-badge">FOR YOU · 每日更新</span>
+              <strong>为你生成</strong>
+              <small>按这周听到的、跳过的和收藏的，重新排一次。</small>
+              <span class="recommend-meta"
+                >{{ pinnedPlaylist?.track_ids.length || 0 }} 首 · 打开即听</span
+              >
+            </button>
+            <button
+              class="recommend-card"
+              @click="openRecommended('专注时刻', '专注 ambient instrumental')"
+            >
+              <span class="recommend-badge">FOCUS</span>
+              <strong>专注时刻</strong>
+              <small>把人声和鼓点调低，留一段不被打断的时间。</small>
+              <span class="recommend-meta">动态歌单 · 随偏好更新</span>
+            </button>
+            <button
+              class="recommend-card"
+              @click="openRecommended('偶遇新频率', '探索 新鲜')"
+            >
+              <span class="recommend-badge">DISCOVER</span>
+              <strong>偶遇新频率</strong>
+              <small>优先曲库里还没完整听过的部分。</small>
+              <span class="recommend-meta">动态歌单 · 随曲库更新</span>
+            </button>
+          </div>
+          <section class="week-teaser">
+            <div>
+              <p class="eyebrow">THIS WEEK</p>
+              <h2>
+                本周，你听了
+                <span class="serif"
+                  >{{ Math.round((weekly?.seconds || 0) / 60) }} 分钟。</span
+                >
+              </h2>
+              <p>
+                {{
+                  weekly?.lines?.[0] ||
+                  "再听几首，这里会写出属于这一周的声场。"
+                }}
+              </p>
+            </div>
+            <button class="button" @click="go('summary')">
+              看完整总结 <Icon name="arrow" />
+            </button>
+          </section>
         </template>
 
         <template
@@ -1080,9 +1441,15 @@ onUnmounted(() => {
                   view === "favorites"
                     ? `${favoriteTracks.length} 首，每一次喜欢都算数。`
                     : view === "playlist"
-                      ? activePlaylist?.smart
-                        ? "动态歌单 · 曲库与听歌偏好变化时自动更新"
-                        : "静态歌单 · 保留此刻的选择"
+                      ? (activePlaylist?.smart
+                          ? "动态歌单 · 曲库与听歌偏好变化时自动更新"
+                          : "静态歌单 · 保留此刻的选择") +
+                        " · " +
+                        playlistTracks.length +
+                        " 首可播放" +
+                        (unmatchedEntries.length
+                          ? " · " + unmatchedEntries.length + " 首待匹配"
+                          : "")
                       : `${s.albums.length} 张专辑 · ${s.tracks.length} 首 · ${totalMinutes} 分钟`
                 }}
               </p>
@@ -1172,7 +1539,11 @@ onUnmounted(() => {
             :empty="
               view === 'favorites'
                 ? '遇到喜欢的音乐，点一下爱心。搭子会记得。'
-                : undefined
+                : view === 'playlist'
+                  ? unmatchedEntries.length
+                    ? '这份歌单的曲目还没匹配到本地文件，见下方待匹配条目。'
+                    : '这份歌单还没有曲目。'
+                  : undefined
             "
             @play="
               s.start(
@@ -1184,14 +1555,52 @@ onUnmounted(() => {
             @favorite="s.favorite"
               @edit="editingMedia = $event"
           />
+          <section
+            v-if="view === 'playlist' && unmatchedEntries.length"
+            class="unmatched-block"
+          >
+            <div class="section-heading">
+              <div>
+                <h3>待匹配曲目</h3>
+                <p>
+                  这些歌单条目已保存；导入对应文件或曲库更新后会自动匹配，不用重新导入歌单。
+                </p>
+              </div>
+            </div>
+            <div class="unmatched-list">
+              <div
+                v-for="entry in unmatchedEntries"
+                :key="entry.index"
+                class="unmatched-row"
+              >
+                <span class="unmatched-badge">未匹配</span>
+                <span class="unmatched-copy"
+                  ><strong>{{ entry.title || "未命名曲目" }}</strong
+                  ><small
+                    >{{ entry.artist || "未知艺人"
+                    }}{{ entry.album ? " · " + entry.album : "" }}</small
+                  ></span
+                >
+                <button
+                  class="text-button danger"
+                  @click="removePlaylistEntry(entry.index)"
+                >
+                  移除
+                </button>
+              </div>
+            </div>
+          </section>
           <div
             v-if="view === 'playlist' && activePlaylist"
             class="playlist-footer"
           >
             <span class="muted">{{
-              activePlaylist.prompt || "从你的曲库创建"
+              activePlaylist.id === "awake-for-you"
+                ? "每天按你的聆听重新生成；不会改动其他歌单。"
+                : activePlaylist.prompt || "从你的曲库创建"
             }}</span
             ><button
+              v-if="activePlaylist.id !== 'awake-for-you'"
               class="text-button danger"
               @click="
                 s.removePlaylist(activePlaylist.id);
@@ -1396,7 +1805,14 @@ onUnmounted(() => {
               <div>
                 <span class="subtle-badge">{{ sourceLabel(source.kind) }}</span>
                 <h2>{{ source.name }}</h2>
-                <p class="source-path">{{ source.url }}</p>
+                <p class="source-path">
+                  {{ source.url
+                  }}<template v-if="source.files?.length">
+                    · {{ source.files.length }} 个文件（原地读取）</template
+                  ><template v-else-if="source.section">
+                    · 音乐库 {{ source.section }}</template
+                  >
+                </p>
                 <TelegramSponsored v-if="source.kind === 'telegram'" :source-id="source.id" />
                 <small
                   >{{ source.track_count }} 首音乐 ·
@@ -1436,7 +1852,7 @@ onUnmounted(() => {
             <div v-if="!s.sources.length" class="empty-state">
               <Icon name="database" :size="40" />
               <h2>好音乐，值得一个好住处。</h2>
-              <p>先添加本地音乐文件夹。</p>
+              <p>添加本地文件夹、直接选择音频文件，或连接 Plex / WebDAV。</p>
               <button class="button primary" @click="addMusic()">
                 添加音乐
               </button>
@@ -1924,6 +2340,38 @@ onUnmounted(() => {
             </div>
           </div>
         </template>
+        <BooksView
+          v-else-if="view === 'books'"
+          :books="s.books"
+          :tracks="s.tracks"
+          :jobs="s.speechJobs"
+          :services="s.services"
+          :now="s.now"
+          @play="playBookChapter"
+          @resume="resumeBook"
+          @toast="s.toast"
+          @refresh="s.refresh()"
+          @open-playlist="openPlaylistById"
+          @import-files="pickFiles"
+        />
+        <template v-else-if="view === 'summary'">
+          <div class="page-intro">
+            <div>
+              <p class="eyebrow">YOUR WEEK IN SOUND</p>
+              <h1>这一周，<span class="serif">耳朵记住了什么。</span></h1>
+              <p>从周一到今天，本机记录下的聆听、收藏与书籍进度。</p>
+            </div>
+            <button class="button" :disabled="weeklyLoading" @click="loadWeekly">
+              <Icon name="refresh" />{{ weeklyLoading ? "统计中…" : "刷新统计" }}
+            </button>
+          </div>
+          <WeeklySummary
+            :summary="weekly"
+            :loading="weeklyLoading"
+            @play="playWeeklyTrack"
+            @refresh="loadWeekly"
+          />
+        </template>
       </main>
     </div>
 
@@ -2155,14 +2603,20 @@ onUnmounted(() => {
             "
             required
           />
-          <button
+          <div
             v-if="['local', 'smb'].includes(sourceKind)"
-            class="text-button"
-            type="button"
-            @click="pickFolder"
+            class="source-pick-row"
           >
-            <Icon name="folder" />浏览文件夹…
-          </button>
+            <button class="button" type="button" :disabled="s.busy" @click="pickFolder">
+              <Icon name="folder" />选择文件夹
+            </button>
+            <button class="button" type="button" :disabled="s.busy" @click="pickFiles">
+              <Icon name="music" />选择音频文件
+            </button>
+          </div>
+          <p v-if="['local', 'smb'].includes(sourceKind)" class="muted">
+            也可以直接把文件夹或音频文件拖进窗口。文件会原地读取，不复制、不移动。
+          </p>
           <template v-else
             ><label v-if="!['plex', 'telegram'].includes(sourceKind)"
               >账号<input
@@ -2211,8 +2665,7 @@ onUnmounted(() => {
                     :key="server.url"
                     :value="index"
                   >
-                    {{ server.name
-                    }}{{ server.local ? "（本地）" : server.relay ? "（中继）" : "（远程）" }}
+                    {{ server.name }} · {{ server.connection }}
                   </option>
                 </select></label
               >
@@ -2230,6 +2683,31 @@ onUnmounted(() => {
                   </option>
                 </select></label
               >
+              <div class="source-pick-row">
+                <button
+                  type="button"
+                  class="button primary"
+                  :disabled="s.busy || plex.probing"
+                  @click="connectPlex"
+                >
+                  <Icon name="plus" />{{
+                    s.busy
+                      ? "正在扫描 Plex 曲库…"
+                      : "连接这个 Plex 音乐库"
+                  }}
+                </button>
+                <button
+                  type="button"
+                  class="text-button"
+                  :disabled="plex.busy || plex.polling"
+                  @click="retryPlexResources"
+                >
+                  <Icon name="refresh" />重新读取服务器
+                </button>
+              </div>
+              <p class="muted">
+                连不上时先换一条线路（本地 / 远程 / 中继）。连接后曲库会出现在「音乐来源」里。
+              </p>
             </template>
           </div>
           <label
@@ -2343,7 +2821,7 @@ onUnmounted(() => {
     <PlaylistImport
       v-if="importOpen"
       :tracks="s.tracks"
-      :save-playlist="s.savePlaylist"
+      :save-playlist="saveImportedPlaylist"
       @close="importOpen = false"
       @created="onPlaylistImported"
     />

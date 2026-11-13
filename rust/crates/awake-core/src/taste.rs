@@ -33,6 +33,9 @@ pub struct Taste {
     pub generations: Vec<Generation>,
     #[serde(default)]
     pub feeds: Vec<crate::feedmeta::Subscription>,
+    /// 听书进度：按书（专辑键或单曲 ID）保存上次听到的位置。
+    #[serde(default)]
+    pub books: HashMap<String, BookState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +67,35 @@ pub struct Playlist {
     pub track_ids: Vec<String>,
     /// Smart lists are re-resolved against the current library on every read.
     pub smart: bool,
+    /// 导入但本地曲库暂时没有的曲目信息；保留下来，之后仍可在歌单里查看与匹配。
+    #[serde(default)]
+    pub entries: Vec<PlaylistEntry>,
+}
+
+/// 一条歌单条目：matched 时指向曲库曲目，否则保留来源歌名/艺人信息。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PlaylistEntry {
+    #[serde(default)]
+    pub track_id: Option<String>,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub album: String,
+}
+
+/// 听书进度。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BookState {
+    #[serde(default)]
+    pub track_id: Option<String>,
+    #[serde(default)]
+    pub position: f64,
+    #[serde(default)]
+    pub finished: bool,
+    #[serde(default)]
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]

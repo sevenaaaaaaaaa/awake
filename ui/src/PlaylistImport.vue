@@ -10,6 +10,7 @@ import type {
   ImportMatch,
   ImportedPlaylist,
   Playlist,
+  PlaylistEntry,
   Track,
 } from "./types";
 
@@ -81,6 +82,7 @@ const props = defineProps<{
     name: string,
     smart: boolean,
     items: Track[],
+    entries: PlaylistEntry[],
   ) => Promise<Playlist | undefined>;
 }>();
 
@@ -146,6 +148,27 @@ const chosen = computed(() => {
   });
   return picked;
 });
+const chosenEntries = computed<PlaylistEntry[]>(() => {
+  const list = playlist.value?.tracks ?? [];
+  const picked: PlaylistEntry[] = [];
+  list.forEach((track, index) => {
+    if (!selected.value[index]) return;
+    const local = effectiveTrack(index);
+    const title = (local?.title || track.title || "").trim();
+    const artist = (local?.artist || track.artist || "").trim();
+    if (!title && !artist && !local) return;
+    picked.push({
+      track_id: effectiveId(index),
+      title,
+      artist,
+      album: (local?.album || track.album || "").trim(),
+    });
+  });
+  return picked;
+});
+const pendingCount = computed(
+  () => chosenEntries.value.filter((entry) => !entry.track_id).length,
+);
 
 const rows = computed(() =>
   (playlist.value?.tracks ?? []).map((track, index) => ({
@@ -228,7 +251,8 @@ async function fetchMatches() {
     const result = await playlistImportMatch(current.tracks);
     if (!Array.isArray(result)) throw new Error("匹配结果格式不正确");
     matches.value = result;
-    selected.value = current.tracks.map((_track, index) => !!result[index]?.song_id);
+    // 默认全部选中：匹配到本地的是可直接播放的曲目，未匹配的保留为待匹配条目。
+    selected.value = current.tracks.map(() => true);
     manualIds.value = {};
     manualOpen.value = null;
   } catch (reason) {
@@ -398,14 +422,19 @@ async function create() {
     error.value = "请给歌单起一个名字。";
     return;
   }
-  if (!chosen.value.length) {
-    error.value = "至少勾选一首已经匹配到本地曲库的歌曲。";
+  if (!chosenEntries.value.length) {
+    error.value = "至少勾选一首曲目（未匹配的曲目也可以先保存）。";
     return;
   }
   error.value = "";
   busy.value = "save";
   try {
-    const saved = await props.savePlaylist(name.value.trim(), false, chosen.value);
+    const saved = await props.savePlaylist(
+      name.value.trim(),
+      false,
+      chosen.value,
+      chosenEntries.value,
+    );
     if (saved) emit("created", saved);
     else error.value = "歌单没有保存成功，请稍后重试。";
   } catch (reason) {
@@ -542,7 +571,7 @@ onMounted(() => {
             <strong>{{ playlist?.name || '未命名歌单' }}</strong>
             <small class="muted">
               共 {{ totalTracks }} 首 · 已匹配 {{ matchedCount }} 首 · 已选
-              {{ chosen.length }} 首
+              {{ chosenEntries.length }} 首（{{ pendingCount }} 首待匹配）
             </small>
           </div>
           <button class="text-button" :disabled="busy !== null" @click="reset">
@@ -585,7 +614,7 @@ onMounted(() => {
             <input
               type="checkbox"
               :checked="row.on"
-              :disabled="!row.local || busy === 'save'"
+              :disabled="busy === 'save'"
               :aria-label="`选择 ${row.track.title || '未命名曲目'}`"
               @change="
                 toggle(
@@ -690,7 +719,7 @@ onMounted(() => {
           />
           <div class="import-footer">
             <span class="muted">
-              未匹配的曲目不会写入歌单；导入后可在歌单页继续整理。
+              未匹配的曲目会保存为待匹配条目，可在歌单页查看；曲库更新后自动匹配。
             </span>
             <div class="button-row">
               <button
@@ -702,11 +731,17 @@ onMounted(() => {
               </button>
               <button
                 class="button primary"
-                :disabled="busy !== null || !chosen.length"
+                :disabled="busy !== null || !chosenEntries.length"
                 @click="create"
               >
                 <span v-if="busy === 'save'" class="spinner" />
-                {{ busy === 'save' ? '正在保存…' : '创建歌单' }}
+                {{
+                  busy === 'save'
+                    ? '正在保存…'
+                    : pendingCount
+                      ? '创建歌单（含 ' + pendingCount + ' 首待匹配）'
+                      : '创建歌单'
+                }}
               </button>
             </div>
           </div>

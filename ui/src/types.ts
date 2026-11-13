@@ -69,6 +69,20 @@ export interface Source {
   url: string;
   track_count: number;
   trust_self_signed?: boolean;
+  section?: string;
+  files?: string[];
+}
+export interface ScanResult {
+  tracks: Track[];
+  albums: Album[];
+  elapsed_ms: number;
+  skipped: string[];
+}
+export interface PlaylistEntry {
+  track_id: string | null;
+  title: string;
+  artist: string;
+  album: string;
 }
 export interface Playlist {
   id: string;
@@ -77,6 +91,84 @@ export interface Playlist {
   source_ids: string[];
   track_ids: string[];
   smart: boolean;
+  entries?: PlaylistEntry[];
+}
+export interface BookChapter extends Track {}
+export interface Book {
+  id: string;
+  title: string;
+  author: string;
+  artwork_path: string | null;
+  chapters: Track[];
+  total_seconds: number;
+  listened_seconds: number;
+  current_track: string | null;
+  position: number;
+  finished: boolean;
+  updated_at: number;
+  source_id: string;
+}
+export interface WeeklySummary {
+  since: number;
+  until: number;
+  seconds: number;
+  plays: number;
+  completed: number;
+  skipped: number;
+  track_count: number;
+  artist_count: number;
+  new_tracks: number;
+  favorites: number;
+  books: number;
+  top_tracks: { id: string; title: string; artist: string; seconds: number; plays: number }[];
+  top_artists: { artist: string; seconds: number; plays: number }[];
+  days: { index: number; seconds: number }[];
+  lines: string[];
+}
+export interface SpeechSegment {
+  speaker: string;
+  text: string;
+}
+export interface SpeechChapter {
+  title: string;
+  segments: SpeechSegment[];
+}
+export interface SpeechPlan {
+  id: string;
+  title: string;
+  author: string;
+  mode: string;
+  voice: string;
+  chapters: SpeechChapter[];
+  created_at: number;
+  note: string | null;
+}
+export interface SpeechJob {
+  id: string;
+  plan_id: string;
+  title: string;
+  state: string;
+  done: number;
+  total: number;
+  message: string;
+  error: string | null;
+  source_id: string | null;
+  playlist_id: string | null;
+  created_at: number;
+}
+export interface Voice {
+  name: string;
+  language: string;
+  sample: string;
+}
+export interface NewsItem {
+  id: string;
+  title: string;
+  source: string;
+  kind: string;
+  text: string;
+  url: string | null;
+  created_at: number;
 }
 export interface ImportedTrack {
   title: string;
@@ -160,6 +252,10 @@ export interface Taste {
   playlists: Playlist[];
   sound_profiles: Record<string, number[]>;
   briefs: Brief[];
+  books?: Record<
+    string,
+    { track_id: string | null; position: number; finished: boolean; updated_at: number }
+  >;
 }
 export interface Recommendation {
   track: Track;
@@ -211,6 +307,7 @@ export const emptyTaste = (): Taste => ({
   active_corrections: {},
   generations: [],
   feeds: [],
+  books: {},
 });
 export const duration = (s: number) =>
   `${Math.floor((s || 0) / 60)}:${Math.floor((s || 0) % 60)

@@ -17,8 +17,9 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
+mod audiobook;
 mod backup;
 mod connections;
 mod devices;
@@ -28,12 +29,15 @@ mod feeds;
 mod headphone_catalog;
 mod intelligence;
 mod media_info;
+mod news;
 mod playback;
 mod playlist_import;
 mod plex;
 mod remote;
+mod speech;
 mod telegram;
 mod vault;
+mod weekly;
 
 /// 全局状态。
 pub struct AppState {
@@ -47,6 +51,8 @@ pub struct AppState {
     pub player: Arc<playback::Player>,
     pub taste: Arc<Mutex<awake_core::taste::Taste>>,
     pub data_dir: PathBuf,
+    /// 有声书 / 新闻播报的合成任务进度。
+    pub speech_jobs: Arc<Mutex<std::collections::HashMap<String, speech::SpeechJob>>>,
 }
 
 impl AppState {
@@ -64,6 +70,7 @@ impl AppState {
             player: Arc::new(playback::Player::new()),
             taste: Arc::new(Mutex::new(experience::load(&data_dir))),
             data_dir,
+            speech_jobs: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 }
@@ -84,6 +91,8 @@ pub struct ScanResult {
     pub tracks: Vec<Track>,
     pub albums: Vec<awake_core::Album>,
     pub elapsed_ms: u128,
+    /// 未能导入的路径（最多 20 条），用于给用户明确反馈。
+    pub skipped: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -93,43 +102,52 @@ pub struct ScanRequest {
     pub kind: Option<SourceKind>,
 }
 
-#[tauri::command]
-async fn scan_library(req: ScanRequest, state: State<'_, AppState>) -> Result<ScanResult, String> {
-    if !matches!(
-        req.kind.unwrap_or(SourceKind::Local),
-        SourceKind::Local | SourceKind::Smb
-    ) {
+async fn scan_folder(
+    path: String,
+    name: Option<String>,
+    kind: SourceKind,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ScanResult, String> {
+    if !matches!(kind, SourceKind::Local | SourceKind::Smb) {
         return Err("远程媒体库请使用连接来源功能".into());
     }
     let started = std::time::Instant::now();
-    let root = PathBuf::from(&req.path);
+    let root = PathBuf::from(&path);
+    if !root.is_dir() {
+        return Err(format!("文件夹不存在或无法读取：{path}"));
+    }
 
     let source_id = {
         let lib = state.library.lock();
-        // 已存在同路径来源就复用其 ID
         lib.snapshot
             .sources
             .iter()
-            .find(|s| s.url == req.path)
+            .find(|s| s.url == path)
             .map(|s| s.id.clone())
             .unwrap_or_else(awake_core::models::new_id)
     };
-
-    let existing = {
-        let lib = state.library.lock();
-        lib.tracks_by_locator(&source_id)
-    };
-
+    let existing = state.library.lock().tracks_by_locator(&source_id);
     let artwork_dir = state.data_dir.join("artwork");
     let scan_root = root.clone();
     let scan_id = source_id.clone();
     let tracks = tauri::async_runtime::spawn_blocking(move || {
+        let previous = std::sync::atomic::AtomicUsize::new(0);
         library::scan_local_source(
             &scan_root,
             &scan_id,
             &existing,
             Some(&artwork_dir),
-            |_, _, _| {},
+            |done, total, title| {
+                let last = previous.load(std::sync::atomic::Ordering::Relaxed);
+                if done == total || done.saturating_sub(last) >= 25 {
+                    previous.store(done, std::sync::atomic::Ordering::Relaxed);
+                    let _ = app.emit(
+                        "awake://scan-progress",
+                        serde_json::json!({"done": done, "total": total, "title": title}),
+                    );
+                }
+            },
         )
         .map_err(|e| e.to_string())
     })
@@ -137,23 +155,14 @@ async fn scan_library(req: ScanRequest, state: State<'_, AppState>) -> Result<Sc
     .map_err(|e| e.to_string())??;
 
     let albums = group_albums(&tracks);
-
     {
         let mut lib = state.library.lock();
         let previous = lib.snapshot.clone();
         lib.replace_source_tracks(&source_id, tracks.clone());
-
-        let name = req
-            .name
-            .clone()
+        let name = name
             .or_else(|| root.file_name().map(|n| n.to_string_lossy().to_string()))
             .unwrap_or_else(|| "曲库".into());
-
-        let mut source = MediaSource::new(
-            req.kind.unwrap_or(SourceKind::Local),
-            name,
-            req.path.clone(),
-        );
+        let mut source = MediaSource::new(kind, name, path);
         source.id = source_id;
         source.track_count = tracks.len();
         source.last_scan = Some(awake_core::models::now_ms());
@@ -165,12 +174,139 @@ async fn scan_library(req: ScanRequest, state: State<'_, AppState>) -> Result<Sc
             return Err(e.to_string());
         }
     }
-
     Ok(ScanResult {
         tracks,
         albums,
         elapsed_ms: started.elapsed().as_millis(),
+        skipped: Vec::new(),
     })
+}
+
+/// 「本地文件」来源：逐个文件导入，不复制、不移动用户的文件。
+async fn scan_files(
+    paths: Vec<String>,
+    append: bool,
+    name: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<ScanResult, String> {
+    let started = std::time::Instant::now();
+    let source_id = "local-files".to_string();
+    let mut skipped = Vec::new();
+    let mut files: Vec<PathBuf> = Vec::new();
+    for raw in &paths {
+        let path = PathBuf::from(raw);
+        if path.is_dir() {
+            files.extend(library::collect_audio_files(&path));
+        } else if path.is_file() {
+            if library::is_audio_file(&path) {
+                files.push(path);
+            } else if skipped.len() < 20 {
+                skipped.push(format!("不是音频：{}", path.display()));
+            }
+        } else if skipped.len() < 20 {
+            skipped.push(format!("找不到：{raw}"));
+        }
+    }
+    let previous_source = state
+        .library
+        .lock()
+        .snapshot
+        .sources
+        .iter()
+        .find(|s| s.id == source_id)
+        .cloned();
+    if append {
+        if let Some(source) = &previous_source {
+            for path in &source.files {
+                let path = PathBuf::from(path);
+                if path.is_file() {
+                    files.push(path);
+                }
+            }
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    files.retain(|path| {
+        let key = path.canonicalize().unwrap_or_else(|_| path.clone());
+        seen.insert(key)
+    });
+    if files.is_empty() {
+        return Err("没有读到可导入的音频文件（支持 FLAC / ALAC / MP3 / AAC / WAV / AIFF / OGG / M4B）".into());
+    }
+    let existing = state.library.lock().tracks_by_locator(&source_id);
+    let artwork_dir = state.data_dir.join("artwork");
+    let scan_id = source_id.clone();
+    let scan_files = files.clone();
+    let tracks = tauri::async_runtime::spawn_blocking(move || {
+        library::scan_local_files(&scan_files, &scan_id, &existing, Some(&artwork_dir))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    if tracks.is_empty() {
+        return Err("这些文件都无法读取为音频，请确认格式与访问权限".into());
+    }
+    let albums = group_albums(&tracks);
+    {
+        let mut lib = state.library.lock();
+        let previous = lib.snapshot.clone();
+        lib.replace_source_tracks(&source_id, tracks.clone());
+        let mut source = MediaSource::new(
+            SourceKind::Local,
+            name.unwrap_or_else(|| "本地文件".into()),
+            "手动导入的文件",
+        );
+        source.id = source_id;
+        source.files = files.iter().map(|p| p.to_string_lossy().to_string()).collect();
+        source.track_count = tracks.len();
+        source.last_scan = Some(awake_core::models::now_ms());
+        lib.snapshot.sources.retain(|s| s.id != source.id);
+        lib.add_source(source);
+        lib.snapshot.scanned_at = Some(awake_core::models::now_ms());
+        if let Err(e) = lib.save() {
+            lib.snapshot = previous;
+            return Err(e.to_string());
+        }
+    }
+    Ok(ScanResult {
+        tracks,
+        albums,
+        elapsed_ms: started.elapsed().as_millis(),
+        skipped,
+    })
+}
+
+#[tauri::command]
+async fn scan_library(
+    req: ScanRequest,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ScanResult, String> {
+    let kind = req.kind.unwrap_or(SourceKind::Local);
+    let path = req.path.trim().to_string();
+    if path.is_empty() {
+        return Err("请填写音乐文件夹路径".into());
+    }
+    if PathBuf::from(&path).is_file() {
+        return scan_files(vec![path], true, req.name, state).await;
+    }
+    scan_folder(path, req.name, kind, app, state).await
+}
+
+#[tauri::command]
+async fn import_local_files(
+    paths: Vec<String>,
+    name: Option<String>,
+    append: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<ScanResult, String> {
+    if paths.is_empty() {
+        return Err("没有选择任何文件".into());
+    }
+    if paths.len() > 5000 {
+        return Err("一次最多导入 5000 个文件".into());
+    }
+    scan_files(paths, append.unwrap_or(true), name, state).await
 }
 
 #[derive(Serialize)]
@@ -595,6 +731,54 @@ async fn pick_music_folder() -> Result<Option<String>, String> {
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+async fn pick_music_files() -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        #[cfg(target_os = "macos")]
+        {
+            let output = std::process::Command::new("osascript")
+                .args([
+                    "-e",
+                    "set chosen to choose file with prompt \"选择要导入的音频文件（可多选）\" with multiple selections allowed",
+                    "-e",
+                    "set out to \"\"",
+                    "-e",
+                    "repeat with f in chosen",
+                    "-e",
+                    "set out to out & POSIX path of f & linefeed",
+                    "-e",
+                    "end repeat",
+                    "-e",
+                    "return out",
+                ])
+                .output()
+                .map_err(|_| "无法打开文件选择器".to_string())?;
+            if !output.status.success() {
+                let error = String::from_utf8_lossy(&output.stderr);
+                if error.contains("-128") {
+                    return Ok(Vec::new());
+                }
+                return Err(format!(
+                    "文件选择器没有完成：{}",
+                    error.trim().chars().take(160).collect::<String>()
+                ));
+            }
+            Ok(String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(str::to_string)
+                .collect())
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Ok(Vec::new())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
@@ -648,6 +832,7 @@ pub fn run() {
             plex::plex_pin_poll,
             plex::plex_open_auth,
             plex::plex_resources,
+            plex::plex_probe,
             plex::plex_sections,
             connections::refresh_remote_source,
             connections::source_refresh_status,
@@ -687,6 +872,20 @@ pub fn run() {
             playlist_import::playlist_import_fetch,
             playlist_import::playlist_import_file,
             playlist_import::playlist_import_match,
+            import_local_files,
+            pick_music_files,
+            audiobook::audiobook_shelf,
+            audiobook::audiobook_progress,
+            audiobook::audiobook_forget,
+            weekly::weekly_summary,
+            news::news_add,
+            news::news_list,
+            news::news_delete,
+            news::news_plan,
+            speech::speech_voices,
+            speech::speech_plan,
+            speech::speech_render,
+            speech::speech_status,
             backup::backup_export,
             backup::backup_export_file,
             backup::backup_inspect,

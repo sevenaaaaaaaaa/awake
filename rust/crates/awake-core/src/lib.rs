@@ -8,6 +8,7 @@
 //! - `models` / `metadata` / `library`：曲库、标签与扫描
 
 pub mod analyze;
+pub mod books;
 pub mod decode;
 pub mod eq;
 pub mod feedmeta;
@@ -24,7 +25,7 @@ pub mod taste;
 pub use analyze::{to_mono, Spectrum, SpectrumAnalyzer};
 pub use decode::{decode_file, probe_format, DecodedAudio, TrackFormat};
 pub use eq::{EqCurve, Equalizer, BAND_COUNT, EQ_BAND_FREQUENCIES};
-pub use library::{collect_audio_files, scan_local_source, Library};
+pub use library::{collect_audio_files, scan_local_files, scan_local_source, Library};
 pub use metadata::{read_tags, AudioTags};
 pub use models::{group_albums, Album, LibrarySnapshot, MediaSource, SourceKind, Track};
 pub use resample::resample_interleaved;

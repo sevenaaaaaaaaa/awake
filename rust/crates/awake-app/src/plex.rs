@@ -28,6 +28,8 @@ pub struct PlexServer {
     pub token: String,
     pub local: bool,
     pub relay: bool,
+    /// 线路说明（本地 / 远程 / 中继 + HTTPS），方便在连不上时换一条。
+    pub connection: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -243,63 +245,104 @@ fn provides_server(value: &Value) -> bool {
     }
 }
 
-/// 优先 https → 本地 → 非中继；任何带账号信息或非 http(s) 的连接都丢弃。
-fn best_connection(connections: &[Value]) -> Option<PlexConnection> {
-    let mut candidates: Vec<PlexConnection> = connections
-        .iter()
-        .filter_map(|connection| {
-            let uri = connection["uri"].as_str()?;
-            let parsed = Url::parse(uri).ok()?;
-            if !matches!(parsed.scheme(), "http" | "https")
-                || parsed.host_str().is_none()
-                || !parsed.username().is_empty()
-                || parsed.password().is_some()
-            {
-                return None;
-            }
-            Some(PlexConnection {
-                url: uri.to_string(),
-                local: connection["local"].as_bool().unwrap_or(false),
-                relay: connection["relay"].as_bool().unwrap_or(false),
-                https: parsed.scheme() == "https",
-            })
-        })
-        .collect();
-    candidates.sort_by_key(|connection| (!connection.https, !connection.local, connection.relay));
-    candidates.into_iter().next()
+/// 解析全部可用线路（本地 / 远程 / 中继、HTTP / HTTPS）。
+///
+/// 只保留 http(s) 且不含账号信息的连接；按 https → 本地 → 非中继排序，
+/// 第一条即默认线路。保留多条是为了在某条线路（例如 plex.direct）不可达时能换线。
+fn parse_resources(value: &Value, account_token: &str) -> Vec<PlexServer> {
+    let servers = collect_resources(value, account_token, true);
+    if servers.is_empty() {
+        // 某些 Plex 版本对共享服务器的 provides 标注不完整；保底再尝试一次。
+        return collect_resources(value, account_token, false);
+    }
+    servers
 }
 
-fn parse_resources(value: &Value, account_token: &str) -> Vec<PlexServer> {
+fn collect_resources(value: &Value, account_token: &str, require_server: bool) -> Vec<PlexServer> {
     let Some(items) = value.as_array() else {
         return Vec::new();
     };
     let mut servers = Vec::new();
     for item in items {
-        if !provides_server(&item["provides"]) {
+        if require_server && !provides_server(&item["provides"]) {
             continue;
         }
         let Some(connections) = item["connections"].as_array() else {
             continue;
         };
-        let Some(best) = best_connection(connections) else {
-            continue;
-        };
+        let mut candidates: Vec<PlexConnection> = connections
+            .iter()
+            .filter_map(|connection| {
+                let uri = connection["uri"].as_str()?;
+                let parsed = Url::parse(uri).ok()?;
+                if !matches!(parsed.scheme(), "http" | "https")
+                    || parsed.host_str().is_none()
+                    || !parsed.username().is_empty()
+                    || parsed.password().is_some()
+                {
+                    return None;
+                }
+                Some(PlexConnection {
+                    url: uri.to_string(),
+                    local: connection["local"].as_bool().unwrap_or(false),
+                    relay: connection["relay"].as_bool().unwrap_or(false),
+                    https: parsed.scheme() == "https",
+                })
+            })
+            .collect();
+        candidates.sort_by_key(|connection| (!connection.https, !connection.local, connection.relay));
         let token = item["accessToken"]
             .as_str()
             .filter(|token| !token.is_empty())
             .unwrap_or(account_token);
-        servers.push(PlexServer {
-            name: item["name"].as_str().unwrap_or("Plex 服务器").to_string(),
-            client_identifier: item["clientIdentifier"].as_str().unwrap_or("").to_string(),
-            url: best.url.trim_end_matches('/').to_string(),
-            token: token.to_string(),
-            local: best.local,
-            relay: best.relay,
-        });
+        for connection in candidates {
+            let label = if connection.relay {
+                "中继"
+            } else if connection.local {
+                "本地"
+            } else {
+                "远程"
+            };
+            servers.push(PlexServer {
+                name: item["name"].as_str().unwrap_or("Plex 服务器").to_string(),
+                client_identifier: item["clientIdentifier"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
+                url: connection.url.trim_end_matches('/').to_string(),
+                token: token.to_string(),
+                local: connection.local,
+                relay: connection.relay,
+                connection: format!(
+                    "{label} · {}",
+                    if connection.https { "HTTPS" } else { "HTTP" }
+                ),
+            });
+        }
     }
+    // 稳定排序：同名的多条线路保持 https → 本地 → 非中继 的优先顺序。
     servers.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     servers.dedup_by(|a, b| a.url == b.url);
     servers
+}
+
+#[tauri::command]
+pub async fn plex_probe(url: String, token: String) -> Result<bool, String> {
+    validate_token(&token)?;
+    let base = validate_server_url(&url)?;
+    tauri::async_runtime::spawn_blocking(move || probe(&token, &base))
+        .await
+        .map_err(|_| "Plex 连通性检查中断".to_string())?
+}
+
+fn probe(token: &str, base: &str) -> Result<bool, String> {
+    let response = client(Duration::from_secs(6))?
+        .get(format!("{base}/identity"))
+        .header("X-Plex-Token", token)
+        .header(header::ACCEPT, "application/json")
+        .send()
+        .map_err(|_| "这条线路连不上 Plex 服务器".to_string())?;
+    Ok(response.status().is_success())
 }
 
 #[tauri::command]
@@ -343,7 +386,7 @@ fn parse_sections(value: &Value) -> Vec<PlexSection> {
         .map(|directories| {
             directories
                 .iter()
-                .filter(|directory| directory["type"].as_str() == Some("artist"))
+                .filter(|directory| matches!(directory["type"].as_str(), Some("artist") | Some("music")))
                 .filter_map(|directory| {
                     let key = directory["key"].as_str().filter(|key| !key.is_empty())?;
                     Some(PlexSection {
@@ -375,10 +418,13 @@ mod tests {
         )
         .unwrap();
         let servers = parse_resources(&value, "account-token");
-        assert_eq!(servers.len(), 2, "只保留提供 server 能力的设备");
+        assert_eq!(servers.len(), 3, "保留客厅的两条线路，排除手机客户端");
         let living = servers.iter().find(|s| s.name == "客厅").unwrap();
         assert!(living.url.starts_with("https://"), "优先使用 https 连接");
         assert_eq!(living.token, "account-token");
+        assert!(servers
+            .iter()
+            .any(|s| s.name == "客厅" && s.url.starts_with("http://")), "同时保留 HTTP 备用线路");
         let shared = servers.iter().find(|s| s.name == "朋友的服务器").unwrap();
         assert_eq!(
             shared.token, "shared-token",
