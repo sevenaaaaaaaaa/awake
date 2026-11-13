@@ -1,0 +1,32 @@
+Awake iOS 0.8.1 验证记录
+
+时间：2026-11-13
+环境：macOS 27.3、Xcode 27.2、iOS Simulator 26.5（iPhone 17 Pro）
+版本：0.8.1（build 17）
+
+构建
+- xcodegen 重新生成工程；Debug Simulator BUILD SUCCEEDED。
+- 未签名真机 IPA：dist-ios/Awake-0.8.1-ios-arm64-unsigned.ipa（2.9 MB），
+  Info.plist = 0.8.1 / 17。
+
+自动测试
+- 单元测试：65 项执行、4 项跳过（外部连接器 / 网络夹具）、0 失败。
+  BooksTests 8 项：章节自然排序与续听、短音乐过滤、本周时间窗、分章与拆剧角色、
+  HTML 清理、Plex 多线路解析、文件夹归并、真实语音合成并读取生成音频。
+- UI 测试：首页 → 听书与播报（书架 / AI 拆书）→ 本周总结。
+
+本轮对齐验证点
+- Plex：同一服务器保留本地 HTTPS / 本地 HTTP / 中继多条线路；跳过含账号信息的 URL；
+  共享服务器 accessToken 正确；扫描支持按音乐库分区过滤。
+- 歌单：未匹配曲目可勾选保存为待匹配条目；详情页展示并可重新匹配；
+  待匹配条目与旧歌单 JSON 兼容。
+- 听书：无专辑标签的章节按导入文件夹归并；生成章节带 trackNumber 保持顺序。
+- AI 有声书：用 AVSpeechSynthesizer 离线合成 PCM，AVAudioFile 写 CAF，
+  AVAssetExportSession 导出 m4a；单元测试实际生成并读取音频（1.2 秒）。
+- 云端：分章与新闻摘要走 AIService.json；失败自动回退本地。
+- 本周总结：新增曲目、收藏、艺人时长榜。
+
+未验证
+- 真机锁屏长时朗读与真实系统语音听感。
+- 真实 Plex 账号、复杂 MIME 邮件、长篇小说合成耗时与磁盘占用。
+- iOS 文件导入复制进沙盒，与桌面原地引用路径的存储差异属于平台实现差异。

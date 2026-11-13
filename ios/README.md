@@ -1,6 +1,6 @@
-# Awake iOS 0.8.0
+# Awake iOS 0.8.1
 
-本轮把桌面 0.8 的听书、AI 拆书 / 拆剧、新闻播报、本周总结与「为你生成」迁移到 iPhone / iPad：按专辑或书名归并长音频，章节自然排序并记住进度；文本分章后由系统语音直接朗读，拆剧为角色分配不同语音；新闻链接、正文与 .eml 邮件可生成 AI 新闻播报；首页新增本周统计，曲库新增每日重排的「为你生成」。iOS 首版朗读不导出音频文件。详见 [iOS 0.8.0 发行说明](../docs/releases/ios-v0.8.0.md) 与 [验证记录](../docs/validation-ios-v0.8.0.log)。安装包：`dist-ios/Awake-0.8.0-ios-arm64-unsigned.ipa`。
+本轮补齐 0.8.0 与桌面端的差距：Plex 多线路探测与音乐库分区、歌单待匹配条目持久化与详情页、文件夹归并听书、AI 拆书生成 m4a 有声书写入曲库、云端分章与新闻摘要、本周新增曲目/艺人榜。详见 [iOS 0.8.1 发行说明](../docs/releases/ios-v0.8.1.md) 与 [验证记录](../docs/validation-ios-v0.8.1.log)。安装包：`dist-ios/Awake-0.8.1-ios-arm64-unsigned.ipa`。
 
 ## 0.7.7 · 刷音乐与歌单导入
 

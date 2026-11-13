@@ -7,7 +7,11 @@
 ## 下载
 
 - **[macOS 0.8.1 通用版（Apple 芯片 + Intel，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.8.1)**：同一个安装包同时支持 Apple Silicon 与 Intel Mac；解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.8.1.md)
-- **[iOS 0.8.0 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.8.0)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.8.0.md)
+- **[iOS 0.8.1 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.8.1)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.8.1.md)
+
+## iOS 0.8.1 · 与桌面端功能对齐
+
+iPhone / iPad 补齐 0.8.0 留下的差距：Plex 列出全部线路、探测并可选音乐库分区；导入歌单的未匹配曲目可保存为待匹配条目，歌单详情页可查看并自动重新匹配；听书按文件夹归并无标签音频；AI 拆书 / 拆剧可生成 m4a 有声书写入曲库（同时保留直接朗读），并支持云端 AI 分章；新闻播报支持云端摘要；本周总结增加新增曲目、收藏与艺人时长榜。详见 [iOS 0.8.1 发行说明](docs/releases/ios-v0.8.1.md)。
 
 ## iOS 0.8.0 · 听书、AI 拆书与新闻播报
 

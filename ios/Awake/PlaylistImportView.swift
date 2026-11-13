@@ -190,7 +190,8 @@ struct PlaylistImportView: View {
         .font(.caption2).foregroundStyle(.secondary)
     }
   }
-  private var selectedCount: Int { matches.filter { $0.enabled && $0.song != nil }.count }
+  private var selectedCount: Int { matches.filter { $0.enabled }.count }
+  private var pendingCount: Int { matches.filter { $0.enabled && $0.song == nil }.count }
 
   @ViewBuilder
   private var matchSection: some View {
@@ -205,7 +206,10 @@ struct PlaylistImportView: View {
         ForEach(visible) { match in
           matchRow(match)
         }
-        Button("创建歌单（" + String(selectedCount) + " 首）") { create() }
+        Button(
+          "创建歌单（" + String(selectedCount) + " 首"
+            + (pendingCount > 0 ? "，含 " + String(pendingCount) + " 首待匹配" : "") + "）"
+        ) { create() }
           .disabled(selectedCount == 0)
           .accessibilityIdentifier("playlistCreate")
       }
@@ -245,12 +249,11 @@ struct PlaylistImportView: View {
   }
 
   private func markName(_ match: PlaylistMatch) -> String {
-    match.enabled && match.song != nil ? "checkmark.circle.fill" : "circle"
+    match.enabled ? "checkmark.circle.fill" : "circle"
   }
 
   private func markColor(_ match: PlaylistMatch) -> Color {
-    match.enabled && match.song != nil
-      ? Color(hex: store.state.skin.colors.accent) : Color.secondary
+    match.enabled ? Color(hex: store.state.skin.colors.accent) : Color.secondary
   }
 
   private func subtitle(_ match: PlaylistMatch) -> String {
@@ -260,7 +263,6 @@ struct PlaylistImportView: View {
 
   private func toggle(_ match: PlaylistMatch) {
     guard let i = matches.firstIndex(where: { $0.id == match.id }) else { return }
-    guard matches[i].song != nil else { return }
     matches[i].enabled.toggle()
   }
 
@@ -316,10 +318,20 @@ struct PlaylistImportView: View {
       importCue(imported)
       return
     }
-    let ids = matches.filter { $0.enabled }.compactMap { $0.song?.id }
-    guard !ids.isEmpty else { status = "没有可添加的曲目"; return }
+    let chosen = matches.filter { $0.enabled }
+    let ids = chosen.compactMap { $0.song?.id }
+    let pending = chosen.filter { $0.song == nil }.map {
+      PendingTrack(title: $0.track.title, artist: $0.track.artist, album: $0.track.album)
+    }
+    guard !ids.isEmpty || !pending.isEmpty else {
+      status = "没有可添加的曲目"
+      return
+    }
     var list = store.state.playlists ?? []
-    list.append(Playlist(name: imported.name, songIDs: ids, note: imported.source))
+    list.append(
+      Playlist(
+        name: imported.name, songIDs: ids, note: imported.source,
+        pending: pending.isEmpty ? nil : pending))
     store.state.playlists = list
     store.save()
     dismiss()

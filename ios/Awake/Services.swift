@@ -479,8 +479,12 @@ enum SourceService {
       } catch {
         throw AppFailure("Plex 资料库读取失败：\(error.localizedDescription)。请确认 Token 仍有效，且服务器地址指向这台 Plex 服务器。")
       }
+      let wanted = source.section ?? ""
+      if !wanted.isEmpty && !xml.sections.contains(wanted) {
+        throw AppFailure("Plex 音乐库分区不存在或已删除，请重新选择音乐库。")
+      }
       var songs: [Song] = []
-      for section in xml.sections.prefix(30) {
+      for section in xml.sections.prefix(30) where wanted.isEmpty || section == wanted {
         var offset = 0
         while offset < 20000 {
           let u = try api("library/sections/\(section)/all")

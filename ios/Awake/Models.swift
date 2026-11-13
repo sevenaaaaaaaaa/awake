@@ -8,13 +8,18 @@ struct Song: Identifiable, Codable, Equatable {
   var title: String
   var artist = "未知艺人"
   var album = ""
+  /// 导入时的上级文件夹名，用于没有专辑标签的有声书归并。
+  var folder: String?
   var genre = ""
   var duration: Double = 0
   var sampleRate: Double = 0
+  /// 有声书章节序号；用于保持生成章节的顺序。
+  var trackNumber: Int?
   var file: String?
   var sourceID: String?
   var locator = ""
   var favorite = false
+  var addedAt: Date?
   var origin: String?
   var originalFilename: String?
   var artwork: String?
@@ -25,12 +30,21 @@ struct Song: Identifiable, Codable, Equatable {
   var segmentStart: Double?
   var segmentEnd: Double?
 }
+struct PendingTrack: Identifiable, Codable, Equatable, Hashable {
+  var id = UUID().uuidString
+  var title: String
+  var artist = ""
+  var album = ""
+}
+
 struct Playlist: Identifiable, Codable, Equatable {
   var id = UUID().uuidString
   var name: String
   var songIDs: [String] = []
   var createdAt = Date()
   var note = ""
+  /// 导入时本地没有匹配到的曲目；曲库更新后可重新匹配。
+  var pending: [PendingTrack]? = nil
 }
 struct MusicSource: Identifiable, Codable {
   var id = UUID().uuidString
@@ -40,14 +54,17 @@ struct MusicSource: Identifiable, Codable {
   var username = ""
   /// 用户明确勾选后才对该来源的主机放行自签名 HTTPS 证书。
   var trustSelfSigned = false
+  /// Plex 音乐库分区 key；为空表示整个服务器的音乐分区。
+  var section: String?
 
-  init(id: String = UUID().uuidString, name: String, kind: String, url: String, username: String = "", trustSelfSigned: Bool = false) {
+  init(id: String = UUID().uuidString, name: String, kind: String, url: String, username: String = "", trustSelfSigned: Bool = false, section: String? = nil) {
     self.id = id
     self.name = name
     self.kind = kind
     self.url = url
     self.username = username
     self.trustSelfSigned = trustSelfSigned
+    self.section = section
   }
 
   init(from decoder: Decoder) throws {
@@ -58,9 +75,12 @@ struct MusicSource: Identifiable, Codable {
     url = try c.decodeIfPresent(String.self, forKey: .url) ?? ""
     username = try c.decodeIfPresent(String.self, forKey: .username) ?? ""
     trustSelfSigned = try c.decodeIfPresent(Bool.self, forKey: .trustSelfSigned) ?? false
+    section = try c.decodeIfPresent(String.self, forKey: .section)
   }
 
-  private enum CodingKeys: String, CodingKey { case id, name, kind, url, username, trustSelfSigned }
+  private enum CodingKeys: String, CodingKey {
+    case id, name, kind, url, username, trustSelfSigned, section
+  }
 }
 struct Listen: Codable {
   var songID: String
@@ -465,7 +485,10 @@ enum Secrets {
         }.value
         do {
           var song = try await Self.readSong(dest, file: name)
+          song.addedAt = Date()
           song.originalFilename = url.lastPathComponent
+          let folder = url.deletingLastPathComponent().lastPathComponent
+          song.folder = folder.isEmpty ? nil : folder
           Self.readSidecars(from: url, song: &song, directory: artworkDirectory)
           if song.title == dest.deletingPathExtension().lastPathComponent {
             song.title = url.deletingPathExtension().lastPathComponent
@@ -599,10 +622,12 @@ enum Secrets {
         let song = try await AIService.compose(
           endpoint: endpoint, model: model, key: key, prompt: prompt, seconds: seconds,
           directory: music)
-        state.songs.append(song)
+        var generated = song
+        generated.addedAt = Date()
+        state.songs.append(generated)
         try updateJob(job.id) {
           $0.state = "completed"
-          $0.songID = song.id
+          $0.songID = generated.id
         }
         message = "原创音乐已保存到曲库"
       } catch {

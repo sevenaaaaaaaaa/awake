@@ -75,6 +75,9 @@ enum BookShelf {
       if !song.album.trimmingCharacters(in: .whitespaces).isEmpty {
         key = "album|\(song.album.lowercased())|\(song.artist.lowercased())"
         title = song.album
+      } else if let folder = song.folder, !folder.isEmpty {
+        key = "folder|\(folder.lowercased())|\(song.artist.lowercased())"
+        title = folder
       } else {
         // 没有专辑标签时，只把明确像有声书的长音频当成书。
         guard isBookMarker(song.title) || isBookMarker(song.artist) || song.duration >= 480 else {
@@ -91,14 +94,15 @@ enum BookShelf {
     for (key, list) in groups {
       let title = titles[key] ?? "未命名有声书"
       let average = list.reduce(0) { $0 + $1.duration } / Double(max(1, list.count))
-      let musicalAlbum =
-        !(list.first?.album ?? "").isEmpty
-        && !isBookMarker(title)
-        && average < 480
-        && !(list.count >= 3 && average >= 300)
-      if musicalAlbum { continue }
+      let looksLikeBook =
+        isBookMarker(title)
+        || list.contains { isBookMarker($0.title) || isBookMarker($0.artist) }
+        || average >= 480
+        || (list.count >= 3 && average >= 300)
+      if !looksLikeBook { continue }
 
       let chapters = list.sorted { a, b in
+        if let x = a.trackNumber, let y = b.trackNumber, x != y { return x < y }
         if a.segmentStart != nil || b.segmentStart != nil {
           return (a.segmentStart ?? 0) < (b.segmentStart ?? 0)
         }
@@ -154,6 +158,7 @@ struct WeeklySummary {
   var completed: Int
   var artistCount: Int
   var bookCount: Int
+  var newSongs: Int
   var topSongs: [(song: Song, plays: Int, seconds: Double)]
   var topArtists: [(artist: String, seconds: Double)]
   var days: [WeeklyDay]
@@ -209,6 +214,10 @@ struct WeeklySummary {
     let topArtists =
       perArtist.sorted { $0.value > $1.value }.prefix(5).map { ($0.key, $0.value) }
     let books = progress.values.filter { $0.updatedAt >= since && $0.updatedAt < until }.count
+    let newSongs = songs.filter {
+      guard let added = $0.addedAt else { return false }
+      return added >= since && added < until
+    }.count
     var lines: [String] = []
     if plays == 0 && seconds < 60 {
       lines.append("这周还没有完整的聆听记录。放一首喜欢的歌，下周的总结会从这里开始。")
@@ -222,10 +231,11 @@ struct WeeklySummary {
       }
       if completed > 0 { lines.append("有 \(completed) 次播放自然播完，说明它们经得起完整聆听。") }
       if books > 0 { lines.append("还有 \(books) 本书在进行中，记得回来接着听。") }
+      if newSongs > 0 { lines.append("曲库新增 \(newSongs) 首，等你慢慢发现。") }
     }
     return WeeklySummary(
       since: since, until: until, seconds: seconds, plays: plays, completed: completed,
-      artistCount: Set(perArtist.keys).count, bookCount: books,
+      artistCount: Set(perArtist.keys).count, bookCount: books, newSongs: newSongs,
       topSongs: topSongs, topArtists: topArtists.map { ($0.0, $0.1) },
       days: daySeconds.enumerated().map { WeeklyDay(index: $0.offset, seconds: $0.element) },
       lines: lines)

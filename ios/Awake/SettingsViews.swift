@@ -282,6 +282,8 @@ struct SourceEditor: View {
   @State private var plexBusy = false
   @State private var plexNote = ""
   @State private var selectedServer = ""
+  @State private var plexSections: [PlexAuth.Section] = []
+  @State private var selectedSection = ""
   @Environment(\.openURL) private var openURL
   var telegramReady: Bool {
     url.range(of: "/v1/libraries/[a-f0-9]{24}/?$", options: .regularExpression) != nil
@@ -324,22 +326,32 @@ struct SourceEditor: View {
             .accessibilityIdentifier("plexLogin")
             if plexBusy { ProgressView("等待浏览器完成授权…").font(.caption) }
             if !plexNote.isEmpty { Text(plexNote).font(.caption).foregroundStyle(.secondary) }
-            if plexServers.count > 1 {
-              Picker("服务器", selection: $selectedServer) {
-                ForEach(plexServers) { Text($0.name).tag($0.uri) }
+            if !plexServers.isEmpty {
+              Picker("服务器线路", selection: $selectedServer) {
+                ForEach(plexServers) { server in
+                  Text(server.name + " · " + server.connection).tag(server.uri)
+                }
               }
               .onChange(of: selectedServer) { _, value in
-                if let server = plexServers.first(where: { $0.uri == value }) {
-                  url = server.uri
-                  secret = server.accessToken
-                  plexToken = server.accessToken
-                  if name.trimmingCharacters(in: .whitespaces).isEmpty {
-                    name = "Plex · " + server.name
-                  }
+                guard let server = plexServers.first(where: { $0.uri == value }) else { return }
+                Task { await applyServer(server) }
+              }
+              Button("重新读取服务器", systemImage: "arrow.clockwise") {
+                Task { await loadServers() }
+              }.disabled(plexBusy || plexToken.isEmpty)
+            }
+            if !plexSections.isEmpty {
+              Picker("音乐库", selection: $selectedSection) {
+                Text("全部音乐库").tag("")
+                ForEach(plexSections) { section in
+                  Text(section.title).tag(section.key)
                 }
               }
             }
-            Text("登录只用于换取这台服务器的访问 Token；密码不会保存在手机上，Token 存入钥匙串。授权在 Safari 完成。")
+            if !plexNote.isEmpty {
+              Text(plexNote).font(.caption).foregroundStyle(.secondary)
+            }
+            Text("登录只用于换取这台服务器的访问 Token；密码不会保存在手机上，Token 存入钥匙串。授权在 Safari 完成。换一条线路可解决 plex.direct 不可达。")
               .font(.caption2).foregroundStyle(.secondary)
           }
         }
@@ -417,19 +429,51 @@ struct SourceEditor: View {
         throw AppFailure("等待 Plex 授权超时（5 分钟）。请重试，或在上面手动填写 Token。")
       }
       plexToken = token
-      let servers = try await PlexAuth.servers(token: token)
-      guard let server = servers.first else {
-        throw AppFailure("这个 Plex 账号下没有找到可用的服务器。请确认 Plex 服务器已登录同一账号并在线。")
-      }
-      plexServers = servers
-      selectedServer = server.uri
-      url = server.uri
-      secret = server.accessToken
-      if name.trimmingCharacters(in: .whitespaces).isEmpty { name = "Plex · " + server.name }
-      plexNote = "已登录：\(server.name)。点“连接并扫描”读取音乐库。"
+      await loadServers()
       error = ""
     } catch { plexNote = error.localizedDescription }
   }
+  func loadServers() async {
+    plexBusy = true
+    defer { plexBusy = false }
+    do {
+      let servers = try await PlexAuth.servers(token: plexToken)
+      guard let first = servers.first else {
+        throw AppFailure("这个 Plex 账号下没有找到可用的服务器。请确认服务器在线并已分享给该账号。")
+      }
+      plexServers = servers
+      selectedServer = first.uri
+      await applyServer(first)
+    } catch { plexNote = error.localizedDescription }
+  }
+
+  func applyServer(_ server: PlexAuth.Server) async {
+    url = server.uri
+    secret = server.accessToken
+    plexToken = server.accessToken
+    if name.trimmingCharacters(in: .whitespaces).isEmpty {
+      name = "Plex · " + server.name
+    }
+    plexSections = []
+    selectedSection = ""
+    plexNote = "正在检测 \(server.connection)…"
+    guard await PlexAuth.probe(server) else {
+      plexNote = "这条线路连不上，换一条线路再试。"
+      return
+    }
+    plexNote = "线路可用，正在读取音乐库…"
+    do {
+      plexSections = try await PlexAuth.sections(server)
+      selectedSection = plexSections.first?.key ?? ""
+      plexNote =
+        plexSections.isEmpty
+        ? "线路可用；服务器没有音乐分区，将扫描全部音乐库。"
+        : "线路可用，已读取 \(plexSections.count) 个音乐库。"
+    } catch {
+      plexNote = "线路可用，但读取音乐库失败：\(error.localizedDescription)"
+    }
+  }
+
   func browse() async {
     busy = true; error = ""
     defer { busy = false }
@@ -450,7 +494,8 @@ struct SourceEditor: View {
       let source = MusicSource(
         name: name.trimmingCharacters(in: .whitespaces), kind: kind, url: url,
         username: kind == "webdav" ? username : "",
-        trustSelfSigned: kind == "webdav" ? trustSelfSigned : false)
+        trustSelfSigned: kind == "webdav" ? trustSelfSigned : false,
+        section: kind == "plex" && !selectedSection.isEmpty ? selectedSection : nil)
       let songs = try await SourceService.scan(source, secret: secret)
       try Secrets.set(secret, account: "source." + source.id)
       let previous = store.state

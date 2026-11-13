@@ -1,17 +1,25 @@
 import Foundation
 
-/// Plex 账号授权（PIN）流程与服务器发现。
-/// 只访问 plex.tv 的公开 PIN 接口；真正播放仍由用户选中的服务器地址与 Token 完成。
+/// Plex 账号授权（PIN）流程、服务器发现、线路探测与音乐库分区。
+/// 只访问 plex.tv 的公开接口；真正播放仍由用户选中的服务器地址与 Token 完成。
 enum PlexAuth {
   struct Pin { let id: Int; let code: String }
 
   struct Server: Identifiable, Hashable {
-    var id: String { clientID }
+    var id: String { clientID + "|" + uri }
     let clientID: String
     let name: String
     let uri: String
     let accessToken: String
+    /// 「本地 / 远程 / 中继 · HTTPS」。
+    let connection: String
     let owned: Bool
+  }
+
+  struct Section: Identifiable, Hashable {
+    var id: String { key }
+    let key: String
+    let title: String
   }
 
   static let product = "Awake"
@@ -69,10 +77,9 @@ enum PlexAuth {
   }
 
   static func authURL(_ pin: Pin) -> URL {
-    let context = "context%5Bdevice%5D%5Bproduct%5D=Awake"
-    return URL(
+    URL(
       string:
-        "https://app.plex.tv/auth#?clientID=\(clientID)&code=\(pin.code)&(context)"
+        "https://app.plex.tv/auth#?clientID=\(clientID)&code=\(pin.code)&context%5Bdevice%5D%5Bproduct%5D=Awake"
     )!
   }
 
@@ -88,36 +95,92 @@ enum PlexAuth {
     guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
       throw AppFailure("Plex 服务器列表格式无法识别")
     }
-    var result: [Server] = []
-    for row in rows {
-      guard let provides = row["provides"] as? String, provides.contains("server"),
-        let connections = row["connections"] as? [[String: Any]]
-      else { continue }
-      let serverToken = (row["accessToken"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? token
-      let chosen = connection(connections)
-      guard let chosen else { continue }
-      result.append(
-        Server(
-          clientID: row["clientIdentifier"] as? String ?? UUID().uuidString,
-          name: row["name"] as? String ?? "Plex 服务器",
-          uri: chosen,
-          accessToken: serverToken,
-          owned: row["owned"] as? Bool ?? false))
+    var result = parseServers(rows, token: token, requireServer: true)
+    if result.isEmpty {
+      // 某些 Plex 版本对共享服务器的 provides 标注不完整。
+      result = parseServers(rows, token: token, requireServer: false)
     }
-    return result.sorted { ($0.owned ? 0 : 1, $0.name) < ($1.owned ? 0 : 1, $1.name) }
+    return result.sorted {
+      if $0.name != $1.name { return $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+      return rank($0.connection) < rank($1.connection)
+    }
   }
 
-  private static func connection(_ connections: [[String: Any]]) -> String? {
-    var ranked: [(Int, String)] = []
-    for connection in connections {
-      guard let uri = connection["uri"] as? String, !uri.isEmpty else { continue }
-      let relay = connection["relay"] as? Bool ?? false
-      let local = connection["local"] as? Bool ?? false
-      let https = uri.lowercased().hasPrefix("https://")
-      let score = relay ? 4 : (https ? (local ? 1 : 0) : 2)
-      ranked.append((score, uri.hasSuffix("/") ? String(uri.dropLast()) : uri))
+  static func parseServers(
+    _ rows: [[String: Any]], token: String, requireServer: Bool
+  ) -> [Server] {
+    var result: [Server] = []
+    var seen = Set<String>()
+    for row in rows {
+      if requireServer {
+        guard let provides = row["provides"] as? String, provides.contains("server") else {
+          continue
+        }
+      }
+      guard let connections = row["connections"] as? [[String: Any]] else { continue }
+      let serverToken = (row["accessToken"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? token
+      let clientID = row["clientIdentifier"] as? String ?? UUID().uuidString
+      let name = row["name"] as? String ?? "Plex 服务器"
+      for connection in connections {
+        guard let uri = connection["uri"] as? String,
+          let parsed = URL(string: uri),
+          ["http", "https"].contains(parsed.scheme ?? ""),
+          parsed.host != nil, parsed.user == nil, parsed.password == nil
+        else { continue }
+        let clean = uri.hasSuffix("/") ? String(uri.dropLast()) : uri
+        guard seen.insert(clientID + "|" + clean).inserted else { continue }
+        let relay = connection["relay"] as? Bool ?? false
+        let local = connection["local"] as? Bool ?? false
+        let secure = (parsed.scheme ?? "") == "https"
+        let label = relay ? "中继" : (local ? "本地" : "远程")
+        result.append(
+          Server(
+            clientID: clientID, name: name, uri: clean, accessToken: serverToken,
+            connection: label + " · " + (secure ? "HTTPS" : "HTTP"),
+            owned: row["owned"] as? Bool ?? false))
+      }
     }
-    return ranked.sorted { $0.0 < $1.0 }.first?.1
+    return result
+  }
+
+  private static func rank(_ connection: String) -> Int {
+    if connection.hasPrefix("本地") { return connection.contains("HTTPS") ? 0 : 2 }
+    if connection.hasPrefix("远程") { return connection.contains("HTTPS") ? 1 : 3 }
+    if connection.hasPrefix("中继") { return 4 }
+    return 5
+  }
+
+  static func probe(_ server: Server) async -> Bool {
+    guard let url = URL(string: server.uri + "/identity") else { return false }
+    var request = URLRequest(url: url)
+    request.timeoutInterval = 8
+    headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+    request.setValue(server.accessToken, forHTTPHeaderField: "X-Plex-Token")
+    do {
+      let (_, response) = try await session.data(for: request)
+      guard let http = response as? HTTPURLResponse else { return false }
+      return (200..<300).contains(http.statusCode)
+    } catch { return false }
+  }
+
+  static func sections(_ server: Server) async throws -> [Section] {
+    guard let url = URL(string: server.uri + "/library/sections") else {
+      throw AppFailure("Plex 地址无效")
+    }
+    var request = URLRequest(url: url)
+    headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+    request.setValue(server.accessToken, forHTTPHeaderField: "X-Plex-Token")
+    let data = try await raw(request)
+    guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let container = json["MediaContainer"] as? [String: Any],
+      let rows = container["Directory"] as? [[String: Any]]
+    else { throw AppFailure("Plex 音乐库列表格式无法识别") }
+    return rows.compactMap { row in
+      guard let key = row["key"] as? String, !key.isEmpty else { return nil }
+      let type = row["type"] as? String ?? ""
+      guard ["artist", "music"].contains(type) else { return nil }
+      return Section(key: key, title: row["title"] as? String ?? "音乐库")
+    }
   }
 
   private static func object(_ request: URLRequest) async throws -> [String: Any] {

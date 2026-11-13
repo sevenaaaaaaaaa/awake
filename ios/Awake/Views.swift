@@ -510,17 +510,21 @@ struct LibraryView: View {
       if !(store.state.playlists ?? []).isEmpty {
         Section("歌单") {
           ForEach(store.state.playlists ?? []) { list in
-            Button {
-              Task { await playPlaylist(list) }
+            NavigationLink {
+              PlaylistDetailView(playlistID: list.id)
             } label: {
               HStack {
                 VStack(alignment: .leading, spacing: 3) {
                   Text(list.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                  Text("\(list.songIDs.count) 首 · \(list.note.isEmpty ? "本地歌单" : list.note)")
-                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                  Text(
+                    "\(list.songIDs.count) 首"
+                      + ((list.pending?.isEmpty ?? true)
+                        ? " · \(list.note.isEmpty ? "本地歌单" : list.note)"
+                        : " · \(list.pending?.count ?? 0) 首待匹配")
+                  ).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
-                Image(systemName: "play.circle").font(.title3)
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
               }
             }.buttonStyle(.plain)
               .accessibilityIdentifier("playlist-\(list.id)")
@@ -575,6 +579,125 @@ struct LibraryView: View {
       return
     }
     player.play(playable, at: 0)
+  }
+}
+
+struct PlaylistDetailView: View {
+  @EnvironmentObject var store: MobileStore
+  @EnvironmentObject var player: MobilePlayer
+  let playlistID: String
+
+  private var playlist: Playlist? {
+    (store.state.playlists ?? []).first { $0.id == playlistID }
+  }
+  private var songs: [Song] {
+    guard let playlist else { return [] }
+    let byID = Dictionary(uniqueKeysWithValues: store.state.songs.map { ($0.id, $0) })
+    return playlist.songIDs.compactMap { byID[$0] }
+  }
+
+  var body: some View {
+    List {
+      if let playlist {
+        Section {
+          Text(playlist.note.isEmpty ? "本地歌单" : playlist.note)
+            .font(.caption).foregroundStyle(.secondary)
+          Text(
+            "\(songs.count) 首可播放"
+              + ((playlist.pending?.isEmpty ?? true)
+                ? "" : " · \(playlist.pending?.count ?? 0) 首待匹配"))
+            .font(.caption2).foregroundStyle(.secondary)
+          Button {
+            play()
+          } label: {
+            Label("播放歌单", systemImage: "play.fill")
+          }.disabled(songs.isEmpty)
+        }
+        Section("曲目") {
+          if songs.isEmpty {
+            Text("还没有可播放的曲目").foregroundStyle(.secondary)
+          }
+          ForEach(songs) { SongRow(song: $0) }
+        }
+        if let pending = playlist.pending, !pending.isEmpty {
+          Section("待匹配曲目") {
+            ForEach(pending) { item in
+              HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                  Text(item.title).font(.subheadline.weight(.medium))
+                  Text(
+                    [item.artist, item.album].filter { !$0.isEmpty }.joined(separator: " · ")
+                  ).font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("未匹配").font(.caption2).foregroundStyle(.orange)
+              }
+            }
+            Button("重新匹配曲库", systemImage: "arrow.clockwise") {
+              if rematch(save: true) {
+                store.message = "已重新匹配待处理曲目"
+              } else {
+                store.message = "曲库里还没有这些曲目；导入对应文件后再试。"
+              }
+            }
+          }
+        }
+      } else {
+        Text("歌单已删除").foregroundStyle(.secondary)
+      }
+    }
+    .appSurface()
+    .navigationTitle(playlist?.name ?? "歌单")
+    .onAppear { _ = rematch(save: true) }
+  }
+
+  private func play() {
+    guard let playlist else { return }
+    let byID = Dictionary(uniqueKeysWithValues: store.state.songs.map { ($0.id, $0) })
+    let queue = playlist.songIDs.compactMap { byID[$0] }.compactMap { song -> (Song, URL)? in
+      guard let url = store.localURL(song) else { return nil }
+      return (song, url)
+    }
+    guard !queue.isEmpty else {
+      store.message = "这个歌单的曲目还不在本机。请先播放或导入对应音频。"
+      return
+    }
+    player.play(queue, at: 0)
+  }
+
+  private func normalize(_ text: String) -> String {
+    text.lowercased().filter { !$0.isWhitespace }
+  }
+
+  @discardableResult
+  private func rematch(save: Bool) -> Bool {
+    guard var list = playlist, let pending = list.pending, !pending.isEmpty else {
+      return false
+    }
+    var changed = false
+    var remaining: [PendingTrack] = []
+    for item in pending {
+      let title = normalize(item.title)
+      let artist = normalize(item.artist)
+      let exact = store.state.songs.first {
+        normalize($0.title) == title && normalize($0.artist) == artist
+      }
+      let titleMatches = store.state.songs.filter { normalize($0.title) == title }
+      let found = exact ?? (titleMatches.count == 1 ? titleMatches[0] : nil)
+      if let found {
+        if !list.songIDs.contains(found.id) { list.songIDs.append(found.id) }
+        changed = true
+      } else {
+        remaining.append(item)
+      }
+    }
+    guard changed else { return false }
+    list.pending = remaining.isEmpty ? nil : remaining
+    if let index = (store.state.playlists ?? []).firstIndex(where: { $0.id == list.id }) {
+      store.state.playlists?[index] = list
+      if save { store.save() }
+    }
+    return true
   }
 }
 

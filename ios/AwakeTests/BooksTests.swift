@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 
 @testable import Awake
@@ -69,6 +70,58 @@ final class BooksTests: XCTestCase {
     let speakers = drama.chapters[0].segments.map(\.speaker)
     XCTAssertTrue(speakers.contains("小明"))
     XCTAssertTrue(speakers.contains("小红"))
+  }
+
+  func testFolderBooksGroupUntaggedChapters() {
+    var first = song("f1", "第2章", album: "", duration: 300)
+    first.folder = "三体 有声书"
+    var second = song("f2", "第10章", album: "", duration: 300)
+    second.folder = "三体 有声书"
+    let books = BookShelf.shelf([second, first], progress: [:])
+    XCTAssertEqual(books.count, 1)
+    XCTAssertEqual(books[0].title, "三体 有声书")
+    XCTAssertEqual(books[0].chapters.count, 2)
+  }
+
+  func testPlexParsesAllConnectionsAndSkipsUnsafeURLs() {
+    let rows: [[String: Any]] = [
+      [
+        "name": "客厅", "clientIdentifier": "abc", "provides": "server",
+        "connections": [
+          ["uri": "https://192-168-1-5.hash.plex.direct:32400", "local": true, "relay": false],
+          ["uri": "http://192.168.1.5:32400", "local": true, "relay": false],
+          ["uri": "https://user:pass@example.com:32400", "local": false, "relay": false],
+        ],
+      ],
+      [
+        "name": "朋友的服务器", "clientIdentifier": "def", "provides": "server",
+        "accessToken": "shared", "connections": [
+          ["uri": "https://relay.plex.direct:443", "local": false, "relay": true]
+        ],
+      ],
+    ]
+    let servers = PlexAuth.parseServers(rows, token: "account", requireServer: true)
+    XCTAssertEqual(servers.count, 3)
+    XCTAssertTrue(servers.allSatisfy { URL(string: $0.uri)?.user == nil })
+    XCTAssertTrue(servers.contains { $0.connection == "本地 · HTTPS" })
+    XCTAssertTrue(servers.contains { $0.connection == "本地 · HTTP" })
+    XCTAssertTrue(servers.contains { $0.name == "朋友的服务器" && $0.accessToken == "shared" })
+  }
+
+  @MainActor func testSpeechRendererWritesPlayableBook() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = MobileStore(root: root)
+    let plan = TextPlanner.plan(
+      title: "合成测试", author: "测试作者", mode: "book",
+      text: "第一章 开始\n你好，这是测试。")
+    let songs = try await SpeechRenderer.render(plan, store: store)
+    XCTAssertEqual(songs.count, 1)
+    let name = try XCTUnwrap(songs.first?.file)
+    let url = store.music.appendingPathComponent(name)
+    let audio = try AVAudioFile(forReading: url)
+    XCTAssertGreaterThan(audio.length, 0)
+    XCTAssertEqual(songs.first?.album, "合成测试")
   }
 
   func testHTMLStripRemovesScriptAndKeepsText() {

@@ -171,6 +171,8 @@ private struct SpeechStudioSection: View {
   @State private var text = ""
   @State private var plan: SpeechPlan?
   @State private var importing = false
+  @State private var cloud = false
+  @State private var rendering = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -207,20 +209,18 @@ private struct SpeechStudioSection: View {
                 .font(.caption).foregroundStyle(.secondary).padding(16).allowsHitTesting(false)
             }
           }
+        if !store.state.curatorModel.isEmpty {
+          Toggle("用云端 AI 智能分章（会发送本次文本）", isOn: $cloud)
+            .font(.caption)
+        }
         Button {
-          plan = TextPlanner.plan(title: title, author: author, mode: mode, text: text)
-          if let plan {
-            store.speechPlans.removeAll { $0.id == plan.id }
-            store.speechPlans.insert(plan, at: 0)
-            store.speechPlans = Array(store.speechPlans.prefix(20))
-            store.saveSpeechPlans()
-          }
+          Task { await preview() }
         } label: {
           Label("预览分章", systemImage: "text.append").frame(maxWidth: .infinity)
         }.buttonStyle(AwakeButtonStyle())
           .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).count < 20)
 
-        Text("分章与朗读都在本机完成；iOS 首版用系统语音直接朗读，不导出音频文件。")
+        Text("分章与朗读都在本机完成；生成有声书会写入本机曲库并进入听书书架。")
           .font(.caption2).foregroundStyle(.secondary)
       }
 
@@ -234,7 +234,15 @@ private struct SpeechStudioSection: View {
             }
             Spacer()
             Button("开始朗读", systemImage: "waveform") { onNarrate(plan) }
-              .buttonStyle(.borderedProminent)
+              .buttonStyle(.bordered)
+          }
+          HStack {
+            Button {
+              generate(plan)
+            } label: {
+              Label(rendering ? "正在合成…" : "生成有声书", systemImage: "square.and.arrow.down")
+            }.buttonStyle(.borderedProminent).disabled(rendering)
+            if rendering { ProgressView().controlSize(.small) }
           }
           if let note = plan.note {
             Text(note).font(.caption2).foregroundStyle(.secondary)
@@ -272,6 +280,46 @@ private struct SpeechStudioSection: View {
       }
     }
   }
+
+  private func preview() async {
+    let local = TextPlanner.plan(title: title, author: author, mode: mode, text: text)
+    var result = local
+    if cloud, !store.state.curatorModel.isEmpty {
+      do {
+        let key = try store.curatorSecret()
+        result = try await TextPlanner.cloudPlan(
+          title: title, author: author, mode: mode, text: text,
+          base: store.state.curatorURL, model: store.state.curatorModel, key: key)
+      } catch {
+        result.note = "云端分章失败：\(error.localizedDescription)；已改用本地分章"
+      }
+    }
+    plan = result
+    store.speechPlans.removeAll { $0.id == result.id }
+    store.speechPlans.insert(result, at: 0)
+    store.speechPlans = Array(store.speechPlans.prefix(20))
+    store.saveSpeechPlans()
+  }
+
+  private func generate(_ plan: SpeechPlan) {
+    rendering = true
+    Task {
+      do {
+        let songs = try await SpeechRenderer.render(plan, store: store)
+        store.state.songs.append(contentsOf: songs)
+        var lists = store.state.playlists ?? []
+        lists.append(
+          Playlist(name: plan.title, songIDs: songs.map(\.id), note: "AI 拆书"))
+        store.state.playlists = lists
+        store.save()
+        store.message = "已生成《\(plan.title)》\(songs.count) 章，可在听书书架播放"
+      } catch {
+        store.message = "生成有声书失败：\(error.localizedDescription)"
+      }
+      rendering = false
+    }
+  }
+
 }
 
 private struct NewsSection: View {
@@ -283,6 +331,7 @@ private struct NewsSection: View {
   @State private var loading = false
   @State private var importing = false
   @State private var importingAudio = false
+  @State private var cloud = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -336,8 +385,11 @@ private struct NewsSection: View {
             }
           }
         }
+        if !store.state.curatorModel.isEmpty {
+          Toggle("用云端 AI 摘要（会发送所选内容）", isOn: $cloud).font(.caption)
+        }
         Button {
-          onNarrate(NewsService.plan(Array(store.newsItems.prefix(8)), title: ""))
+          narrate()
         } label: {
           Label("生成 AI 新闻播报", systemImage: "waveform").frame(maxWidth: .infinity)
         }.buttonStyle(AwakeButtonStyle())
@@ -356,6 +408,27 @@ private struct NewsSection: View {
     }
     .fileImporter(isPresented: $importingAudio, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
       if case .success(let urls) = result { Task { await store.importFiles(urls) } }
+    }
+  }
+
+  private func narrate() {
+    let items = Array(store.newsItems.prefix(8))
+    guard !items.isEmpty else { return }
+    if cloud, !store.state.curatorModel.isEmpty {
+      Task {
+        do {
+          let key = try store.curatorSecret()
+          let plan = try await NewsService.cloudPlan(
+            items, title: "", base: store.state.curatorURL,
+            model: store.state.curatorModel, key: key)
+          onNarrate(plan)
+        } catch {
+          store.message = "云端摘要失败：\(error.localizedDescription)；已改用本地摘要"
+          onNarrate(NewsService.plan(items, title: ""))
+        }
+      }
+    } else {
+      onNarrate(NewsService.plan(items, title: ""))
     }
   }
 
@@ -445,7 +518,9 @@ struct WeeklySummaryView: View {
             StatCard(label: "本周聆听", value: summary.minutes >= 60 ? "\(summary.minutes / 60) 小时" : "\(summary.minutes) 分钟")
             StatCard(label: "完整播放", value: "\(summary.plays) 首")
             StatCard(label: "不同艺人", value: "\(summary.artistCount)")
+            StatCard(label: "新增曲目", value: "\(summary.newSongs)")
             StatCard(label: "听书进度", value: "\(summary.bookCount) 本")
+            StatCard(label: "收藏", value: "\(store.state.songs.filter(\.favorite).count) 首")
           }
           Panel {
             Text("这一周的声场").font(.headline)
@@ -480,6 +555,18 @@ struct WeeklySummaryView: View {
                     Text("\(row.plays) 次").font(.caption).foregroundStyle(.secondary)
                   }.padding(.vertical, 5)
                 }.buttonStyle(.plain)
+              }
+            }
+          }
+          if !summary.topArtists.isEmpty {
+            Panel {
+              Text("声音的主人").font(.headline)
+              ForEach(Array(summary.topArtists.enumerated()), id: \.offset) { _, row in
+                HStack {
+                  Text(row.artist).font(.subheadline).lineLimit(1)
+                  Spacer()
+                  Text("\(Int((row.seconds / 60).rounded())) 分钟").font(.caption).foregroundStyle(.secondary)
+                }.padding(.vertical, 4)
               }
             }
           }
