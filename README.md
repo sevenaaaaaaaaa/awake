@@ -1,4 +1,4 @@
-# Awake 0.9.0
+# Awake 0.9.1
 
 **让好音乐，越来越合拍。** macOS 本地播放器：流式音频、后端连续队列、自有音乐来源、可解释的偏好学习，以及用户主动触发的 AI 策展和创作。
 
@@ -6,8 +6,14 @@
 
 ## 下载
 
-- **[macOS 0.9.0（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.0)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.9.0.md)
+- **[macOS 0.9.1（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.1)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.9.1.md)
 - **[iOS 0.9.0 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.0)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.9.0.md)
+
+## 0.9.1 · Plex 能连上了，深夜档按你的时区算
+
+修缺版本，不动功能面。三处：选 Plex 服务器时**一并把来源类型换成 Plex**（之前只填地址和 Token，点「连接曲库」走的是本地扫描分支，把 `https://…` 当文件夹扫，一首也扫不出来）；「AI 音乐创作」的服务表单补上与「听歌搭子」同款的预置平台下拉；深夜档成就从 UTC 改成按本机时区判断 0–5 点。
+
+验证记录与已知遗留见[发行说明](docs/releases/v0.9.1.md)。
 
 ## 0.9.0 · 接力可以双向了
 
