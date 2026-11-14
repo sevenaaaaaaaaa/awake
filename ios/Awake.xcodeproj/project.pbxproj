@@ -10,8 +10,11 @@
 		01ADAE5AEDE2835F2FAEB285 /* PlaylistImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B8CF48452425D64B33864E1 /* PlaylistImportView.swift */; };
 		02F44EB8F1F81DA2CA4EDF7C /* BooksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF72FFCC06C06BD7F9859BE /* BooksView.swift */; };
 		15C5CCFFCFE0820E1B0F3E70 /* PlaylistFetch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67C90F29C21FA66AA05D4D24 /* PlaylistFetch.swift */; };
+		1C22C644E6179B10BFA4FB5C /* HandoffReceiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3D7FD72286BF1872867B250 /* HandoffReceiveTests.swift */; };
 		1C4BB82C69D83C82833211ED /* AwakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7700F7B34C8ED756CD34503 /* AwakeTests.swift */; };
+		2543ED26990FCB6149816193 /* HandoffReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1833ADE45B358BE7D885F231 /* HandoffReceiver.swift */; };
 		2564CA1CFEB8D307C8CAE7A1 /* AudioMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4DBA378C7D6D05CD323C399 /* AudioMath.swift */; };
+		2CC306AC027657AF44C1B679 /* HandoffReceiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60BC7EC39C288BF72662FCD /* HandoffReceiveView.swift */; };
 		2D354382B64F71453AC2C869 /* PlaylistImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F05A592A950DD8CF372A75D7 /* PlaylistImport.swift */; };
 		3C2D20B4E55CC99F689E2D3E /* PlexAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 046C135D8C11B5D31D674698 /* PlexAuth.swift */; };
 		3EEE4B57BC5DDD7C667C8C79 /* Services.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E9A956315BB1CF4C1AC0C /* Services.swift */; };
@@ -68,6 +71,7 @@
 		09A7E4B3CD23B4B8B1828F48 /* Speech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speech.swift; sourceTree = "<group>"; };
 		0DBC4D62DEC457DBE5281F0A /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		0EC8B7DA8A5DBD9C7E5DD51A /* HandoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffTests.swift; sourceTree = "<group>"; };
+		1833ADE45B358BE7D885F231 /* HandoffReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffReceiver.swift; sourceTree = "<group>"; };
 		24EE460B200DCEB777CB6E57 /* EquipmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentViews.swift; sourceTree = "<group>"; };
 		3095522AAA152DD5D2E290AB /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		3589EE509F6BA6E6F9DD71FB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -93,9 +97,11 @@
 		C39625E967E4D9282FC678BB /* MobilePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePlayer.swift; sourceTree = "<group>"; };
 		C832FBDCFEDDD2FF8CC8DDAE /* Books.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Books.swift; sourceTree = "<group>"; };
 		D4DBA378C7D6D05CD323C399 /* AudioMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMath.swift; sourceTree = "<group>"; };
+		D60BC7EC39C288BF72662FCD /* HandoffReceiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffReceiveView.swift; sourceTree = "<group>"; };
 		E0F2E4C7352FA47E7CE2E7AC /* SwipePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipePlayer.swift; sourceTree = "<group>"; };
 		E14CA279FE9B8282B5072B66 /* EffectViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectViews.swift; sourceTree = "<group>"; };
 		E2A6E6BA7288E46474438EEC /* SpeechRender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRender.swift; sourceTree = "<group>"; };
+		E3D7FD72286BF1872867B250 /* HandoffReceiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffReceiveTests.swift; sourceTree = "<group>"; };
 		E40E9A956315BB1CF4C1AC0C /* Services.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services.swift; sourceTree = "<group>"; };
 		F05A592A950DD8CF372A75D7 /* PlaylistImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistImport.swift; sourceTree = "<group>"; };
 		F144CAD80E2FA1490AE8F500 /* LabViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabViews.swift; sourceTree = "<group>"; };
@@ -155,6 +161,8 @@
 				4D022D5C4EE49F4F242D715A /* Equipment.swift */,
 				24EE460B200DCEB777CB6E57 /* EquipmentViews.swift */,
 				9275739D9FAAB1E4A6121F61 /* Handoff.swift */,
+				1833ADE45B358BE7D885F231 /* HandoffReceiver.swift */,
+				D60BC7EC39C288BF72662FCD /* HandoffReceiveView.swift */,
 				F144CAD80E2FA1490AE8F500 /* LabViews.swift */,
 				B171903FC8AE4346A5AC0C83 /* MediaInfo.swift */,
 				577909C48018E6F4BB732837 /* MediaInfoView.swift */,
@@ -182,6 +190,7 @@
 				A7700F7B34C8ED756CD34503 /* AwakeTests.swift */,
 				9099E526F9866ECBED6C6F72 /* BackupTests.swift */,
 				FC5AF23378B5703359849E3D /* BooksTests.swift */,
+				E3D7FD72286BF1872867B250 /* HandoffReceiveTests.swift */,
 				0EC8B7DA8A5DBD9C7E5DD51A /* HandoffTests.swift */,
 			);
 			path = AwakeTests;
@@ -325,6 +334,8 @@
 				6CA381D36D7CA1B3CDDEFFD4 /* Equipment.swift in Sources */,
 				FAA89E83D7EC787B26770001 /* EquipmentViews.swift in Sources */,
 				56DBE0E63E118AB957312755 /* Handoff.swift in Sources */,
+				2CC306AC027657AF44C1B679 /* HandoffReceiveView.swift in Sources */,
+				2543ED26990FCB6149816193 /* HandoffReceiver.swift in Sources */,
 				BEFE026FF88841E93F33C788 /* LabViews.swift in Sources */,
 				733BB4FB46BFE7D39660EC54 /* MediaInfo.swift in Sources */,
 				7E206D5ACCAF7A80D855093A /* MediaInfoView.swift in Sources */,
@@ -352,6 +363,7 @@
 				1C4BB82C69D83C82833211ED /* AwakeTests.swift in Sources */,
 				B783FE24AB2F617F7FFA445F /* BackupTests.swift in Sources */,
 				497D52CB533B00A0D227D048 /* BooksTests.swift in Sources */,
+				1C22C644E6179B10BFA4FB5C /* HandoffReceiveTests.swift in Sources */,
 				687718F766BFE7B5430BBA50 /* HandoffTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -461,7 +473,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -482,7 +494,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.8.1;
+				MARKETING_VERSION = 0.9.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -584,7 +596,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -599,7 +611,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.8.1;
+				MARKETING_VERSION = 0.9.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

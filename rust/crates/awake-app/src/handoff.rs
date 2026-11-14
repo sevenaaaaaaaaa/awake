@@ -19,7 +19,7 @@ use mdns_sd::{ServiceDaemon, ServiceInfo};
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
 const SERVICE_TYPE: &str = "_awake._tcp.local.";
-const SERVICE_VERSION: &str = "1";
+const SERVICE_VERSION: &str = "2";
 /// 10 分钟无请求自动过期。
 const SESSION_TTL: Duration = Duration::from_secs(10 * 60);
 /// 每 2 秒最多处理 1 个请求。
@@ -774,6 +774,8 @@ pub async fn handoff_start(
         ("v", SERVICE_VERSION),
         ("name", name.as_str()),
         ("code_required", "1"),
+        // v2：标记这是电脑接收端，手机发送者据此过滤。
+        ("to", "desktop"),
     ];
     let service = ServiceInfo::new(
         SERVICE_TYPE,

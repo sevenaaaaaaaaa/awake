@@ -1,0 +1,40 @@
+# Awake 0.9.0 验证记录
+
+日期：2026-11-14。本轮改动：电脑 → 手机播放接力（桌面发送端 + iOS 接收端）、接力协议 v2。
+
+## Rust 测试
+
+```
+cargo test --manifest-path rust/Cargo.toml -p awake-app -p awake-core
+```
+
+- awake-app：81 项通过，10 项按需忽略（真实声卡 / 长音轨），0 失败。
+- awake-core：42 项通过，0 失败。
+- 本轮新增 8 项接力发送测试，其中 `send_posts_protocol_to_phone_and_reads_reply` 真起一个本地 tiny_http 假手机：校验请求路径 `/handoff`、请求体字段（code / track / position / playing）、响应翻译，走的是真实 socket。
+- 原接收端 5 项接力测试（闸门、请求解析、匹配、HTTP 冒烟）保持通过。
+
+## 前端
+
+```
+npm run build --prefix ui
+```
+
+- `vue-tsc --noEmit` 通过；产物 `dist/assets/index-*.js` 292 kB（gzip 101 kB）。
+- 新增界面：「这台电脑接力到手机」— 搜索手机、目标下拉、6 位配对码输入、结果提示；浏览器预览里这些命令给出「需要桌面版」的说明。
+
+## 构建与启动
+
+```
+AWAKE_ARCHS=arm64 ./Tools/build_rust_app.sh
+```
+
+- `release` 编译 10m23s（首次，含依赖），随后 UI 版本串修正后增量 1m37s。
+- 产物 `dist-rust/Awake.app`，`codesign --verify --deep --strict` 通过；`lipo -info` 显示 `arm64`（本轮只构建 arm64，未构建 Intel 切片）。
+- 启动：写入 `FRONTEND_READY version=0.9.0 tracks=9`，前端已挂载，进程持续运行。
+- 安装：已同步到 `/Applications/Awake.app`，`CFBundleShortVersionString = 0.9.0`。
+
+## 未验证
+
+- 真实 iPhone 与这台 Mac 之间的实际交接（需要两台设备在同一 Wi-Fi 手动操作）。
+- Intel 切片构建与在 Intel 机器上的启动。
+- 手机端接收在锁屏、来电打断等边界下的行为。

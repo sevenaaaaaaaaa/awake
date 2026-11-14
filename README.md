@@ -1,4 +1,4 @@
-# Awake 0.8.1
+# Awake 0.9.0
 
 **让好音乐，越来越合拍。** macOS 本地播放器：流式音频、后端连续队列、自有音乐来源、可解释的偏好学习，以及用户主动触发的 AI 策展和创作。
 
@@ -6,8 +6,16 @@
 
 ## 下载
 
-- **[macOS 0.8.1 通用版（Apple 芯片 + Intel，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.8.1)**：同一个安装包同时支持 Apple Silicon 与 Intel Mac；解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.8.1.md)
-- **[iOS 0.8.1 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.8.1)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.8.1.md)
+- **[macOS 0.9.0（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.0)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.9.0.md)
+- **[iOS 0.9.0 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.0)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.9.0.md)
+
+## 0.9.0 · 接力可以双向了
+
+0.7.1 起只有手机把播放交给电脑，这一轮补上反方向：电脑上正在播放的歌，可以交给同一 Wi-Fi 的手机继续。
+
+电脑端在「数据与接力」里点「这台电脑接力到手机」，搜索正在等待的手机（Bonjour 实例名 `AwakePhone-…`、TXT `to=phone`），输入手机上显示的 6 位配对码即可交接；手机端在正在播放页点「接收接力」显示配对码，收到后用当前音量 / EQ 播放并跳到电脑的进度。匹配仍按曲名 / 艺人 / 专辑归一化 + bigram 相似度，时长差超过 5 秒直接淘汰。
+
+两端共用一套载荷与规则（[接力协议 v2](docs/handoff-protocol.md)）：只传曲目元信息与进度，不传音频、路径、账号或密码；配对码 10 分钟过期、错 5 次换码、每 2 秒最多 1 个请求；手机只在 App 前台监听，停止接收或切后台立即关闭端口与广播。电脑端接收器同时补上 `to=desktop`、`v=2` 标记，只升级一端也能继续用原有方向。
 
 ## iOS 0.8.1 · 与桌面端功能对齐
 

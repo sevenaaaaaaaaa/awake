@@ -367,6 +367,8 @@ extension HandoffBrowser: NetServiceBrowserDelegate {
     _ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool
   ) {
     guard !services.contains(service) else { return }
+    // 只把电脑列为接力目标：手机的接收端实例名带 AwakePhone- 前缀。
+    guard !HandoffRole.isPhoneServiceName(service.name) else { return }
     service.delegate = self
     services.append(service)
     resolving.insert(service)
@@ -386,6 +388,7 @@ extension HandoffBrowser: NetServiceBrowserDelegate {
 extension HandoffBrowser: NetServiceDelegate {
   func netServiceDidResolveAddress(_ sender: NetService) {
     resolving.remove(sender)
+    guard !HandoffRole.isPhoneServiceName(sender.name) else { return }
     guard sender.port > 0, let hostName = sender.hostName else { return }
     // Bonjour 常返回尾部带点的主机名，去掉后才能拼出可连接的 URL。
     let host = hostName.hasSuffix(".") ? String(hostName.dropLast()) : hostName

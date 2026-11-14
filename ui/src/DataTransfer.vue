@@ -7,6 +7,8 @@ import {
   backupInspect,
   backupRestore,
   desktop,
+  handoffScanPhones,
+  handoffSendToPhone,
   handoffStart,
   handoffStatus,
   handoffStop,
@@ -15,6 +17,8 @@ import {
   type BackupRestoreResult,
   type HandoffReceived,
   type HandoffStatus,
+  type PhoneDevice,
+  type PhoneHandoffResult,
 } from "./bridge";
 import { duration } from "./types";
 
@@ -437,6 +441,77 @@ async function doStop() {
     handoffError.value = readable(reason, "停止接力接收");
   } finally {
     handoffBusy.value = false;
+  }
+}
+
+/* ── 电脑 → 手机接力 ──────────────────────────────────── */
+
+const phones = ref<PhoneDevice[]>([]);
+const phoneScanning = ref(false);
+const phoneCode = ref("");
+const phoneNote = ref("");
+const phoneError = ref("");
+const phoneResult = ref<PhoneHandoffResult | null>(null);
+const phoneAddress = ref("");
+const selectedPhone = computed(
+  () => phones.value.find((phone) => phone.address === phoneAddress.value) ?? null,
+);
+const sendingToPhone = ref(false);
+
+const phoneCodeReady = computed(
+  () => phoneCode.value.replace(/\D/g, "").length === 6,
+);
+
+async function doScanPhones() {
+  if (!desktop || phoneScanning.value) return;
+  phoneError.value = "";
+  phoneResult.value = null;
+  phoneScanning.value = true;
+  try {
+    phones.value = await handoffScanPhones();
+    if (phones.value.length === 0) {
+      phoneNote.value =
+        "没有找到手机。请在手机正在播放页点「接收接力」，确认两台设备在同一个 Wi-Fi。";
+      phoneAddress.value = "";
+    } else {
+      if (!phones.value.some((phone) => phone.address === phoneAddress.value)) {
+        phoneAddress.value = phones.value[0].address;
+      }
+      phoneNote.value = "";
+    }
+  } catch (reason) {
+    phoneError.value = readable(reason, "搜索手机");
+  } finally {
+    phoneScanning.value = false;
+  }
+}
+
+async function doSendToPhone() {
+  const device = selectedPhone.value;
+  if (!desktop || sendingToPhone.value) return;
+  phoneError.value = "";
+  phoneResult.value = null;
+  if (!device) {
+    phoneError.value = "先选一台手机，或在手机上开启「接收接力」后重新搜索。";
+    return;
+  }
+  if (!phoneCodeReady.value) {
+    phoneError.value = "配对码是手机上显示的 6 位数字。";
+    return;
+  }
+  sendingToPhone.value = true;
+  try {
+    const result = await handoffSendToPhone(device, phoneCode.value);
+    phoneResult.value = result;
+    emit("toast", result.text);
+    if (result.ok) {
+      phoneCode.value = "";
+      phoneNote.value = "已交接。想再发一次就重新输入手机上的配对码。";
+    }
+  } catch (reason) {
+    phoneError.value = readable(reason, "接力到手机");
+  } finally {
+    sendingToPhone.value = false;
   }
 }
 
@@ -931,6 +1006,99 @@ onUnmounted(() => {
 
           <p class="muted data-note">
             配对码 10 分钟没有请求会自动过期；错码 5 次会换新码，界面会自动刷新。停止接收后端口与设备广播立即失效。
+          </p>
+        </div>
+
+        <div class="data-section">
+          <div class="data-section-head">
+            <h3>这台电脑接力到手机</h3>
+            <span class="data-badge" :class="{ live: phones.length > 0 }">
+              {{ phones.length > 0 ? `${phones.length} 台可用` : "未搜索" }}
+            </span>
+          </div>
+          <p class="muted data-copy">
+            把电脑上正在播放的曲目和进度交给同一 Wi-Fi 的手机继续播放：先在手机正在播放页点「接收接力」，
+            再在这里搜索并输入手机显示的 6 位配对码。只传曲目信息与进度，不传音频、账号或密码。
+          </p>
+
+          <div class="data-actions">
+            <button
+              class="button"
+              :disabled="!desktop || phoneScanning"
+              @click="doScanPhones"
+            >
+              <span v-if="phoneScanning" class="spinner" />
+              <Icon v-else name="search" :size="15" />
+              {{ phoneScanning ? "正在搜索…" : "搜索附近的手机" }}
+            </button>
+          </div>
+
+          <div v-if="phones.length > 0" class="data-field">
+            <label for="phone-target">选择手机</label>
+            <select id="phone-target" v-model="phoneAddress">
+              <option
+                v-for="phone in phones"
+                :key="phone.address"
+                :value="phone.address"
+              >
+                {{ phone.name }} · {{ phone.address }}
+              </option>
+            </select>
+          </div>
+
+          <div class="data-field">
+            <label for="phone-code">配对码</label>
+            <input
+              id="phone-code"
+              v-model="phoneCode"
+              inputmode="numeric"
+              maxlength="6"
+              autocomplete="one-time-code"
+              placeholder="手机上显示的 6 位数字"
+              @input="
+                phoneCode = phoneCode.replace(/\D/g, '').slice(0, 6)
+              "
+            />
+          </div>
+
+          <div class="data-actions">
+            <button
+              class="button primary"
+              :disabled="!desktop || sendingToPhone || !phoneCodeReady"
+              @click="doSendToPhone"
+            >
+              <span v-if="sendingToPhone" class="spinner" />
+              <Icon v-else name="cast" :size="15" />
+              {{ sendingToPhone ? "正在接力…" : "接力到手机" }}
+            </button>
+          </div>
+
+          <div
+            v-if="phoneResult"
+            class="data-success handoff-received"
+            role="status"
+            aria-live="polite"
+          >
+            <Icon :name="phoneResult.ok ? 'check' : 'info'" :size="16" />
+            <div>
+              <strong>{{ phoneResult.text }}</strong>
+              <small class="muted">
+                <template v-if="phoneResult.ok">
+                  {{ phoneResult.title }} · 手机已开始播放
+                </template>
+                <template v-else>
+                  可以确认手机曲库里是否有这首歌，或在手机上手动播放
+                </template>
+              </small>
+            </div>
+          </div>
+
+          <p v-if="phoneNote" class="muted data-note">{{ phoneNote }}</p>
+
+          <p v-if="phoneError" class="job-error" role="alert">{{ phoneError }}</p>
+
+          <p class="muted data-note">
+            手机需要停在「接收接力」页面：手机切到后台或锁屏后，接收会立即停止，端口与广播随之失效。
           </p>
         </div>
       </section>

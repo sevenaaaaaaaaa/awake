@@ -199,6 +199,7 @@ struct NowPlayingView: View {
   @State private var editingInfo = false
   @State private var swiping = false
   @State private var handingOff = false
+  @State private var receiving = false
   var body: some View {
     if swiping {
       SwipePlayerView(onClose: { swiping = false })
@@ -224,13 +225,22 @@ struct NowPlayingView: View {
               Button("整理封面、歌词与乐评") { editingInfo = true }
                 .accessibilityIdentifier("editPlayingMedia")
             }
-            Button {
-              handingOff = true
-            } label: {
-              Label("接力到电脑", systemImage: "airplayaudio")
+            HStack(spacing: 12) {
+              Button {
+                handingOff = true
+              } label: {
+                Label("接力到电脑", systemImage: "airplayaudio")
+              }
+              .accessibilityIdentifier("handoffToMac")
+              .accessibilityHint("把正在播放的曲目和进度交给同一局域网的电脑继续播放")
+              Button {
+                receiving = true
+              } label: {
+                Label("接收接力", systemImage: "iphone.and.arrow.forward")
+              }
+              .accessibilityIdentifier("handoffFromMac")
+              .accessibilityHint("让同一局域网的电脑把正在播放的曲目接力到这台手机")
             }
-            .accessibilityIdentifier("handoffToMac")
-            .accessibilityHint("把正在播放的曲目和进度交给同一局域网的电脑继续播放")
             EnhancementBadge()
             Slider(
               value: Binding(get: { player.position }, set: { player.seek($0) }),
@@ -289,6 +299,11 @@ struct NowPlayingView: View {
       }
     }.sheet(isPresented: $editingInfo) { if let song = player.song { MediaInfoView(song: song) } }
     .sheet(isPresented: $handingOff) { HandoffSheet() }
+    .sheet(isPresented: $receiving) {
+      HandoffReceiveView()
+        .environmentObject(store)
+        .environmentObject(player)
+    }
     .overlay(alignment: .top) { EffectActivationOverlay(priority: 1) }
   }
 }

@@ -24,6 +24,7 @@ mod backup;
 mod connections;
 mod devices;
 mod handoff;
+mod handoff_send;
 mod experience;
 mod feeds;
 mod headphone_catalog;
@@ -892,7 +893,9 @@ pub fn run() {
             backup::backup_restore,
             handoff::handoff_start,
             handoff::handoff_status,
-            handoff::handoff_stop
+            handoff::handoff_stop,
+            handoff_send::handoff_scan_phones,
+            handoff_send::handoff_send_to_phone
         ])
         .build(tauri::generate_context!())
         .expect("启动 Awake 失败")

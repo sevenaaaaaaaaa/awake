@@ -1,0 +1,63 @@
+# Awake iOS 0.9.0 验证记录
+
+日期：2026-11-14。本轮改动：新增电脑 → 手机接力的接收端（`HandoffReceiver.swift`、`HandoffReceiveView.swift`），发送端过滤器改为按服务名前缀区分手机与电脑。
+
+## 1. 接收端逻辑：在 macOS 上用 swiftc 执行同一份源码
+
+模拟器里跑 XCTest 不成功（见第 3 节），所以把 `ios/Awake/HandoffReceiver.swift` 原样复制出来，配一个最小 `Song` 替身，在 macOS 上编译执行，直接跑配对码闸门、TXT 编解码、HTTP 解析与曲目匹配：
+
+```
+swiftc -O Song.swift HandoffReceiver.swift main.swift -o handoff_check && ./handoff_check
+```
+
+结果：`PASS 244 项检查全部通过`
+
+覆盖点：
+
+- 配对码：正确码通过、2 秒内限流、会话窗口续期、10 分钟过期、错 5 次换码、限流时不增加错误计数、随机码 6 位且可为前导 0。
+- TXT：`v` / 中文设备名 / `code_required` / `to=phone` 往返一致，无 `to` 视为电脑，坏长度字节不崩。
+- HTTP：完整请求解析（方法、路径、`content-type`、body）、半包继续读、只有请求行不算完整、超过 8 KB 的请求体回 413、缺 `position` / `playing` 时取默认值。
+- 匹配：括号与 `feat` 噪声归一化、时长差 >5 秒淘汰、无关曲目不匹配、优先可播放的本地副本、只有曲名时仍过 0.62 阈值。
+
+## 2. 测试目标编译
+
+```
+xcodebuild -project ios/Awake.xcodeproj -scheme AwakeIOS \
+  -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/awake-ios-dd \
+  build-for-testing CODE_SIGNING_ALLOWED=NO
+```
+
+结果：`** TEST BUILD SUCCEEDED **`，包含新增 `ios/AwakeTests/HandoffReceiveTests.swift`（12 项）。
+
+## 3. 未能完成：模拟器里执行 XCTest
+
+`xcodebuild test -only-testing:AwakeTests` 在注入测试宿主时停住：App 进程已在模拟器里起来，`testmanagerd` 在等，但测试从未开始，日志停在 `PruneExplicitPrecompiledModules` 之后不再前进。
+
+已尝试（全部复现同一现象）：
+
+1. 重启 CoreSimulatorService 后重跑；
+2. `simctl erase` 擦除设备后重跑；
+3. 换 `-destination` 的 id 形式与 name 形式；
+4. 后台托管运行 + 精确 PID 观察，确认不是命令被提前回收。
+
+现场环境：Xcode 27.0 beta（27A5228h）、iOS 27.0 模拟器（24A5390f）、macOS 上只有一个 iOS 27 runtime。同一现象在改动前的基线代码上也复现，因此不是本轮代码引入。
+
+结论：本轮 iOS 侧的可执行证据是「等价逻辑 244 项断言通过 + 测试目标编译通过」，不宣称 XCTest 全绿。
+
+## 4. 安装包
+
+```
+./Tools/build_ios_app.sh
+```
+
+- `** ARCHIVE SUCCEEDED **`
+- 产物：`dist-ios/Awake-0.9.0-ios-arm64-unsigned.ipa`（3.0 MB，arm64，未签名）
+- SHA256：`719fa9fb6d47e1f41146b2cd0cfe6391ae613933b73070af043e8be0704de805`
+- 包内 `CFBundleShortVersionString = 0.9.0`、`CFBundleVersion = 18`
+- 二进制里能找到接收端的独有标记（`HandoffReceiver` 符号、`com.seven.awake.handoff.receiver` 队列名、`Content-Length`、`接收接力`、`已换新的配对码`），确认新代码确实打进包里。
+
+## 5. 未验证
+
+- 两台真机之间真实交接（iPhone + Mac 同一 Wi-Fi）。
+- 真机锁屏 / 后台切换时的停止时机。
+- 重签后的真机安装（需要用户自己的证书与描述文件）。

@@ -170,6 +170,11 @@ export async function call<T = unknown>(
       throw new Error(
         "接力接收需要桌面版：请让手机与电脑在同一局域网，并用桌面版接收。",
       );
+    case "handoff_scan_phones":
+    case "handoff_send_to_phone":
+      throw new Error(
+        "接力到手机需要桌面版：请在 Awake 桌面应用里把当前曲目交给同一 Wi-Fi 的手机。",
+      );
     case "playlist_import_fetch":
     case "playlist_import_file":
     case "playlist_import_match":
@@ -441,6 +446,22 @@ export interface HandoffReceived {
   matched: boolean;
 }
 
+/** 局域网里等待接力的手机（协议 v2，电脑 → 手机）。 */
+export interface PhoneDevice {
+  name: string;
+  host: string;
+  port: number;
+  address: string;
+}
+
+/** 发到手机后的结果，text 是可直接展示的中文。 */
+export interface PhoneHandoffResult {
+  ok: boolean;
+  matched: boolean;
+  title: string;
+  text: string;
+}
+
 export async function backupExport(password: string): Promise<string> {
   return call<string>("backup_export", { password });
 }
@@ -474,6 +495,24 @@ export async function handoffStatus(): Promise<HandoffStatus> {
 
 export async function handoffStop(): Promise<void> {
   await call("handoff_stop");
+}
+
+/** 浏览局域网内正在等待接力的手机；浏览器预览里没有这个能力。 */
+export async function handoffScanPhones(): Promise<PhoneDevice[]> {
+  return call<PhoneDevice[]>("handoff_scan_phones");
+}
+
+/** 把当前曲目与进度发到指定手机；配对码由用户输入，不落盘。 */
+export async function handoffSendToPhone(
+  device: { name: string; host: string; port: number },
+  code: string,
+): Promise<PhoneHandoffResult> {
+  return call<PhoneHandoffResult>("handoff_send_to_phone", {
+    host: device.host,
+    port: device.port,
+    name: device.name,
+    code,
+  });
 }
 
 // 只在桌面版注册监听；浏览器预览直接返回 null，不触碰 Tauri 事件系统。

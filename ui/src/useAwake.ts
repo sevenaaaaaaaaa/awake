@@ -667,7 +667,7 @@ export function useAwake() {
       });
     await checkDevice();
     await call("frontend_ready", {
-      version: "0.8.1",
+      version: "0.9.0",
       tracks: tracks.value.length,
     }).catch(() => {});
     timer = window.setInterval(() => void poll(), 350);
