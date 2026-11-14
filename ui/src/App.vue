@@ -23,6 +23,14 @@ import BooksView from "./BooksView.vue";
 import WeeklySummary from "./WeeklySummary.vue";
 import { useAwake } from "./useAwake";
 import { call, desktop } from "./bridge";
+import {
+  aiPresets,
+  libraryCoverage,
+  listeningAchievements,
+  type Achievement,
+  type AiPreset,
+  type Coverage,
+} from "./bridge";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -985,6 +993,68 @@ function browserDrop(event: DragEvent) {
 watch(view, (value) => {
   if (value === "summary") void loadWeekly();
 });
+const coverage = ref<Coverage | null>(null);
+const achievements = ref<Achievement[]>([]);
+const insightError = ref("");
+const presets = ref<AiPreset[]>([]);
+const curatorPreset = ref("");
+const musicPreset = ref("");
+
+async function loadInsight() {
+  if (!desktop) return;
+  try {
+    const [cov, list] = await Promise.all([
+      libraryCoverage(),
+      listeningAchievements(),
+    ]);
+    coverage.value = cov;
+    achievements.value = list;
+    insightError.value = "";
+  } catch (reason) {
+    insightError.value = String(reason).replace(/^Error: /, "");
+  }
+}
+
+const coldestBucket = computed(() => {
+  const buckets = coverage.value?.by_artist ?? [];
+  if (!buckets.length) return null;
+  return [...buckets].sort(
+    (a, b) => a.heard / Math.max(a.total, 1) - b.heard / Math.max(b.total, 1),
+  )[0];
+});
+
+async function loadPresets() {
+  try {
+    presets.value = await aiPresets();
+  } catch {
+    presets.value = [];
+  }
+}
+
+function applyPreset(kind: "curator" | "music", id: string) {
+  const preset = presets.value.find((item) => item.id === id);
+  if (!preset) return;
+  if (kind === "curator") {
+    curatorEndpoint.value = preset.endpoint;
+    curatorModel.value = preset.model;
+  } else {
+    musicEndpoint.value = preset.endpoint;
+    musicModel.value = preset.model;
+  }
+  s.toast(`已填入 ${preset.label} 的地址与模型，只剩 token 需要你粘`);
+}
+
+/** 歌单缺口引导用：选一个文件夹扫进曲库，返回是否真的扫到了曲目。 */
+async function rescanForImport(): Promise<boolean> {
+  if (!desktop) return false;
+  const path = await call<string | null>("pick_music_folder");
+  if (!path) return false;
+  const before = s.tracks.length;
+  await s.scan(path);
+  void loadInsight();
+  return s.tracks.length > before;
+}
+
 onMounted(() => {
   window.addEventListener("keydown", keydown);
   if (desktop) {
@@ -1010,6 +1080,8 @@ onMounted(() => {
     .then((unlisten) => (scanCleanup = unlisten))
     .catch(() => {});
   void loadWeekly();
+  void loadInsight();
+  void loadPresets();
 });
 onUnmounted(() => {
   window.removeEventListener("keydown", keydown);
@@ -1623,6 +1695,32 @@ onUnmounted(() => {
               ><span class="status-dot" />本地个性化已启用</span
             >
           </div>
+          <div v-if="coverage" class="info-panel insight-panel">
+            <Icon name="chart" :size="18" />
+            <div>
+              <p>
+                <strong>听歌覆盖度 {{ coverage.percent }}%</strong>
+                · 已听 {{ coverage.heard }} / {{ coverage.total }} 首 · 还有
+                {{ coverage.unheard }} 首一次都没碰过
+              </p>
+              <p v-if="coldestBucket" class="muted">
+                最冷的角落：{{ coldestBucket.label }}（{{
+                  coldestBucket.heard
+                }}
+                / {{ coldestBucket.total }}）
+              </p>
+              <ul class="achievement-list">
+                <li v-for="item in achievements" :key="item.id">
+                  <span :class="{ unlocked: item.unlocked }">{{ item.title }}</span>
+                  <small class="muted">{{ item.detail }}</small>
+                  <small v-if="item.unlocked" class="unlocked-note"
+                    >{{ item.punchline }}</small
+                  >
+                </li>
+              </ul>
+            </div>
+          </div>
+          <p v-if="insightError" class="muted">{{ insightError }}</p>
           <div class="agent-composer">
             <div class="agent-avatar"><Icon name="spark" :size="26" /></div>
             <form @submit.prevent="generate()">
@@ -1754,6 +1852,32 @@ onUnmounted(() => {
               class="connection-form"
               @submit.prevent="saveAIService('curator')"
             >
+              <label
+                >预置平台<select
+                  v-model="curatorPreset"
+                  @change="applyPreset('curator', curatorPreset)"
+                >
+                  <option value="">选一个平台，自动填好地址与模型</option>
+                  <option
+                    v-for="preset in presets"
+                    :key="preset.id"
+                    :value="preset.id"
+                  >
+                    {{ preset.label }} · {{ preset.model }}
+                  </option>
+                </select></label
+              ><p
+                v-if="curatorPreset && presets.find((p) => p.id === curatorPreset)"
+                class="muted"
+              >
+                {{ presets.find((p) => p.id === curatorPreset)?.note }} ·
+                <a
+                  :href="presets.find((p) => p.id === curatorPreset)?.docs"
+                  target="_blank"
+                  rel="noreferrer"
+                  >取 token</a
+                >
+              </p>
               <label
                 >兼容 API 的 Base URL<input
                   v-model="curatorEndpoint"
@@ -2822,6 +2946,7 @@ onUnmounted(() => {
       v-if="importOpen"
       :tracks="s.tracks"
       :save-playlist="saveImportedPlaylist"
+      :scan-folder="rescanForImport"
       @close="importOpen = false"
       @created="onPlaylistImported"
     />

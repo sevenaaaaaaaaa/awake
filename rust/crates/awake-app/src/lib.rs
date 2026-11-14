@@ -28,11 +28,13 @@ mod handoff_send;
 mod experience;
 mod feeds;
 mod headphone_catalog;
+mod insight;
 mod intelligence;
 mod media_info;
 mod news;
 mod playback;
 mod playlist_import;
+mod preset;
 mod plex;
 mod remote;
 mod speech;
@@ -873,6 +875,10 @@ pub fn run() {
             playlist_import::playlist_import_fetch,
             playlist_import::playlist_import_file,
             playlist_import::playlist_import_match,
+            playlist_import::playlist_import_gaps,
+            insight::library_coverage,
+            insight::listening_achievements,
+            preset::ai_presets,
             import_local_files,
             pick_music_files,
             audiobook::audiobook_shelf,

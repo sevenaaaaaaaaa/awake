@@ -2779,3 +2779,163 @@ mod tests {
         }
     }
 }
+
+// ---------------------------------------------------------------- 缺口聚合
+
+/// 一个没匹配上的艺人缺口：谁、缺几首、缺哪些。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MatchGap {
+    pub artist: String,
+    pub missing: usize,
+    pub titles: Vec<String>,
+}
+
+/// 一份歌单匹配之后的缺口汇总，用来决定「要不要再扫一个文件夹」。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MatchGaps {
+    pub total: usize,
+    pub matched: usize,
+    pub missing: usize,
+    /// 按缺得多的排前面；最多 20 组。
+    pub artists: Vec<MatchGap>,
+}
+
+fn gap_artist(track: &ImportedTrack) -> String {
+    let artist = track.artist.trim();
+    if artist.is_empty() {
+        "未知艺人".to_string()
+    } else {
+        artist.to_string()
+    }
+}
+
+/// 把没匹配上的曲目按艺人聚合成缺口。
+pub fn match_gaps(matches: &[ImportMatch]) -> MatchGaps {
+    let total = matches.len();
+    let matched = matches.iter().filter(|item| item.song_id.is_some()).count();
+    let mut groups: std::collections::BTreeMap<String, (usize, Vec<String>)> =
+        std::collections::BTreeMap::new();
+    for item in matches.iter().filter(|item| item.song_id.is_none()) {
+        let artist = gap_artist(&item.track);
+        let slot = groups.entry(artist).or_insert((0, Vec::new()));
+        slot.0 += 1;
+        if slot.1.len() < 5 {
+            let title = item.track.title.trim();
+            if !title.is_empty() {
+                slot.1.push(title.to_string());
+            }
+        }
+    }
+    let mut artists: Vec<MatchGap> = groups
+        .into_iter()
+        .map(|(artist, (missing, titles))| MatchGap {
+            artist,
+            missing,
+            titles,
+        })
+        .collect();
+    artists.sort_by(|a, b| {
+        b.missing
+            .cmp(&a.missing)
+            .then_with(|| a.artist.cmp(&b.artist))
+    });
+    artists.truncate(20);
+    MatchGaps {
+        total,
+        matched,
+        missing: total.saturating_sub(matched),
+        artists,
+    }
+}
+
+/// 只做聚合，不碰曲库、不联网：前端拿到结果后自己决定要不要引导用户去扫文件夹。
+#[tauri::command]
+pub fn playlist_import_gaps(matches: Vec<ImportMatch>) -> MatchGaps {
+    match_gaps(&matches)
+}
+
+#[cfg(test)]
+mod gap_tests {
+    use super::*;
+
+    fn imported(title: &str, artist: &str) -> ImportedTrack {
+        ImportedTrack {
+            title: title.into(),
+            artist: artist.into(),
+            album: String::new(),
+            duration: 0.0,
+            file_name: None,
+            segment_start: None,
+            segment_end: None,
+            number: 0,
+        }
+    }
+
+    fn hit(item: ImportedTrack) -> ImportMatch {
+        ImportMatch {
+            track: item,
+            song_id: Some("local".into()),
+            score: 0.95,
+            reason: "高可信".into(),
+        }
+    }
+
+    fn miss(item: ImportedTrack) -> ImportMatch {
+        ImportMatch {
+            track: item,
+            song_id: None,
+            score: 0.1,
+            reason: "没有匹配".into(),
+        }
+    }
+
+    #[test]
+    fn empty_input_produces_zeroes_not_a_panic() {
+        let gaps = match_gaps(&[]);
+        assert_eq!(gaps.total, 0);
+        assert_eq!(gaps.matched, 0);
+        assert_eq!(gaps.missing, 0);
+        assert!(gaps.artists.is_empty());
+    }
+
+    #[test]
+    fn groups_only_the_missing_ones_by_artist() {
+        let matches = vec![
+            hit(imported("晴天", "周杰伦")),
+            miss(imported("稻香", "周杰伦")),
+            miss(imported("七里香", "周杰伦")),
+            miss(imported("Yellow", "Coldplay")),
+        ];
+        let gaps = match_gaps(&matches);
+        assert_eq!(gaps.total, 4);
+        assert_eq!(gaps.matched, 1);
+        assert_eq!(gaps.missing, 3);
+        assert_eq!(gaps.artists.len(), 2);
+        // 缺得多的排前面
+        assert_eq!(gaps.artists[0].artist, "周杰伦");
+        assert_eq!(gaps.artists[0].missing, 2);
+        assert_eq!(gaps.artists[0].titles, vec!["稻香".to_string(), "七里香".to_string()]);
+        assert_eq!(gaps.artists[1].artist, "Coldplay");
+        assert_eq!(gaps.artists[1].missing, 1);
+    }
+
+    #[test]
+    fn blank_artist_falls_back_and_titles_are_capped() {
+        let matches: Vec<ImportMatch> = (0..9)
+            .map(|index| miss(imported(&format!("曲{index}"), "  ")))
+            .collect();
+        let gaps = match_gaps(&matches);
+        assert_eq!(gaps.artists.len(), 1);
+        assert_eq!(gaps.artists[0].artist, "未知艺人");
+        assert_eq!(gaps.artists[0].missing, 9);
+        assert_eq!(gaps.artists[0].titles.len(), 5, "每组的曲名只留 5 个，够提示就行");
+    }
+
+    #[test]
+    fn all_matched_means_no_suggestion_to_scan() {
+        let matches = vec![hit(imported("晴天", "周杰伦")), hit(imported("Yellow", "Coldplay"))];
+        let gaps = match_gaps(&matches);
+        assert_eq!(gaps.missing, 0);
+        assert!(gaps.artists.is_empty());
+    }
+}

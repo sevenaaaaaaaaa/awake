@@ -525,3 +525,110 @@ export async function listenHandoffReceived(
     handler(event.payload),
   );
 }
+
+// ---------------------------------------------------------------- G1：洞察与新预设
+
+export interface MatchGap {
+  artist: string;
+  missing: number;
+  titles: string[];
+}
+export interface MatchGaps {
+  total: number;
+  matched: number;
+  missing: number;
+  artists: MatchGap[];
+}
+
+const GAP_ARTIST_LIMIT = 20;
+const GAP_TITLE_LIMIT = 5;
+
+/**
+ * 歌单匹配后的缺口聚合：谁缺、缺几首。
+ * 桌面版走后端（同一份规则，Rust 有测试）；浏览器预览本地算一遍，界面不至于空着。
+ */
+export async function playlistImportGaps(
+  matches: ImportMatch[],
+): Promise<MatchGaps> {
+  if (desktop) return call<MatchGaps>("playlist_import_gaps", { matches });
+  const groups = new Map<string, { missing: number; titles: string[] }>();
+  let matched = 0;
+  for (const item of matches) {
+    if (item.song_id) {
+      matched += 1;
+      continue;
+    }
+    const artist = (item.track?.artist ?? "").trim() || "未知艺人";
+    const slot = groups.get(artist) ?? { missing: 0, titles: [] };
+    slot.missing += 1;
+    const title = (item.track?.title ?? "").trim();
+    if (title && slot.titles.length < GAP_TITLE_LIMIT) slot.titles.push(title);
+    groups.set(artist, slot);
+  }
+  const artists = [...groups.entries()]
+    .map(([artist, slot]) => ({
+      artist,
+      missing: slot.missing,
+      titles: slot.titles,
+    }))
+    .sort((a, b) => b.missing - a.missing || a.artist.localeCompare(b.artist))
+    .slice(0, GAP_ARTIST_LIMIT);
+  return {
+    total: matches.length,
+    matched,
+    missing: matches.length - matched,
+    artists,
+  };
+}
+
+export interface AiPreset {
+  id: string;
+  label: string;
+  kind: string;
+  endpoint: string;
+  model: string;
+  note: string;
+  docs: string;
+}
+
+/** 预置平台清单：只有地址、模型名和说明，没有任何密钥或额度。 */
+export async function aiPresets(): Promise<AiPreset[]> {
+  if (!desktop) return [];
+  return call<AiPreset[]>("ai_presets");
+}
+
+export interface CoverageBucket {
+  label: string;
+  total: number;
+  heard: number;
+}
+export interface Coverage {
+  total: number;
+  heard: number;
+  unheard: number;
+  percent: number;
+  by_artist: CoverageBucket[];
+  by_decade: CoverageBucket[];
+  by_genre: CoverageBucket[];
+}
+export interface Achievement {
+  id: string;
+  title: string;
+  detail: string;
+  progress: number;
+  target: number;
+  unlocked: boolean;
+  punchline: string;
+}
+
+/** 曲库覆盖度：本地算，不联网。 */
+export async function libraryCoverage(): Promise<Coverage> {
+  if (!desktop) throw new Error("曲库洞察需要桌面版：请在 Awake 桌面应用中查看。");
+  return call<Coverage>("library_coverage");
+}
+
+/** 听歌成就：全部来自本地收听事件。 */
+export async function listeningAchievements(): Promise<Achievement[]> {
+  if (!desktop) throw new Error("听歌成就需要桌面版：请在 Awake 桌面应用中查看。");
+  return call<Achievement[]>("listening_achievements");
+}

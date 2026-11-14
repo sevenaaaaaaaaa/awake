@@ -4,8 +4,10 @@ import Icon from "./Icon.vue";
 import {
   playlistImportFetch,
   playlistImportFile,
+  playlistImportGaps,
   playlistImportMatch,
 } from "./bridge";
+import type { MatchGaps } from "./bridge";
 import type {
   ImportMatch,
   ImportedPlaylist,
@@ -84,6 +86,8 @@ const props = defineProps<{
     items: Track[],
     entries: PlaylistEntry[],
   ) => Promise<Playlist | undefined>;
+  /** 选择并扫描一个本地文件夹；返回是否真的扫到了东西。导入缺口时才用得上。 */
+  scanFolder?: () => Promise<boolean>;
 }>();
 
 const emit = defineEmits<{
@@ -110,6 +114,8 @@ const onlyUnmatched = ref(false);
 const manualOpen = ref<number | null>(null);
 const manualQuery = ref("");
 const name = ref("");
+const gaps = ref<MatchGaps | null>(null);
+const rescanning = ref(false);
 
 const currentSource = computed(
   () => SOURCES.find((option) => option.id === source.value) ?? SOURCES[0],
@@ -234,6 +240,7 @@ function adopted(result: ImportedPlaylist): boolean {
   };
   name.value = (result.name || "").trim() || "导入的歌单";
   matches.value = [];
+  gaps.value = null;
   selected.value = result.tracks.map(() => false);
   manualIds.value = {};
   manualOpen.value = null;
@@ -255,10 +262,30 @@ async function fetchMatches() {
     selected.value = current.tracks.map(() => true);
     manualIds.value = {};
     manualOpen.value = null;
+    gaps.value = await playlistImportGaps(result);
   } catch (reason) {
     error.value = readable(reason, "匹配本地曲库");
   } finally {
     busy.value = null;
+  }
+}
+
+/** 缺口引导：选一个文件夹扫进曲库，再重新匹配一次。 */
+async function rescanAndMatch() {
+  if (!props.scanFolder || busy.value) return;
+  rescanning.value = true;
+  error.value = "";
+  try {
+    const scanned = await props.scanFolder();
+    if (!scanned) {
+      error.value = "没有扫到音频文件。换一个包含音乐的文件夹再试。";
+      return;
+    }
+    await fetchMatches();
+  } catch (reason) {
+    error.value = readable(reason, "扫描文件夹");
+  } finally {
+    rescanning.value = false;
   }
 }
 
@@ -577,6 +604,43 @@ onMounted(() => {
           <button class="text-button" :disabled="busy !== null" @click="reset">
             <Icon name="back" />换一个来源
           </button>
+        </div>
+
+        <div
+          v-if="gaps && gaps.missing > 0"
+          class="info-panel import-gaps"
+        >
+          <Icon name="info" :size="18" />
+          <div>
+            <p>
+              <strong>"{{ playlist?.name || '这份歌单' }}" 里缺
+              {{ gaps.missing }} 首（{{ gaps.artists.length }} 位艺人）。</strong>
+              扫一个本地文件夹，扫完我自动重新匹配一次。
+            </p>
+            <ul v-if="gaps.artists.length" class="gap-artists">
+              <li v-for="gap in gaps.artists.slice(0, 5)" :key="gap.artist">
+                {{ gap.artist }} · 缺 {{ gap.missing }} 首
+                <small v-if="gap.titles.length" class="muted"
+                  >（{{ gap.titles.join("、") }}）</small
+                >
+              </li>
+            </ul>
+            <p v-if="gaps.artists.length > 5" class="muted">
+              还有 {{ gaps.artists.length - 5 }} 位艺人没列出来
+            </p>
+            <button
+              v-if="scanFolder"
+              class="button"
+              type="button"
+              :disabled="rescanning || busy !== null"
+              @click="rescanAndMatch"
+            >
+              <Icon name="folder" />{{
+                rescanning ? "正在扫描…" : "选一个文件夹，扫完再匹配"
+              }}
+            </button>
+            <p v-else class="muted">文件夹扫描需要在桌面版使用。</p>
+          </div>
         </div>
 
         <div v-if="playlist?.note" class="info-panel import-note">

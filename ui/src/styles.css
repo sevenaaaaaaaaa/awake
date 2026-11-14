@@ -4429,3 +4429,55 @@ kbd {
     padding: 9px 3px 9px 8px;
   }
 }
+
+/* ---------------------------------------------------------------- 库洞察与缺口引导 */
+.insight-panel {
+  margin-top: 18px;
+  margin-bottom: 6px;
+}
+.insight-panel strong {
+  font-weight: 600;
+}
+.achievement-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin-top: 12px;
+  padding: 0;
+}
+.achievement-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 150px;
+  font-size: 11px;
+}
+.achievement-list li > span {
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.achievement-list li > span.unlocked {
+  color: var(--green);
+}
+.achievement-list .unlocked-note {
+  color: var(--text);
+  opacity: 0.7;
+  font-style: italic;
+}
+.import-gaps h3,
+.import-gaps p {
+  max-width: 640px;
+}
+.import-gaps .gap-artists {
+  list-style: none;
+  margin: 8px 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+.import-gaps .gap-artists small {
+  color: var(--muted);
+}
