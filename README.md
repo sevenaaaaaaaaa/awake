@@ -1,4 +1,4 @@
-# Awake 0.9.1
+# Awake 0.9.2
 
 **让好音乐，越来越合拍。** macOS 本地播放器：流式音频、后端连续队列、自有音乐来源、可解释的偏好学习，以及用户主动触发的 AI 策展和创作。
 
@@ -6,8 +6,18 @@
 
 ## 下载
 
-- **[macOS 0.9.1（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.1)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.9.1.md)
-- **[iOS 0.9.0 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.0)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.9.0.md)
+- **[macOS 0.9.2（Apple 芯片，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.2)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.9.2.md)
+- **[iOS 0.9.2 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.2)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/v0.9.2.md)
+
+## 0.9.2 · iOS 不再一开就弹看不懂的错
+
+手机上每次打开 App 都弹一句 `The operation couldn't be completed. (OSStatus error -50.)`。那句话是播放器的 `error` 把系统的 `NSError` 原文直接交给了弹窗，用户既不知道是哪个动作失败，也不知道该怎么办——而冷启动时唯一会抛 CoreAudio 错误的，是 `AVAudioSession` 在 `AwakeApp.init()`（App 还没启动完）里就被配置。
+
+这一版把它拆开：启动时不再碰音频会话，改到界面起来之后再配；所有音频错误统一翻成中文并保留 OSStatus 码值，原始错误写进系统日志。现在同样的失败会显示成「播放失败：系统音频通道没准备好或被其他应用占用，先退出正在播放的应用再试（OSStatus -50）」。
+
+顺带把版本号守卫扩到四个落点：`ui/package.json`、`ui/src/version.ts`、`rust/Cargo.toml` 的 workspace 版本、以及一直停在 0.9.0 的 `tauri.conf.json`。
+
+验证记录与已知遗留见[发行说明](docs/releases/v0.9.2.md)。
 
 ## 0.9.1 · Plex 能连上了，深夜档按你的时区算
 

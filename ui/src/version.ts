@@ -6,7 +6,7 @@
  * 而 `chore: bump version` 只改了 `Cargo.toml` 和 `package.json`。
  * `version.test.ts` 拿它和 `ui/package.json` 对比，发版漏改这里会直接红。
  */
-export const APP_VERSION = "0.9.1";
+export const APP_VERSION = "0.9.2";
 
 /** 侧栏那一行的完整文案。 */
 export const APP_VERSION_LINE = `${APP_VERSION} / PERSONAL`;
