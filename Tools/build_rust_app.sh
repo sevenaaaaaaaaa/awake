@@ -26,6 +26,20 @@ run_cargo() {
   fi
   cargo "$@"
 }
+
+APP_PATH="$PROJECT_ROOT/dist-rust/Awake.app"
+APP_BINARY="$APP_PATH/Contents/MacOS/Awake"
+
+# 覆盖一个正在运行的 Mach-O 会被系统拦下：lipo 直接 Killed: 9，cp 之后
+# 写 Info.plist 与 codesign 这两步就永远到不了，包里的版本与签名停在上一版，
+# 而日志里只有一句「Killed: 9」。所以先查实例，再动包。
+if lsof -- "$APP_BINARY" >/dev/null 2>&1; then
+  echo "有一个正在运行的 Awake 实例，先退出它再构建：" >&2
+  pgrep -fl 'Awake.app/Contents/MacOS/Awake' >&2
+  echo "覆盖运行中的可执行文件会让 Info.plist 与签名停在旧值。" >&2
+  exit 1
+fi
+
 for arch in $ARCHS; do
   case "$arch" in
     arm64) triple="aarch64-apple-darwin" ;;
@@ -40,21 +54,21 @@ for arch in $ARCHS; do
   BINARIES+=("$PROJECT_ROOT/rust/target/$triple/release/awake-app")
 done
 
-APP_PATH="$PROJECT_ROOT/dist-rust/Awake.app"
-APP_BINARY="$APP_PATH/Contents/MacOS/Awake"
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
+
+# 先在构建产物上验架构，再往包里放。读包内的可执行文件容易碰上正在运行的实例，
+# 而这一步要证明的本来就是「各架构都编出来了」，在源文件上验同样成立且更稳。
+index=0
+for arch in $ARCHS; do
+  lipo -verify_arch "$arch" "${BINARIES[$index]}"
+  index=$((index + 1))
+done
+
 if [[ "${#BINARIES[@]}" -eq 1 ]]; then
   cp "${BINARIES[0]}" "$APP_BINARY"
 else
   lipo -create -output "$APP_BINARY" "${BINARIES[@]}"
 fi
-lipo -info "$APP_BINARY"
-for arch in $ARCHS; do
-  case "$arch" in
-    arm64) lipo -verify_arch arm64 "$APP_BINARY" ;;
-    x86_64) lipo -verify_arch x86_64 "$APP_BINARY" ;;
-  esac
-done
 
 cp Resources/Awake.icns "$APP_PATH/Contents/Resources/Awake.icns"
 python3 - "$PROJECT_ROOT" <<'PY'
