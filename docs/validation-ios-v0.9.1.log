@@ -1,0 +1,39 @@
+# v0.9.1 iOS 构建验证
+
+日期：2026-11-15 00:53（Asia/Shanghai）
+
+## 1. 构建
+
+命令：
+
+```
+bash Tools/build_ios_app.sh        # 默认 unsigned
+```
+
+流程：`xcodegen generate` → `xcodebuild archive`（`CODE_SIGNING_ALLOWED=NO`）→ `ditto` 打包 Payload。
+
+结果：
+
+```
+IPA: /Users/sevenaaaaaaa/Awake/dist-ios/Awake-0.9.1-ios-arm64-unsigned.ipa
+```
+
+## 2. 产物核对
+
+```
+Payload/Awake.app/Info.plist CFBundleShortVersionString → 0.9.1
+Payload/Awake.app/Info.plist CFBundleVersion            → 19
+文件大小                                                → 3,106,565 bytes
+SHA-256 → 87237d581a9e0278abe17eed172dbff27ca7e4b86e9a1d00d236468cc72c4335
+```
+
+## 3. 与 0.9.0 的差异
+
+iOS 源码自 v0.9.0 起**没有改动**（`git diff v0.9.0..HEAD -- ios/Awake/` 为空）。本版 IPA 与 0.9.0 体积完全一致（3,106,565 bytes），差别只有版本号。
+
+本轮改动（Plex 来源类型、深夜档时区、音乐生成预置）全部在桌面端 Rust 与 Vue 代码中，iOS 侧不涉及。
+
+## 4. 未验证
+
+- 没有在真机或模拟器上安装运行。IPA 未签名，需要先用 AltStore / Sideloadly / 自有证书重签。
+- 没有跑 XCTest（与 0.9.0 相同：Xcode 27 beta 的 iOS 27 模拟器注入测试宿主会卡住，属已知环境问题）。

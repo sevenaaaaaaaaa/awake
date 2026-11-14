@@ -1,0 +1,89 @@
+# v0.9.1 桌面构建验证
+
+日期：2026-11-15 01:25（Asia/Shanghai）
+构建机：macOS，Apple Silicon 宿主 + rustup stable 工具链
+
+## 1. 单元测试
+
+命令：
+
+```
+cargo test --manifest-path rust/Cargo.toml -p awake-app --lib
+```
+
+结果：
+
+```
+test result: ok. 97 passed; 0 failed; 10 ignored; 0 measured; 0 filtered out; finished in 10.87s
+```
+
+与 v0.9.0 数量相同（97）。本轮改动包括一次「测试先红后绿」：深夜档测试在改为本地时区判定后，原固定 UTC 时间戳的断言立刻失败（left: 0.0, right: 2.0），改为构造本地 02:00 时间戳后通过。
+
+## 2. 前端构建
+
+命令：
+
+```
+npm run build --prefix ui
+```
+
+结果：
+
+```
+vue-tsc --noEmit  (无错误)
+dist/assets/index-DortzuHc.css   78.27 kB │ gzip:  16.05 kB
+dist/assets/index-DMDH6tzs.js   298.08 kB │ gzip: 102.76 kB
+✓ built in 669ms
+```
+
+## 3. 通用二进制构建
+
+命令：
+
+```
+AWAKE_ARCHS="arm64 x86_64" bash Tools/build_rust_app.sh
+```
+
+结果：
+
+```
+Finished `release` profile [optimized] target(s) in 25m 59s
+/Users/sevenaaaaaaa/Awake/dist-rust/Awake.app: replacing existing signature
+Built: /Users/sevenaaaaaaa/Awake/dist-rust/Awake.app (x86_64 arm64)
+```
+
+产物核对：
+
+```
+codesign --verify --deep --strict   → 通过 (CODESIGN_OK)
+lipo -archs                          → x86_64 arm64
+CFBundleShortVersionString           → 0.9.1
+CFBundleVersion                      → 0.9.1
+可执行文件                            → 48,512,592 bytes
+.app 目录                             → 48 MB
+```
+
+分发用 zip：`dist-rust/Awake-0.9.1-macos-universal.zip`（16 MB）
+SHA-256：`bde7b53f5cc5abb45f991c2ac17ebbe909f52991f526f47b0cb2c067ca58bfe4`
+
+## 4. 启动验证（隔离 HOME）
+
+命令：
+
+```
+HOME=/tmp/awake-g2-home ./dist-rust/Awake.app/Contents/MacOS/Awake
+```
+
+日志：
+
+```
+[INFO awake_app_lib] FRONTEND_READY version=0.9.1 tracks=0
+[awake] 前端已挂载 version=0.9.1 tracks=0
+```
+
+进程正常挂载前端后被主动结束（精确 PID 结束，未留下孤儿进程）。
+
+## 5. 未验证
+
+- 没有做真机点击回归：本轮没有在界面上实际点 Plex 登录、没有点音乐生成侧的预置下拉。
+- Plex 端到端未跑（需要真实账号与在线服务器）。
