@@ -209,6 +209,7 @@ dependencies = [
  "anyhow",
  "awake-core",
  "base64 0.22.1",
+ "chrono",
  "core-foundation",
  "cpal",
  "env_logger",

@@ -33,6 +33,7 @@ pbkdf2 = "0.12"
 base64 = "0.22"
 tiny_http = "0.12"
 mdns-sd = { version = "0.21", default-features = false }
+chrono.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.5"

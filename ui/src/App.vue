@@ -250,6 +250,7 @@ async function loadPlexSections() {
 async function applyPlexServer() {
   const server = plex.servers[plex.serverIndex];
   if (!server) return;
+  sourceKind.value = "plex";
   sourcePath.value = `${server.url.replace(/\/+$/, "")}/`;
   sourceSecret.value = server.token;
   sourceName.value = server.name;
@@ -2304,6 +2305,32 @@ onUnmounted(() => {
               class="connection-form"
               @submit.prevent="saveAIService('music')"
             >
+              <label
+                >预置平台<select
+                  v-model="musicPreset"
+                  @change="applyPreset('music', musicPreset)"
+                >
+                  <option value="">选一个平台，自动填好地址与模型</option>
+                  <option
+                    v-for="preset in presets.filter(p => p.kind === 'music' || p.kind === 'both')"
+                    :key="preset.id"
+                    :value="preset.id"
+                  >
+                    {{ preset.label }} · {{ preset.model }}
+                  </option>
+                </select></label
+              ><p
+                v-if="musicPreset && presets.find((p) => p.id === musicPreset)"
+                class="muted"
+              >
+                {{ presets.find((p) => p.id === musicPreset)?.note }} ·
+                <a
+                  :href="presets.find((p) => p.id === musicPreset)?.docs"
+                  target="_blank"
+                  rel="noreferrer"
+                  >取 token</a
+                >
+              </p>
               <label
                 >服务地址<input
                   v-model="musicEndpoint"

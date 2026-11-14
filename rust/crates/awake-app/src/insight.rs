@@ -5,6 +5,8 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use chrono::Timelike;
+
 use awake_core::taste::ListenEvent;
 use awake_core::Track;
 use serde::Serialize;
@@ -259,7 +261,7 @@ pub fn achievements(tracks: &[Track], events: &[ListenEvent]) -> Vec<Achievement
         punchline: "连续十首同一个人的歌，算法都替你着急".into(),
     });
 
-    // 5. 深夜档：0–5 点还在听的次数。
+    // 5. 深夜档：本地时间 0–5 点还在听的次数。
     let night = events
         .iter()
         .filter(|event| {
@@ -268,7 +270,10 @@ pub fn achievements(tracks: &[Track], events: &[ListenEvent]) -> Vec<Achievement
             } else {
                 event.at
             };
-            seconds > 0 && matches!((seconds % 86_400) / 3_600, 0 | 1 | 2 | 3 | 4)
+            if seconds == 0 { return false; }
+            chrono::DateTime::from_timestamp(seconds as i64, 0)
+                .map(|utc| utc.with_timezone(&chrono::Local).hour())
+                .map_or(false, |h| h < 5)
         })
         .count();
     out.push(Achievement {
@@ -450,9 +455,15 @@ mod tests {
     #[test]
     fn night_shift_counts_both_second_and_millisecond_timestamps() {
         let tracks = vec![track("a", "甲", "一", "", None)];
-        // 0:30 UTC 与 毫秒形式的 0:30 UTC 各一次
-        // 同一个瞬间的两种写法，都落在 UTC 01:00（真实量级，避免被当成秒）
-        let epoch_seconds = 86_400 * 20_000 + 3_600; // 01:00
+        // 构造一个落在本地时间 02:00 的时间戳（秒和毫秒两种形式）。
+        let now_local = chrono::Local::now();
+        let today_2am = now_local
+            .with_hour(2)
+            .and_then(|dt| dt.with_minute(0))
+            .and_then(|dt| dt.with_second(0))
+            .and_then(|dt| dt.with_nanosecond(0))
+            .expect("valid local 2am");
+        let epoch_seconds = today_2am.timestamp();
         let epoch_millis = epoch_seconds * 1_000;
         let events = vec![
             event("a", 40.0, false, epoch_seconds),
