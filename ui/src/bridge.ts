@@ -13,6 +13,7 @@ import {
   type ImportedTrack,
   type ImportMatch,
 } from "./types";
+import { aggregateGaps, type MatchGaps } from "./gaps";
 export const desktop = isTauri();
 export const artUrl = (path: string | null) =>
   path ? (desktop ? convertFileSrc(path) : path) : undefined;
@@ -528,57 +529,18 @@ export async function listenHandoffReceived(
 
 // ---------------------------------------------------------------- G1：洞察与新预设
 
-export interface MatchGap {
-  artist: string;
-  missing: number;
-  titles: string[];
-}
-export interface MatchGaps {
-  total: number;
-  matched: number;
-  missing: number;
-  artists: MatchGap[];
-}
-
-const GAP_ARTIST_LIMIT = 20;
-const GAP_TITLE_LIMIT = 5;
+export type { MatchGap, MatchGaps } from "./gaps";
 
 /**
  * 歌单匹配后的缺口聚合：谁缺、缺几首。
- * 桌面版走后端（同一份规则，Rust 有测试）；浏览器预览本地算一遍，界面不至于空着。
+ * 桌面版走后端（同一份规则，Rust 有测试）；浏览器预览走 `aggregateGaps`，
+ * 两边口径由 `gaps.test.ts` 和 Rust 的 `gap_tests` 各守一侧。
  */
 export async function playlistImportGaps(
   matches: ImportMatch[],
 ): Promise<MatchGaps> {
   if (desktop) return call<MatchGaps>("playlist_import_gaps", { matches });
-  const groups = new Map<string, { missing: number; titles: string[] }>();
-  let matched = 0;
-  for (const item of matches) {
-    if (item.song_id) {
-      matched += 1;
-      continue;
-    }
-    const artist = (item.track?.artist ?? "").trim() || "未知艺人";
-    const slot = groups.get(artist) ?? { missing: 0, titles: [] };
-    slot.missing += 1;
-    const title = (item.track?.title ?? "").trim();
-    if (title && slot.titles.length < GAP_TITLE_LIMIT) slot.titles.push(title);
-    groups.set(artist, slot);
-  }
-  const artists = [...groups.entries()]
-    .map(([artist, slot]) => ({
-      artist,
-      missing: slot.missing,
-      titles: slot.titles,
-    }))
-    .sort((a, b) => b.missing - a.missing || a.artist.localeCompare(b.artist))
-    .slice(0, GAP_ARTIST_LIMIT);
-  return {
-    total: matches.length,
-    matched,
-    missing: matches.length - matched,
-    artists,
-  };
+  return aggregateGaps(matches);
 }
 
 export interface AiPreset {

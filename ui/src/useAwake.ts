@@ -1,4 +1,5 @@
 import { curateLocally } from "./agent";
+import { APP_VERSION } from "./version";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { call, desktop, importAudio } from "./bridge";
 import {
@@ -667,7 +668,7 @@ export function useAwake() {
       });
     await checkDevice();
     await call("frontend_ready", {
-      version: "0.9.0",
+      version: APP_VERSION,
       tracks: tracks.value.length,
     }).catch(() => {});
     timer = window.setInterval(() => void poll(), 350);

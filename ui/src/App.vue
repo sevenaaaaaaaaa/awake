@@ -24,6 +24,12 @@ import WeeklySummary from "./WeeklySummary.vue";
 import { useAwake } from "./useAwake";
 import { call, desktop } from "./bridge";
 import {
+  plexSectionKey,
+  plexSourceDraft,
+  plexSourceName,
+} from "./plex";
+import { APP_VERSION_LINE } from "./version";
+import {
   aiPresets,
   libraryCoverage,
   listeningAchievements,
@@ -250,10 +256,12 @@ async function loadPlexSections() {
 async function applyPlexServer() {
   const server = plex.servers[plex.serverIndex];
   if (!server) return;
-  sourceKind.value = "plex";
-  sourcePath.value = `${server.url.replace(/\/+$/, "")}/`;
-  sourceSecret.value = server.token;
-  sourceName.value = server.name;
+  // 来源类型必须一起换成 plex，否则「连接曲库」会走本地扫描分支（0.9.0 的 P0）。
+  const draft = plexSourceDraft(server);
+  sourceKind.value = draft.kind;
+  sourcePath.value = draft.path;
+  sourceSecret.value = draft.secret;
+  sourceName.value = draft.name;
   plex.error = "";
   plex.sections = [];
   plex.sectionIndex = -1;
@@ -282,7 +290,7 @@ async function applyPlexServer() {
 function applyPlexSection() {
   const server = plex.servers[plex.serverIndex];
   const section = plex.sections[plex.sectionIndex];
-  if (server && section) sourceName.value = `${server.name} · ${section.title}`;
+  if (server && section) sourceName.value = plexSourceName(server.name, section.title);
 }
 async function loadPlexResources(clientId: string, token: string) {
   plex.status = "正在读取 Plex 服务器…";
@@ -440,7 +448,7 @@ async function connectSource() {
           trust_self_signed: trustSelfSigned.value,
           section:
             sourceKind.value === "plex"
-              ? plex.sections[plex.sectionIndex]?.key ?? ""
+              ? plexSectionKey(plex.sections, plex.sectionIndex)
               : "",
         },
       });
@@ -1002,7 +1010,13 @@ const curatorPreset = ref("");
 const musicPreset = ref("");
 
 async function loadInsight() {
-  if (!desktop) return;
+  if (!desktop) {
+    // 浏览器预览里没有本地曲库，这两个命令只会抛「需要桌面版」。
+    // 原先直接 return，面板静默消失，看起来像功能坏了；现在把原因说出来。
+    insightError.value =
+      "曲库覆盖度与成就要读完整个本地曲库，浏览器预览读不到，请在 Awake 桌面应用中查看。";
+    return;
+  }
   try {
     const [cov, list] = await Promise.all([
       libraryCoverage(),
@@ -1214,7 +1228,7 @@ onUnmounted(() => {
           ><Icon name="chevron" :size="14" />
         </button>
         <div class="version-line">
-          <span>为好音乐而生</span><span>0.9.0 / PERSONAL</span>
+          <span>为好音乐而生</span><span>{{ APP_VERSION_LINE }}</span>
         </div>
       </div>
     </aside>
