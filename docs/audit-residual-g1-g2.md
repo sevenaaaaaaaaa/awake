@@ -133,3 +133,42 @@ HOME=/tmp/awake-g2-home ./dist-rust/Awake.app/Contents/MacOS/Awake
 ## 8. 口径对齐说明
 
 `aggregateGaps` 的排序原来是 `a.artist.localeCompare(b.artist)`，Rust 侧是 `a.artist.cmp(&b.artist)`（UTF-8 字节序 = 码点序）。同一份歌单在桌面版和浏览器预览里，缺口数相同的艺人顺序可能不同。现在浏览器侧改成按码点比较（`compareByCodePoint`），与后端一致；`gaps.test.ts` 有一条用例钉住这个顺序。
+
+## 9. 补记（同日）：版本号其实是五处，`tauri.conf.json` 还停在 0.9.0
+
+§1 与 §2 说「版本号写在四处」——**数漏了一处**，而且漏的正好是打包路径读的那一处。
+
+`rust/crates/awake-app/tauri.conf.json` 的 `version` 一直是 `0.9.0`，本轮提交时仍是。它的影响面要说准，不能夸大：
+
+- `Tools/build_rust_app.sh` 的 `Info.plist` 由脚本内联的 python 从 `ui/package.json` 生成，**不读**这个文件，所以已发布的 0.9.1 包本身版本是对的（`CFBundleShortVersionString` = 0.9.1，已用 PlistBuddy 复核）；
+- 但 `tauri build` / `tauri dev`（`npm run tauri` 走的就是它）读这个文件决定包版本。换个人用 Tauri 自带命令构建，就得到一个版本号写着 0.9.0 的 0.9.1 包。
+
+修法与证据：
+
+```
+not ok 16 - rust/crates/awake-app/tauri.conf.json 的版本与界面版本一致
+  expected: '0.9.1'
+  actual: '0.9.0'
+# tests 17 / # pass 16 / # fail 1
+```
+
+改 `tauri.conf.json` 为 `0.9.1` 后重跑：`# tests 17 / # pass 17 / # fail 0`。
+
+同一条也补上了 `rust/Cargo.toml` 的 `[workspace.package] version`：各 crate 写的是 `version.workspace = true`，后端二进制与 `frontend_ready` 上报的版本都来自这里，此前没有任何断言看着它。
+
+于是「同一个版本号」的落点是这些，以及谁看着它：
+
+| 落点 | 性质 | 由谁守 |
+| --- | --- | --- |
+| `ui/package.json` | 源头 | `version.test.ts` |
+| `ui/src/version.ts` | 界面显示与启动上报 | `version.test.ts` |
+| `rust/Cargo.toml`（workspace） | 后端二进制 | `version.test.ts` |
+| `rust/crates/awake-app/tauri.conf.json` | Tauri 自带命令打包 | `version.test.ts` |
+| `rust/Cargo.lock` | 派生，跟随 Cargo.toml | 不守，手改反而会错 |
+| `ios/project.yml` | **另一条发版线** | 故意不守：0.9.1 就没有 iOS 改动，要求相等会让「桌面发版但 iOS 不动」变成不可能 |
+
+## 10. 顺手核到的两处陈旧，本轮不动
+
+1. `Resources/AwakeInfo.plist`：`0.2.0`、`CFBundleIdentifier` 是 `com.seewow.awake`（实际是 `com.seven.awake`）。只有旧的 `build_awake.sh`（Swift 那条路径）`cp` 它，Rust 包不读。谁哪天走那条脚本，就会打出一个包 ID 和版本都错的包。属于清理项，不在本轮范围。
+2. 工作区里 `ios/project.yml` 有未提交改动：`MARKETING_VERSION` 0.9.0 → 0.9.1、`CURRENT_PROJECT_VERSION` 18 → 19，而 `docs/roadmap.md` 写着「0.9.1 没有 iOS 改动」。两者只能留一个：要么撤掉这个 bump（iOS 停在 0.9.0），要么留着并改路线图那行。**这是产品口径，等一句话再动。**
+

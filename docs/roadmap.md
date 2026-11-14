@@ -62,7 +62,7 @@ iOS 最新是 0.9.0，与桌面端在接力上互通。0.9.1 没有 iOS 改动�
 已经写进代码、但还没发版的改动（当前在 main 上，未打 tag）：
 
 - 前端测试通道 `npm test --prefix ui`（15 项）；
-- 版本号单点来源 `ui/src/version.ts` + 同步测试（发版漏改会红）；
+- 版本号单点来源 `ui/src/version.ts` + 同步测试（发版漏改会红）：四个同发版落点全部有断言——`ui/package.json`、`version.ts`、`rust/Cargo.toml` 的 workspace 版本、`tauri.conf.json`。`tauri.conf.json` 此前停在 0.9.0，`npm run tauri build` 会打出错版本号；
 - 浏览器预览里洞察面板改为明说「读不到，请用桌面版」。
 
 再往后，我建议的下一批是 **A + B**：先把测试通道铺到 `useAwake`（所有播放状态都在那里，是这类静默失效的高发区），再做耳机测量的来源认证——它是一条能闭环、不需要硬件也不需要账号的完整需求。
