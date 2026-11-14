@@ -803,4 +803,22 @@ final class AwakeTests: XCTestCase {
     XCTAssertThrowsError(try reopened.curatorSecret())
   }
 
+  func testAudioErrorsBecomeActionableChinese() {
+    // 用户看到的那一句是 OSStatus -50 的英文原文，看不出是哪个动作失败、也不知道该怎么办。
+    let raw = NSError(domain: NSOSStatusErrorDomain, code: -50, userInfo: nil)
+    let text = AudioFailure.describe(raw, action: "播放")
+    XCTAssertTrue(text.contains("播放"), text)
+    XCTAssertTrue(text.contains("-50"), "要保留码值，便于按日志检索：\(text)")
+    XCTAssertFalse(
+      text.contains("The operation couldn"),
+      "不该把系统英文原样弹给用户：\(text)")
+    // 自己抛的业务错误不能被吞掉
+    let own = AppFailure("EQ 需要 31 个有效增益")
+    XCTAssertTrue(AudioFailure.describe(own, action: "调整音效").contains("EQ 需要 31 个有效增益"))
+    // 未知域也不吞原始描述
+    let other = NSError(domain: "com.example.thing", code: 7, userInfo: [NSLocalizedDescriptionKey: "boom"])
+    XCTAssertTrue(AudioFailure.describe(other, action: "导入").contains("boom"))
+  }
+
 }
+

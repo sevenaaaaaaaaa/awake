@@ -64,6 +64,7 @@ struct RootView: View {
         store.updateBookProgress(song: song, position: position, duration: duration)
       }
       player.artworkResolver = { song in store.artworkURL(song.artwork) }
+      player.prepareSession()
       applyChain(announce: false)
     }
     .onChange(of: scenePhase) { _, phase in

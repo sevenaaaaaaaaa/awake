@@ -98,3 +98,34 @@ enum EQMath {
     return preamp
   }
 }
+
+/// 把 CoreAudio / AVFoundation 抛出的 NSError 变成用户能看懂的一句话。
+///
+/// 0.9.1 的 iOS 包一开 App 就弹过 `The operation couldn't be completed. (OSStatus error -50.)`：
+/// 用户看不出是哪个动作失败，也不知道该做什么，只知道「它坏了」。
+/// 这里统一翻译一次，码值留在括号里，便于按日志检索。
+enum AudioFailure {
+  static func describe(_ error: Error, action: String) -> String {
+    let ns = error as NSError
+    let isAudio =
+      ns.domain == NSOSStatusErrorDomain || ns.domain == "com.apple.coreaudio.avfaudio"
+    if !isAudio {
+      // 自己抛的业务错误（AppFailure 等）已经是一句中文，保留原文。
+      if let described = (error as? LocalizedError)?.errorDescription, !described.isEmpty {
+        return "\(action)失败：\(described)"
+      }
+      return "\(action)失败：\(ns.localizedDescription)"
+    }
+    return "\(action)失败：\(hint(for: ns.code))（OSStatus \(ns.code)）"
+  }
+  private static func hint(for code: Int) -> String {
+    switch code {
+    case -50: return "系统音频通道没准备好或被其他应用占用，先退出正在播放的应用再试"
+    case -10868: return "这个音频格式系统不认"
+    case -10875: return "音频引擎没能启动"
+    case 1954115647: return "文件不是系统能解码的音频"
+    case 2003334207: return "文件是空的，没有音频数据"
+    default: return "系统音频返回了一个错误"
+    }
+  }
+}

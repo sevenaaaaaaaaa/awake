@@ -1,6 +1,9 @@
 import AVFoundation
 import Combine
 import MediaPlayer
+import os
+
+private let audioLog = Logger(subsystem: "com.seven.awake.ios", category: "audio")
 
 struct RouteInfo: Equatable {
   var uid = "unknown"
@@ -74,7 +77,6 @@ struct RouteInfo: Equatable {
           self?.error = "系统音频服务已重置，请重新播放"
         }
       })
-    configureSession(activate: false)
     refreshRoute()
     remoteCommands()
     timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -85,12 +87,28 @@ struct RouteInfo: Equatable {
     timer?.invalidate()
     for observer in observers { NotificationCenter.default.removeObserver(observer) }
   }
-  private func configureSession(activate: Bool = true) {
+  /// 启动阶段只「配置」，不「激活」，也不再因为配置失败就弹窗。
+  ///
+  /// 0.9.1 出现过一个一开 App 就弹 `OSStatus error -50` 的警报：`AVAudioSession`
+  /// 在 `AwakeApp.init()`（UIApplication 还没启动完）里就被 `setCategory`，
+  /// 失败后把系统英文原样塞进 `error`，于是界面弹出一句用户看不懂的话。
+  /// 会话没配好不等于播放失败：真正的失败等到 `play()` 再说，而且要说人话。
+  func prepareSession() { configureSession(activate: false) }
+
+  @discardableResult
+  private func configureSession(activate: Bool = true) -> Bool {
     do {
       let s = AVAudioSession.sharedInstance()
       try s.setCategory(.playback, mode: .default, options: [.allowAirPlay])
       if activate { try s.setActive(true) }
-    } catch { self.error = error.localizedDescription }
+      return true
+    } catch {
+      audioLog.error(
+        "audio session \(activate ? "activate" : "configure", privacy: .public) failed: \(String(describing: error), privacy: .public)"
+      )
+      if activate { self.error = AudioFailure.describe(error, action: "播放") }
+      return false
+    }
   }
   func refreshRoute() {
     let s = AVAudioSession.sharedInstance()
@@ -135,7 +153,7 @@ struct RouteInfo: Equatable {
       if announce { presentEffect() }
       return true
     } catch {
-      self.error = error.localizedDescription
+      self.error = AudioFailure.describe(error, action: "调整音效")
       activation = nil
       return false
     }
@@ -147,7 +165,7 @@ struct RouteInfo: Equatable {
       refreshEnhancement()
       return true
     } catch {
-      self.error = error.localizedDescription
+      self.error = AudioFailure.describe(error, action: "调整音效")
       activation = nil
       return false
     }
@@ -264,7 +282,7 @@ struct RouteInfo: Equatable {
       nowPlaying()
     } catch {
       playing = false
-      self.error = error.localizedDescription
+      self.error = AudioFailure.describe(error, action: "播放")
     }
   }
   private func scheduleNext() {
@@ -330,7 +348,7 @@ struct RouteInfo: Equatable {
       playing = true
       lastPosition = position
       nowPlaying()
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = AudioFailure.describe(error, action: "恢复播放") }
   }
   func toggle() { if playing { pause() } else { resume() } }
   func seek(_ time: Double) {
