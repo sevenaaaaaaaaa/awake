@@ -1,0 +1,56 @@
+# Awake iOS 0.9.0 — XCTest 实跑记录
+
+日期：2026-11-14。Xcode 27.0 beta (27A5228h) + iOS 27.0 模拟器 (24A5390f)，设备 iPhone 17 Pro。
+
+命令（逐字可复现，见 docs/validation-ios-v0.9.0.log 第 4 节）：
+```
+xcodebuild -project P.xcodeproj -scheme PTests -destination "generic/platform=iOS Simulator" \
+  -derivedDataPath /tmp/xh-dd2 build-for-testing CODE_SIGNING_ALLOWED=NO
+xcrun simctl spawn <DEVICE_UDID> "$XCTEST_AGENT" /tmp/xh-dd2/Build/Products/Debug-iphonesimulator/PTests.xctest
+```
+
+```
+Test Suite 'All tests' started at 2026-11-14 19:41:47.377.
+Test Suite 'PTests.xctest' started at 2026-11-14 19:41:47.389.
+Test Suite 'HandoffReceiveTests' started at 2026-11-14 19:41:47.389.
+Test Case '-[PTests.HandoffReceiveTests testDurationMismatchIsRejected]' started.
+Test Case '-[PTests.HandoffReceiveTests testDurationMismatchIsRejected]' passed (0.009 seconds).
+Test Case '-[PTests.HandoffReceiveTests testGateAcceptsCorrectCodeAndExtendsSession]' started.
+Test Case '-[PTests.HandoffReceiveTests testGateAcceptsCorrectCodeAndExtendsSession]' passed (0.002 seconds).
+Test Case '-[PTests.HandoffReceiveTests testGateExpiresAfterTenMinutes]' started.
+Test Case '-[PTests.HandoffReceiveTests testGateExpiresAfterTenMinutes]' passed (0.000 seconds).
+Test Case '-[PTests.HandoffReceiveTests testGateRateLimitsWrongCodesToo]' started.
+Test Case '-[PTests.HandoffReceiveTests testGateRateLimitsWrongCodesToo]' passed (0.000 seconds).
+Test Case '-[PTests.HandoffReceiveTests testGateRejectsWrongCodeAndRotatesAfterFive]' started.
+Test Case '-[PTests.HandoffReceiveTests testGateRejectsWrongCodeAndRotatesAfterFive]' passed (0.001 seconds).
+Test Case '-[PTests.HandoffReceiveTests testHTTPParsesCompleteRequest]' started.
+Test Case '-[PTests.HandoffReceiveTests testHTTPParsesCompleteRequest]' passed (0.008 seconds).
+Test Case '-[PTests.HandoffReceiveTests testHTTPRejectsOversizedBody]' started.
+Test Case '-[PTests.HandoffReceiveTests testHTTPRejectsOversizedBody]' passed (0.001 seconds).
+Test Case '-[PTests.HandoffReceiveTests testHTTPReturnsIncompleteUntilBodyArrives]' started.
+Test Case '-[PTests.HandoffReceiveTests testHTTPReturnsIncompleteUntilBodyArrives]' passed (0.002 seconds).
+Test Case '-[PTests.HandoffReceiveTests testIncomingHandoffDefaultsOptionalFields]' started.
+Test Case '-[PTests.HandoffReceiveTests testIncomingHandoffDefaultsOptionalFields]' passed (0.000 seconds).
+Test Case '-[PTests.HandoffReceiveTests testMatchesSameSongAcrossNamingNoise]' started.
+Test Case '-[PTests.HandoffReceiveTests testMatchesSameSongAcrossNamingNoise]' passed (0.001 seconds).
+Test Case '-[PTests.HandoffReceiveTests testNormalizeStripsBracketsFeatAndNoise]' started.
+Test Case '-[PTests.HandoffReceiveTests testNormalizeStripsBracketsFeatAndNoise]' passed (0.001 seconds).
+Test Case '-[PTests.HandoffReceiveTests testPrefersPlayableLocalCopy]' started.
+Test Case '-[PTests.HandoffReceiveTests testPrefersPlayableLocalCopy]' passed (0.002 seconds).
+Test Case '-[PTests.HandoffReceiveTests testRandomCodeIsSixDigitsAndCanHaveLeadingZero]' started.
+Test Case '-[PTests.HandoffReceiveTests testRandomCodeIsSixDigitsAndCanHaveLeadingZero]' passed (0.002 seconds).
+Test Case '-[PTests.HandoffReceiveTests testScoreWeightsTolerateMissingArtist]' started.
+Test Case '-[PTests.HandoffReceiveTests testScoreWeightsTolerateMissingArtist]' passed (0.000 seconds).
+Test Case '-[PTests.HandoffReceiveTests testTXTMissingRoleDefaultsToDesktop]' started.
+Test Case '-[PTests.HandoffReceiveTests testTXTMissingRoleDefaultsToDesktop]' passed (0.000 seconds).
+Test Case '-[PTests.HandoffReceiveTests testTXTRoundTripAndRole]' started.
+Test Case '-[PTests.HandoffReceiveTests testTXTRoundTripAndRole]' passed (0.000 seconds).
+Test Case '-[PTests.HandoffReceiveTests testUnrelatedSongStaysUnmatched]' started.
+Test Case '-[PTests.HandoffReceiveTests testUnrelatedSongStaysUnmatched]' passed (0.000 seconds).
+Test Suite 'HandoffReceiveTests' passed at 2026-11-14 19:41:47.430.
+	 Executed 17 tests, with 0 failures (0 unexpected) in 0.030 (0.041) seconds
+Test Suite 'PTests.xctest' passed at 2026-11-14 19:41:47.430.
+	 Executed 17 tests, with 0 failures (0 unexpected) in 0.030 (0.041) seconds
+Test Suite 'All tests' passed at 2026-11-14 19:41:47.430.
+	 Executed 17 tests, with 0 failures (0 unexpected) in 0.030 (0.053) seconds
+```

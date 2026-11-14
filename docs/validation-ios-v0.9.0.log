@@ -42,7 +42,9 @@ xcodebuild -project ios/Awake.xcodeproj -scheme AwakeIOS \
 
 现场环境：Xcode 27.0 beta（27A5228h）、iOS 27.0 模拟器（24A5390f）、macOS 上只有一个 iOS 27 runtime。同一现象在改动前的基线代码上也复现，因此不是本轮代码引入。
 
-结论：本轮 iOS 侧的可执行证据是「等价逻辑 244 项断言通过 + 测试目标编译通过」，不宣称 XCTest 全绿。
+结论（当时）：本轮 iOS 侧的可执行证据是「等价逻辑 244 项断言通过 + 测试目标编译通过」，不宣称 XCTest 全绿。
+
+**同日追加：该限制已定位并绕过，交接测试已在模拟器里以 XCTest 实跑通过，见第 6 节。**
 
 ## 4. 安装包
 
@@ -61,3 +63,64 @@ xcodebuild -project ios/Awake.xcodeproj -scheme AwakeIOS \
 - 两台真机之间真实交接（iPhone + Mac 同一 Wi-Fi）。
 - 真机锁屏 / 后台切换时的停止时机。
 - 重签后的真机安装（需要用户自己的证书与描述文件）。
+
+## 6. 追加（2026-11-14 晚）：模拟器里的 XCTest 跑通了
+
+### 6.1 根因：xcodebuild 的测试启动断在 DVT service hub
+
+`xcodebuild test` 从来没走到「执行测试」这一步。用一行不相干的 hostless 探针（`XCTAssertEqual(2+2, 4)`）复现，日志每次都停在同一处：
+
+```
+unable to connect to "com.apple.instruments.deviceservice.lockdown"
+(Error Domain=DVTiPhoneSimulatorErrorDomain Code=-1
+ "DTServiceHubClient failed to bless service hub for simulator iPhone 17 Pro ...")
+```
+
+排除项（每条都重跑过，现象不变）：重启 CoreSimulatorService（新 PID 已确认）、`simctl shutdown all`、新建干净设备 `ProbeFresh`、让 xcodebuild 自己 boot 设备、`test-without-building` 复用已有 `.xctestrun`。模拟器内部的 `com.apple.testmanagerd` 与 `com.apple.instruments.deviceservice` 都在运行，控制台会话是当前用户（不是无 GUI 的 ssh 会话）。所以这不是 Awake 的代码问题，也不是本项目配置问题，而是这套 Xcode 27 beta + iOS 27 runtime 的测试启动链路问题。
+
+### 6.2 绕过：用 Xcode 自带的 xctest agent 在模拟器里直接跑
+
+Xcode 带了一个模拟器版 XCTest 运行器：`.../iPhoneSimulator.platform/Developer/Library/Xcode/Agents/xctest`。用 `simctl spawn` 在设备里直接起它并加载 `.xctest` bundle，测试能正常执行并输出标准 XCTest 报告——绕开的只是 xcodebuild 的 DVT 启动层，跑的仍是真 XCTest 框架、真 iOS 运行时。
+
+### 6.3 结果 A：整包 AwakeTests（app-hosted）走不到全绿
+
+同样方式跑仓库自己的 `AwakeTests.xctest`（需要把 App 的 `Awake.debug.dylib` 加进 DYLD 路径才能加载）：
+
+- 前 23 个用例通过、0 失败；
+- 第 24 个 `testEquipmentOutputRequiresModelModeAndAnalogPath` 崩：`AwakeTests/AwakeTests.swift:306: Fatal error: Unexpectedly found nil while unwrapping an Optional value`。
+
+原因是这些用例依赖真实 App 宿主（音频引擎、启动期单例），脱离 App 进程单独加载时不成立。所以这条路拿不到「整包全绿」，也不能把 23 项说成全绿。
+
+### 6.4 结果 B：交接测试 17/17 通过（XCTest 实跑）
+
+把接收端逻辑单独编成一个 hostless 测试 bundle，在 iOS 27 模拟器里跑：
+
+```
+xcodebuild -project P.xcodeproj -scheme PTests -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath /tmp/xh-dd2 build-for-testing CODE_SIGNING_ALLOWED=NO
+xcrun simctl spawn <DEVICE_UDID> \
+  "$XCODE/Platforms/iPhoneSimulator.platform/Developer/Library/Xcode/Agents/xctest" \
+  /tmp/xh-dd2/Build/Products/Debug-iphonesimulator/PTests.xctest
+```
+
+```
+Test Suite 'HandoffReceiveTests' passed
+	 Executed 17 tests, with 0 failures (0 unexpected) in 0.030 (0.041) seconds
+```
+
+原始输出逐字存档：`docs/validation-ios-xctest-0.9.0.log`。
+
+用了什么、没用什么：
+
+- 用的是仓库原件：`ios/Awake/HandoffReceiver.swift`、`ios/AwakeTests/HandoffReceiveTests.swift`。测试文件只改了一行——`@testable import Awake` 换成直接编入同一模块（hostless 目标里没有 `Awake` 模块）。
+- 没用上的是 App 的真实 `Song`：它定义在 `Models.swift`，牵出 `MediaInfo`、`EqOrigin`、`EquipmentContext` 一整张模型图，整张图拉进 hostless 目标会连带整套 App 依赖。这里用一个只含 `id/title/artist/album/duration` 的 `Song` 替身，字段与被测代码实际读到的字段一一对应。
+- 因此这条证据的强度是：**生产端源码 + 生产端测试 + 真 XCTest + 真 iOS 运行时，`Song` 为替身**。比此前「macOS 上跑等价逻辑」强，比「app-hosted 整包全绿」弱，差距只在 `Song` 与启动路径两点。
+
+### 6.5 顺带修正一处数字
+
+本文件第 2 节写的「`HandoffReceiveTests.swift`（12 项）」与实际不符：该文件现有 **17 个** `func test` 方法，本次实跑也是 17 项。12 应是当时 xcodebuild 列表的口径，未经核对就写进了记录。
+
+### 6.6 仍未解决
+
+- `xcodebuild test` 在这套 beta 工具链上仍然不可用。要彻底恢复，需要装稳定版 Xcode，或给 Xcode 27 beta 配更早的 iOS runtime（本机目前只有 Xcode 27 beta + iOS 27.0）。
+- 依赖 App 宿主的用例（音频、启动期单例）在独立加载下会崩，只有真实 `xcodebuild test` 能验证。
