@@ -558,6 +558,7 @@ struct LibraryView: View {
       switch target {
       case .audioFiles: Task { await store.importFiles(urls) }
       case .audioFolder: Task { for url in urls { await store.importAudioFolder(url) } }
+      case .skin, .backup: break  // 曲库页没有这两个入口
       }
     } onFail: { error, _ in
       if (error as NSError).code != NSUserCancelledError { store.message = error.localizedDescription }

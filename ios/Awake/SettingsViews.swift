@@ -4,15 +4,12 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
   @EnvironmentObject var store: MobileStore
   @EnvironmentObject var player: MobilePlayer
-  @State private var skinImport = false
+  @State private var picking: ImportTarget?
   @State private var curatorKey = ""
   @State private var musicKey = ""
   @State private var shareFile: SharedFile?
   @State private var sourceSheet = false
-  @State private var folderImport = false
-  @State private var fileImport = false
   @State private var backupCreate = false
-  @State private var backupImport = false
   @State private var backupCandidate: BackupCandidate?
   @State private var restoredBackup: BackupPreview?
   var body: some View {
@@ -35,23 +32,7 @@ struct SettingsView: View {
             Text($0.name).tag($0.id)
           }
         }.accessibilityIdentifier("themePicker")
-        Button("导入 design.md / 皮肤 JSON") { skinImport = true }
-          .fileImporter(isPresented: $skinImport, allowedContentTypes: [.plainText, .json, .text]) {
-            result in
-            do {
-              let u = try result.get()
-              let access = u.startAccessingSecurityScopedResource()
-              defer { if access { u.stopAccessingSecurityScopedResource() } }
-              let data = try Data(contentsOf: u, options: .mappedIfSafe)
-              guard data.count <= 65536 else { throw AppFailure("皮肤文件不能超过 64 KB") }
-              var skin = try Skin.parse(String(decoding: data, as: UTF8.self))
-              skin.id = "custom-" + UUID().uuidString
-              store.state.customSkins.append(skin)
-              store.state.customSkins = Array(store.state.customSkins.suffix(30))
-              store.state.skin = skin
-              store.save()
-            } catch { store.message = error.localizedDescription }
-          }
+        Button("导入 design.md / 皮肤 JSON") { picking = .skin }
         Button("导出当前 design.md") {
           do {
             let data = try JSONEncoder().encode(store.state.skin)
@@ -66,24 +47,10 @@ struct SettingsView: View {
       Section("自己的音乐来源") {
         Button("添加 WebDAV / Plex / Telegram", systemImage: "plus") { sourceSheet = true }
           .accessibilityIdentifier("addSource")
-        Button("导入音频文件", systemImage: "doc.badge.plus") { fileImport = true }
+        Button("导入音频文件", systemImage: "doc.badge.plus") { picking = .audioFiles }
           .accessibilityIdentifier("importAudioFiles")
-          .fileImporter(
-            isPresented: $fileImport, allowedContentTypes: [.audio], allowsMultipleSelection: true
-          ) { result in
-            switch result {
-            case .success(let urls): Task { await store.importFiles(urls) }
-            case .failure(let error): store.message = error.localizedDescription
-            }
-          }
-        Button("导入本地 / Telegram 下载文件夹", systemImage: "folder") { folderImport = true }
+        Button("导入本地 / Telegram 下载文件夹", systemImage: "folder") { picking = .audioFolder }
           .accessibilityIdentifier("importFolder")
-          .fileImporter(isPresented: $folderImport, allowedContentTypes: [.folder]) { result in
-            do {
-              let url = try result.get()
-              Task { await store.importAudioFolder(url) }
-            } catch { store.message = error.localizedDescription }
-          }
         ForEach(store.state.sources) { s in
           VStack(alignment: .leading, spacing: 8) {
             Text(s.name).font(.headline)
@@ -135,29 +102,10 @@ struct SettingsView: View {
           Label("创建加密备份", systemImage: "lock.doc")
         }.accessibilityIdentifier("createBackup")
         Button {
-          backupImport = true
+          picking = .backup
         } label: {
           Label("从备份文件恢复", systemImage: "arrow.down.doc")
         }.accessibilityIdentifier("restoreBackup")
-        .fileImporter(
-          isPresented: $backupImport, allowedContentTypes: [.awakeBackupFile, .json]
-        ) { result in
-          do {
-            let url = try result.get()
-            let access = url.startAccessingSecurityScopedResource()
-            defer { if access { url.stopAccessingSecurityScopedResource() } }
-            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            guard size <= BackupService.maxFileBytes else {
-              throw AppFailure("备份文件不能超过 32 MB")
-            }
-            let data = try Data(contentsOf: url, options: .mappedIfSafe)
-            guard data.count <= BackupService.maxFileBytes else {
-              throw AppFailure("备份文件不能超过 32 MB")
-            }
-            let candidate = BackupCandidate(name: url.lastPathComponent, data: data)
-            DispatchQueue.main.async { backupCandidate = candidate }
-          } catch { store.message = error.localizedDescription }
-        }
         if let restoredBackup {
           if let playback = restoredBackup.playback, !playback.title.isEmpty {
             Text("上次播放：\(playback.title)（\(BackupFormat.clock(playback.position))）")
@@ -182,6 +130,16 @@ struct SettingsView: View {
       }
     }
     .appSurface()
+    .importPicker($picking) { urls, target in
+      switch target {
+      case .audioFiles: Task { await store.importFiles(urls) }
+      case .audioFolder: Task { for url in urls { await store.importAudioFolder(url) } }
+      case .skin: if let url = urls.first { importSkin(url) }
+      case .backup: if let url = urls.first { importBackup(url) }
+      }
+    } onFail: { error, _ in
+      if (error as NSError).code != NSUserCancelledError { store.message = error.localizedDescription }
+    }
     .navigationTitle("设置")
     .sheet(isPresented: $sourceSheet) { SourceEditor() }
     .sheet(item: $shareFile) { file in ShareView(url: file.url) }
@@ -189,6 +147,32 @@ struct SettingsView: View {
     .sheet(item: $backupCandidate) { candidate in
       BackupRestoreSheet(candidate: candidate) { preview in restoredBackup = preview }
     }
+  }
+  private func importSkin(_ url: URL) {
+    do {
+      let access = url.startAccessingSecurityScopedResource()
+      defer { if access { url.stopAccessingSecurityScopedResource() } }
+      let data = try Data(contentsOf: url, options: .mappedIfSafe)
+      guard data.count <= 65536 else { throw AppFailure("皮肤文件不能超过 64 KB") }
+      var skin = try Skin.parse(String(decoding: data, as: UTF8.self))
+      skin.id = "custom-" + UUID().uuidString
+      store.state.customSkins.append(skin)
+      store.state.customSkins = Array(store.state.customSkins.suffix(30))
+      store.state.skin = skin
+      store.save()
+    } catch { store.message = error.localizedDescription }
+  }
+  private func importBackup(_ url: URL) {
+    do {
+      let access = url.startAccessingSecurityScopedResource()
+      defer { if access { url.stopAccessingSecurityScopedResource() } }
+      let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+      guard size <= BackupService.maxFileBytes else { throw AppFailure("备份文件不能超过 32 MB") }
+      let data = try Data(contentsOf: url, options: .mappedIfSafe)
+      guard data.count <= BackupService.maxFileBytes else { throw AppFailure("备份文件不能超过 32 MB") }
+      let candidate = BackupCandidate(name: url.lastPathComponent, data: data)
+      DispatchQueue.main.async { backupCandidate = candidate }
+    } catch { store.message = error.localizedDescription }
   }
   func continuePlayback(_ playback: BackupPlayback) {
     continueBackupPlayback(playback, store: store, player: player)
