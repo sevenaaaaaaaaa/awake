@@ -13,6 +13,8 @@ import UniformTypeIdentifiers
 enum ImportTarget: String, Identifiable {
   case audioFiles
   case audioFolder
+  case skin
+  case backup
 
   var id: String { rawValue }
 
@@ -20,6 +22,8 @@ enum ImportTarget: String, Identifiable {
     switch self {
     case .audioFiles: return [.audio]
     case .audioFolder: return [.folder]
+    case .skin: return [.plainText, .json, .text]
+    case .backup: return [.awakeBackupFile, .json]
     }
   }
 }
