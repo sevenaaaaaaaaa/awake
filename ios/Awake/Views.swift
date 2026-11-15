@@ -480,8 +480,7 @@ struct SongRow: View {
 struct LibraryView: View {
   @EnvironmentObject var store: MobileStore
   @EnvironmentObject var player: MobilePlayer
-  @State private var importing = false
-  @State private var folderImporting = false
+  @State private var picking: ImportTarget?
   @State private var importingPlaylist = false
   @State private var query = ""
   var filtered: [Song] {
@@ -554,7 +553,16 @@ struct LibraryView: View {
         }
       }
       ForEach(filtered) { SongRow(song: $0).listRowBackground(Color.clear) }
-    }.appSurface().navigationTitle("音乐资料库").searchable(text: $query, prompt: "曲名、艺人或专辑").toolbar {
+    }
+    .importPicker($picking) { urls, target in
+      switch target {
+      case .audioFiles: Task { await store.importFiles(urls) }
+      case .audioFolder: Task { for url in urls { await store.importAudioFolder(url) } }
+      }
+    } onFail: { error, _ in
+      if (error as NSError).code != NSUserCancelledError { store.message = error.localizedDescription }
+    }
+    .appSurface().navigationTitle("音乐资料库").searchable(text: $query, prompt: "曲名、艺人或专辑").toolbar {
       NavigationLink {
         BooksHubView()
       } label: {
@@ -562,24 +570,10 @@ struct LibraryView: View {
       }.accessibilityIdentifier("openBooksHub")
       Button("导入歌单", systemImage: "music.note.list") { importingPlaylist = true }
         .accessibilityIdentifier("importPlaylist")
-      Button("导入文件夹", systemImage: "folder.badge.plus") { folderImporting = true }
+      Button("导入文件夹", systemImage: "folder.badge.plus") { picking = .audioFolder }
         .accessibilityIdentifier("importLibraryFolder")
-        .fileImporter(isPresented: $folderImporting, allowedContentTypes: [.folder]) { result in
-          do {
-            let url = try result.get()
-            Task { await store.importAudioFolder(url) }
-          } catch { store.message = error.localizedDescription }
-        }
-      Button("导入文件", systemImage: "plus") { importing = true }
+      Button("导入文件", systemImage: "plus") { picking = .audioFiles }
         .accessibilityIdentifier("importMusic")
-        .fileImporter(
-          isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true
-        ) { result in
-          switch result {
-          case .success(let urls): Task { await store.importFiles(urls) }
-          case .failure(let e): store.message = e.localizedDescription
-          }
-        }
     }.sheet(isPresented: $importingPlaylist) {
       PlaylistImportView().environmentObject(store).environmentObject(player)
     }
