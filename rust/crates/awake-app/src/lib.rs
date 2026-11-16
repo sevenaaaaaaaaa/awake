@@ -63,6 +63,9 @@ impl AppState {
         let data_dir = default_data_dir();
         let store = data_dir.join("library.json");
         std::fs::create_dir_all(&data_dir).ok();
+        // 凭据存储（凭据文件 + 钥匙串镜像）必须先指到数据目录，
+        // 否则来源密码与 Plex Token 会被写到无处可寻的默认位置。
+        vault::init(&data_dir);
         Self {
             library: Arc::new(Mutex::new(Library::open(store))),
             services: Mutex::new(intelligence::load(&data_dir)),
@@ -197,6 +200,7 @@ async fn scan_files(
     let mut skipped = Vec::new();
     let mut files: Vec<PathBuf> = Vec::new();
     for raw in &paths {
+        let raw = &normalize_music_path(raw).unwrap_or_else(|_| raw.trim().to_string());
         let path = PathBuf::from(raw);
         if path.is_dir() {
             files.extend(library::collect_audio_files(&path));
@@ -286,10 +290,17 @@ async fn scan_library(
     state: State<'_, AppState>,
 ) -> Result<ScanResult, String> {
     let kind = req.kind.unwrap_or(SourceKind::Local);
-    let path = req.path.trim().to_string();
-    if path.is_empty() {
+    let raw = req.path.trim().to_string();
+    if raw.is_empty() {
         return Err("请填写音乐文件夹路径".into());
     }
+    // 本地来源先把路径收拾干净（引号 / file:// / ~ / 末尾斜杠），
+    // 否则 is_dir() 判假，用户看到的是「选好了文件夹却扫不出东西」。
+    let path = if matches!(kind, SourceKind::Local | SourceKind::Smb) {
+        normalize_music_path(&raw)?
+    } else {
+        raw
+    };
     if PathBuf::from(&path).is_file() {
         return scan_files(vec![path], true, req.name, state).await;
     }
@@ -702,6 +713,164 @@ fn load_lyrics(
     Ok(awake_core::lyrics::parse(&input))
 }
 
+
+/// 路径规范化：菜单/输入框里粘进来的路径形态不统一 —— 带引号、带 file:// 前缀、
+/// 带 ~、末尾多一个斜杠，都会让 is_dir() 判假，用户看到的就是「选好文件夹也扫不出东西」。
+pub fn normalize_music_path(raw: &str) -> Result<String, String> {
+    let mut text = raw.trim().to_string();
+    // Finder 的「拷贝为路径名」不会带引号，但从终端复制的常带。
+    while text.len() >= 2 {
+        let first = text.chars().next().unwrap_or(' ');
+        let last = text.chars().last().unwrap_or(' ');
+        if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+            text = text[1..text.len() - 1].trim().to_string();
+        } else {
+            break;
+        }
+    }
+    if let Some(rest) = text.strip_prefix("file://") {
+        // file:///Users/x/My%20Music -> /Users/x/My Music
+        let rest = rest.strip_prefix("localhost").unwrap_or(rest);
+        text = percent_decode(rest);
+    }
+    if text == "~" || text.starts_with("~/") {
+        let home = std::env::var("HOME").unwrap_or_default();
+        if !home.is_empty() {
+            text = format!("{home}{}", &text[1..]);
+        }
+    }
+    while text.len() > 1 && text.ends_with('/') {
+        text.pop();
+    }
+    if text.trim().is_empty() {
+        return Err("请选一个音乐文件夹".into());
+    }
+    Ok(text)
+}
+
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).ok();
+            if let Some(value) = hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                out.push(value);
+                index += 3;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+/// 连接之前先看一眼：这个路径到底有没有音乐、能不能读。
+#[derive(Serialize)]
+pub struct MusicPathProbe {
+    /// directory | file | missing | unreadable
+    pub kind: String,
+    pub path: String,
+    pub audio_count: usize,
+    pub sample: Vec<String>,
+    pub message: String,
+}
+
+fn probe_music_dir(path: &std::path::Path) -> MusicPathProbe {
+    match std::fs::read_dir(path) {
+        Ok(_) => {
+            let files = library::collect_audio_files(path);
+            let sample: Vec<String> = files
+                .iter()
+                .take(5)
+                .map(|f| {
+                    f.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default()
+                })
+                .collect();
+            let message = if files.is_empty() {
+                "这个文件夹里没有找到音频文件（支持 FLAC / ALAC / MP3 / AAC / WAV / AIFF / OGG / M4B）"
+                    .to_string()
+            } else {
+                format!("找到 {} 个音频文件", files.len())
+            };
+            MusicPathProbe {
+                kind: "directory".into(),
+                path: path.to_string_lossy().to_string(),
+                audio_count: files.len(),
+                sample,
+                message,
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => MusicPathProbe {
+            kind: "unreadable".into(),
+            path: path.to_string_lossy().to_string(),
+            audio_count: 0,
+            sample: Vec::new(),
+            message: "系统不允许 Awake 读这个文件夹：打开「系统设置 → 隐私与安全性 → 文件与文件夹」给 Awake 打开权限，或把音乐放到「音乐」文件夹再选".into(),
+        },
+        Err(_) => MusicPathProbe {
+            kind: "unreadable".into(),
+            path: path.to_string_lossy().to_string(),
+            audio_count: 0,
+            sample: Vec::new(),
+            message: "这个文件夹读不出来：检查它是否还在、是否已挂载".into(),
+        },
+    }
+}
+
+fn probe_music_path_blocking(raw: &str) -> MusicPathProbe {
+    let path = match normalize_music_path(raw) {
+        Ok(path) => path,
+        Err(message) => {
+            return MusicPathProbe {
+                kind: "missing".into(),
+                path: String::new(),
+                audio_count: 0,
+                sample: Vec::new(),
+                message,
+            }
+        }
+    };
+    let resolved = std::path::PathBuf::from(&path);
+    if resolved.is_dir() {
+        return probe_music_dir(&resolved);
+    }
+    if resolved.is_file() {
+        let supported = library::is_audio_file(&resolved);
+        return MusicPathProbe {
+            kind: "file".into(),
+            path,
+            audio_count: usize::from(supported),
+            sample: resolved
+                .file_name()
+                .map(|n| vec![n.to_string_lossy().to_string()])
+                .unwrap_or_default(),
+            message: if supported {
+                "这是一个音频文件，会单独作为一首导入".to_string()
+            } else {
+                "这个文件不是受支持的音频格式".to_string()
+            },
+        };
+    }
+    MusicPathProbe {
+        kind: "missing".into(),
+        path,
+        audio_count: 0,
+        sample: Vec::new(),
+        message: "这个路径不存在：确认文件夹还在，或重新选一次".into(),
+    }
+}
+
+#[tauri::command]
+async fn probe_music_path(path: String) -> Result<MusicPathProbe, String> {
+    tauri::async_runtime::spawn_blocking(move || probe_music_path_blocking(&path))
+        .await
+        .map_err(|_| "检查路径时被打断，请重试".to_string())
+}
 #[tauri::command]
 async fn pick_music_folder() -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -837,6 +1006,11 @@ pub fn run() {
             plex::plex_resources,
             plex::plex_probe,
             plex::plex_sections,
+            plex::plex_account_get,
+            plex::plex_account_save,
+            plex::plex_account_forget,
+            connections::remove_source,
+            probe_music_path,
             connections::refresh_remote_source,
             connections::source_refresh_status,
             connections::set_source_auto_refresh,
@@ -920,6 +1094,73 @@ pub fn run() {
 #[path = "../../awake-core/src/test_audio.rs"]
 pub(crate) mod test_audio;
 
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("awake-path-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn paths_from_every_clipboard_shape_resolve_to_one_folder() {
+        assert_eq!(normalize_music_path("  /Users/x/Music/  ").unwrap(), "/Users/x/Music");
+        assert_eq!(
+            normalize_music_path("\"/Users/x/My Music/\"").unwrap(),
+            "/Users/x/My Music"
+        );
+        assert_eq!(
+            normalize_music_path("file:///Users/x/My%20Music").unwrap(),
+            "/Users/x/My Music"
+        );
+        assert!(normalize_music_path("   ").is_err());
+    }
+
+    #[test]
+    fn a_picked_folder_is_checked_before_it_is_connected() {
+        let dir = scratch("probe");
+        std::fs::write(dir.join("one.mp3"), b"x").unwrap();
+        std::fs::write(dir.join("two.FLAC"), b"x").unwrap();
+        std::fs::write(dir.join("notes.txt"), b"x").unwrap();
+        let probe = probe_music_path_blocking(&dir.to_string_lossy());
+        assert_eq!(probe.kind, "directory");
+        assert_eq!(probe.audio_count, 2, "只数音频文件，大小写都算");
+        assert_eq!(probe.sample.len(), 2);
+        assert!(probe.message.contains('2'));
+        let single = probe_music_path_blocking(&dir.join("one.mp3").to_string_lossy());
+        assert_eq!(single.kind, "file");
+        assert_eq!(single.audio_count, 1);
+        let missing = probe_music_path_blocking(&dir.join("nope").to_string_lossy());
+        assert_eq!(missing.kind, "missing");
+        assert!(missing.message.contains("不存在"));
+        let empty = scratch("probe-empty");
+        let none = probe_music_path_blocking(&empty.to_string_lossy());
+        assert_eq!(none.audio_count, 0);
+        assert!(none.message.contains("没有找到"));
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn an_unreadable_folder_says_so_instead_of_zero_tracks() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let dir = scratch("probe-denied");
+            std::fs::write(dir.join("a.mp3"), b"x").unwrap();
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+            let probe = probe_music_path_blocking(&dir.to_string_lossy());
+            assert_eq!(probe.kind, "unreadable", "读不到就直说读不到，不要报 0 首");
+            assert!(probe.message.contains("隐私与安全性"));
+            // 收尾：权限先恢复，才删得掉。
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+}
 #[cfg(test)]
 mod allocation_audit;
 #[cfg(test)]

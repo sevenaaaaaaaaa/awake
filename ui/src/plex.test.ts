@@ -2,8 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  plexAccountLabel,
   plexRootUrl,
+  plexSectionIndexFor,
   plexSectionKey,
+  plexServerIndexFor,
   plexSourceDraft,
   plexSourceName,
 } from "./plex.ts";
@@ -63,3 +66,66 @@ test("来源显示名带上音乐库，便于同一服务器挂多个库时区�
   assert.equal(plexSourceName("客厅 NAS", ""), "客厅 NAS");
   assert.equal(plexSourceName(" 客厅 NAS ", "  "), "客厅 NAS");
 });
+
+test("账号状态：没登录就说没登录，登录了要说清楚记住的是哪台服务器", () => {
+  assert.equal(plexAccountLabel(null), "还没有登录 Plex");
+  const account = {
+    signed_in: false,
+    client_id: "",
+    token: "",
+    server_url: "",
+    server_name: "",
+    section_key: "",
+    section_title: "",
+    saved_at: 0,
+  };
+  assert.equal(plexAccountLabel(account), "还没有登录 Plex");
+  assert.equal(
+    plexAccountLabel({ ...account, signed_in: true, server_name: "客厅", section_title: "音乐" }),
+    "已登录 · 客厅 · 音乐",
+  );
+  assert.equal(plexAccountLabel({ ...account, signed_in: true }), "已登录");
+});
+
+test("重启后能定位到上次的服务器：忽略末尾斜杠与大小写，找不到就退回第一条", () => {
+  const servers = [
+    { url: "https://192.168.1.5:32400" },
+    { url: "https://NAS.example.com:32400" },
+  ];
+  const account = {
+    signed_in: true,
+    client_id: "abc",
+    token: "t",
+    server_url: "https://nas.example.com:32400/",
+    server_name: "NAS",
+    section_key: "3",
+    section_title: "音乐",
+    saved_at: 1,
+  };
+  assert.equal(plexServerIndexFor(account, servers), 1);
+  assert.equal(plexServerIndexFor(account, [{ url: "https://other:32400" }]), 0);
+  assert.equal(plexServerIndexFor(account, []), -1);
+  assert.equal(
+    plexServerIndexFor({ ...account, server_url: "" }, servers),
+    0,
+    "没有记录时选第一条，而不是空选择",
+  );
+});
+
+test("重启后能定位到上次的音乐库，key 对不上就选第一个", () => {
+  const sections = [{ key: "1" }, { key: "3" }];
+  const account = {
+    signed_in: true,
+    client_id: "abc",
+    token: "t",
+    server_url: "",
+    server_name: "",
+    section_key: "3",
+    section_title: "音乐",
+    saved_at: 1,
+  };
+  assert.equal(plexSectionIndexFor(account, sections), 1);
+  assert.equal(plexSectionIndexFor({ ...account, section_key: "9" }, sections), 0);
+  assert.equal(plexSectionIndexFor(account, []), -1);
+});
+

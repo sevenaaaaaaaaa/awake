@@ -1,4 +1,4 @@
-use crate::{remote::Access, vault, AppState};
+use crate::{plex, remote::Access, vault, AppState};
 use awake_core::{models::SourceKind, MediaSource, Track};
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -17,6 +17,12 @@ pub struct ConnectionRequest {
     /// Plex 音乐库分区 key；留空则扫描整个服务器的全部音乐分区。
     #[serde(default)]
     pub section: String,
+    /// Plex 音乐库名称，与 section 一起记住，下次启动直接用。
+    #[serde(default)]
+    pub section_title: String,
+    /// Plex 客户端标识，连接成功后随账号一起记住。
+    #[serde(default)]
+    pub client_id: String,
 }
 pub fn access(source: &MediaSource) -> Result<Access, String> {
     let secret = if source.username.is_empty()
@@ -115,8 +121,59 @@ pub async fn connect_source(
     source.track_count = tracks.len();
     source.last_scan = Some(awake_core::models::now_ms());
     let count = tracks.len();
+    // 连接成功就是「用户真的授权过」的证据：把账号与所选音乐库记下来，
+    // 下次启动不必再走一遍浏览器授权。
+    let is_plex = source.kind == SourceKind::Plex;
+    let account_url = source.url.clone();
+    let account_name = source.name.clone();
+    let account_section = source.section.clone();
+    let account_client = req.client_id.trim().to_string();
+    let account_section_title = req.section_title.trim().to_string();
     save(source, tracks, &state)?;
+    // 只有 Plex 才写账号记忆。别的来源的密码绝不能写进 Plex 的账号槽位。
+    if is_plex && !secret.is_empty() {
+        let _ = plex::remember(
+            &state.data_dir,
+            &account_client,
+            Some(&secret),
+            &account_url,
+            &account_name,
+            &account_section,
+            &account_section_title,
+        );
+    }
     Ok(count)
+}
+
+/// 移除一个来源：曲目、来源记录、凭据一起清掉。
+#[tauri::command]
+pub fn remove_source(id: String, state: tauri::State<'_, AppState>) -> Result<usize, String> {
+    let mut lib = state.library.lock();
+    let previous = lib.snapshot.clone();
+    let Some(source) = lib
+        .snapshot
+        .sources
+        .iter()
+        .find(|source| source.id == id)
+        .cloned()
+    else {
+        return Err("来源不存在".into());
+    };
+    let removed = lib
+        .snapshot
+        .tracks
+        .iter()
+        .filter(|track| track.source_id == id)
+        .count();
+    lib.snapshot.tracks.retain(|track| track.source_id != id);
+    lib.snapshot.sources.retain(|candidate| candidate.id != id);
+    if let Err(error) = lib.save() {
+        lib.snapshot = previous;
+        return Err(error.to_string());
+    }
+    drop(lib);
+    let _ = vault::remove(&source.password_key);
+    Ok(removed)
 }
 #[tauri::command]
 pub async fn refresh_remote_source(

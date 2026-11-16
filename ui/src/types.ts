@@ -43,6 +43,8 @@ export interface Track {
   play_count: number;
   favorite: boolean;
   is_remote: boolean;
+  /** 加入曲库的时间（毫秒）。「最近添加」靠它排序。 */
+  added_at?: number;
 }
 export interface MediaReview {
   author: string; text: string; source: string; url: string; scope: string; license: string; license_url: string;

@@ -43,6 +43,61 @@ export function plexSectionKey(
   return sections[index]?.key ?? "";
 }
 
+/** `plex_account_get` 返回的账号状态：授权过就记在磁盘上，重启后照旧可用。 */
+export interface PlexAccount {
+  signed_in: boolean;
+  client_id: string;
+  token: string;
+  server_url: string;
+  server_name: string;
+  section_key: string;
+  section_title: string;
+  saved_at: number;
+}
+
+/**
+ * 账号状态的一句话，直接显示在「音乐来源 → Plex」里。
+ * 用户要能一眼看出「这次不用重新登录」。
+ */
+export function plexAccountLabel(account: PlexAccount | null | undefined): string {
+  if (!account || !account.signed_in) return "还没有登录 Plex";
+  const parts = ["已登录"];
+  if (account.server_name.trim()) parts.push(account.server_name.trim());
+  if (account.section_title.trim()) parts.push(account.section_title.trim());
+  return parts.join(" · ");
+}
+
+function normaliseUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "").toLowerCase();
+}
+
+/**
+ * 上次用的服务器在候选列表里的位置。按地址匹配（忽略末尾斜杠与大小写），
+ * 找不到就退回第一条 —— 服务器换了线路也不该让用户面对一个空选择框。
+ */
+export function plexServerIndexFor(
+  account: PlexAccount | null | undefined,
+  servers: { url: string }[],
+): number {
+  if (!servers.length) return -1;
+  const want = normaliseUrl(account?.server_url ?? "");
+  if (!want) return 0;
+  const index = servers.findIndex((server) => normaliseUrl(server.url) === want);
+  return index >= 0 ? index : 0;
+}
+
+/** 上次选的音乐库在分区列表里的位置，规则同上。 */
+export function plexSectionIndexFor(
+  account: PlexAccount | null | undefined,
+  sections: { key: string }[],
+): number {
+  if (!sections.length) return -1;
+  const want = (account?.section_key ?? "").trim();
+  if (!want) return 0;
+  const index = sections.findIndex((section) => section.key === want);
+  return index >= 0 ? index : 0;
+}
+
 /** 来源显示名：带上音乐库名，方便一个服务器挂多个库时区分。 */
 export function plexSourceName(serverName: string, sectionTitle: string): string {
   const name = serverName.trim();

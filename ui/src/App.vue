@@ -24,10 +24,22 @@ import WeeklySummary from "./WeeklySummary.vue";
 import { useAwake } from "./useAwake";
 import { call, desktop } from "./bridge";
 import {
+  plexAccountLabel,
+  plexSectionIndexFor,
   plexSectionKey,
+  plexServerIndexFor,
   plexSourceDraft,
   plexSourceName,
+  type PlexAccount,
 } from "./plex";
+import {
+  filterAfterConnect,
+  recentlyAdded,
+  sourceAlbums,
+  sourceFilterOptions,
+  sourceStatusLine,
+  sourceTracks,
+} from "./sources";
 import { APP_VERSION_LINE } from "./version";
 import {
   aiPresets,
@@ -45,6 +57,7 @@ import {
   frequencies,
   type Track,
   type Album,
+  type Source,
   type Playlist,
   type PlaylistEntry,
   type Book,
@@ -68,6 +81,8 @@ type View =
   | "playlist";
 const view = ref<View>("home"),
   libraryMode = ref("albums"),
+  /** 曲库页按来源收窄：空串表示全部来源。 */
+  librarySource = ref(""),
   query = ref("");
 const album = ref<Album | null>(null),
   playlistId = ref(""),
@@ -208,6 +223,9 @@ const plex = reactive({
   status: "",
   error: "",
   token: "",
+  signedIn: false,
+  savedAt: 0,
+  account: null as PlexAccount | null,
   servers: [] as PlexServer[],
   sections: [] as PlexSection[],
   serverIndex: -1,
@@ -317,6 +335,105 @@ async function retryPlexResources() {
   }
 }
 
+/**
+ * 启动时恢复 Plex 登录。授权一次之后，Token 与上次的服务器 / 音乐库都在磁盘上，
+ * 这里直接用它们列服务器 —— 不打开浏览器，也不用用户再点一次登录。
+ */
+async function restorePlexAccount() {
+  if (!desktop) return;
+  try {
+    const account = await call<PlexAccount>("plex_account_get");
+    plex.account = account;
+    plex.signedIn = account.signed_in;
+    plex.savedAt = account.saved_at;
+    if (!account.signed_in) return;
+    plex.token = account.token;
+    if (account.client_id) localStorage.setItem("awake-plex-client-id", account.client_id);
+    plex.status = "已恢复上次的 Plex 登录，正在读取服务器…";
+    await loadPlexResources(account.client_id || plexClientId(), account.token);
+    plex.serverIndex = plexServerIndexFor(account, plex.servers);
+    if (plex.serverIndex >= 0) await applyPlexServer();
+    plex.sectionIndex = plexSectionIndexFor(account, plex.sections);
+    if (plex.sectionIndex >= 0) applyPlexSection();
+    plex.status = plexAccountLabel(account) + " · 选好音乐库就能直接连接";
+  } catch (reason) {
+    plex.signedIn = false;
+    plex.servers = [];
+    plex.sections = [];
+    plex.serverIndex = -1;
+    plex.sectionIndex = -1;
+    plex.error =
+      "上次的 Plex 登录已失效（可能是 Plex 端撤销了授权），重新登录一次即可：" +
+      String(reason).replace(/^Error: /, "");
+  }
+}
+async function forgetPlexAccount() {
+  await s.run(async () => {
+    await call("plex_account_forget");
+    plex.signedIn = false;
+    plex.token = "";
+    plex.account = null;
+    plex.servers = [];
+    plex.sections = [];
+    plex.serverIndex = -1;
+    plex.sectionIndex = -1;
+    plex.status = "已退出 Plex 账号；已连接的音乐来源不受影响";
+    s.toast("已退出 Plex 账号");
+  });
+}
+
+interface MusicPathProbe {
+  kind: string;
+  path: string;
+  audio_count: number;
+  sample: string[];
+  message: string;
+}
+const sourceProbe = ref<MusicPathProbe | null>(null);
+/**
+ * 连接之前先验一遍路径：归一化（引号 / file:// / ~ / 末尾斜杠）+ 数一数里面有多少音频。
+ * 「选好文件夹却扫不出东西」多数是路径形态或权限问题，这一步把它变成一句人话。
+ */
+async function checkSourcePath(): Promise<MusicPathProbe | null> {
+  if (!desktop) return null;
+  // 只有本地来源需要验路径；WebDAV / Plex 的地址由各自的连通性检查负责。
+  if (!["local", "smb"].includes(sourceKind.value)) return null;
+  if (!sourcePath.value.trim()) {
+    sourceProbe.value = null;
+    return null;
+  }
+  const probe = await call<MusicPathProbe>("probe_music_path", {
+    path: sourcePath.value,
+  });
+  sourceProbe.value = probe;
+  if (probe.path) sourcePath.value = probe.path;
+  return probe;
+}
+
+/** 连接成功后跳到曲库，并且只显示这个来源的曲目 —— 「刚加的东西」必须马上看得见。 */
+function focusSource(url: string, kind?: string) {
+  const normalise = (value: string) => value.trim().replace(/\/+$/, "");
+  const source = s.sources.find(
+    (item) => normalise(item.url) === normalise(url) && (!kind || item.kind === kind),
+  );
+  openSourceLibrary(filterAfterConnect(source?.id ?? ""));
+}
+
+const removingSource = ref("");
+async function removeSource(source: Source) {
+  if (removingSource.value !== source.id) {
+    removingSource.value = source.id;
+    return;
+  }
+  removingSource.value = "";
+  await s.run(async () => {
+    await call("remove_source", { id: source.id });
+    if (librarySource.value === source.id) librarySource.value = "";
+    await s.refresh();
+    s.toast("已移除来源：" + source.name);
+  });
+}
+
 async function connectPlex() {
   const server = plex.servers[plex.serverIndex];
   if (!server || s.busy) return;
@@ -335,15 +452,31 @@ async function connectPlex() {
       },
     });
     sourceSecret.value = "";
+    // 连接成功就把账号与所选音乐库记下来：下次启动不用再授权一次。
+    await call<PlexAccount>("plex_account_save", {
+      clientId: plexClientId(),
+      token: server.token,
+      serverUrl: server.url,
+      serverName: server.name,
+      sectionKey: section?.key ?? "",
+      sectionTitle: section?.title ?? "",
+    })
+      .then((account) => {
+        plex.account = account;
+        plex.signedIn = account.signed_in;
+        plex.savedAt = account.saved_at;
+      })
+      .catch(() => {});
     await s.refresh();
+    sourceOpen.value = false;
+    focusSource(server.url, "plex");
     s.toast(
       "Plex 曲库已连接：" +
         count +
         " 首" +
         (section ? "（" + section.title + "）" : "") +
-        "，可在音乐来源里查看",
+        "，已在曲库中显示",
     );
-    sourceOpen.value = false;
   });
   s.busy = false;
 }
@@ -416,9 +549,19 @@ async function importSourceConfig(event: Event) {
 }
 async function connectSource() {
   if (sourceKind.value === "telegram" && !telegramReady.value) { s.fault = "请先选择 Telegram 频道或收藏夹"; return; }
-  if (sourceKind.value === "local" || sourceKind.value === "smb")
+  if (sourceKind.value === "local" || sourceKind.value === "smb") {
+    // 先验路径，再扫描：路径形态不对或权限被拒时，直接说清楚原因。
+    const probe = await checkSourcePath();
+    if (probe && probe.audio_count === 0) {
+      s.fault = probe.message;
+      return;
+    }
     await s.scan(sourcePath.value, sourceName.value, sourceKind.value);
-  else if (sourceKind.value === "rss") {
+    if (!s.fault) {
+      sourceOpen.value = false;
+      focusSource(sourcePath.value, sourceKind.value);
+    }
+  } else if (sourceKind.value === "rss") {
     s.busy = true;
     await s.run(async () => {
       await call("subscribe_feed", {
@@ -454,7 +597,9 @@ async function connectSource() {
       });
       sourceSecret.value = "";
       await s.refresh();
-      s.toast("音乐来源已连接：" + count + " 首，可在音乐来源里查看");
+      sourceOpen.value = false;
+      focusSource(sourcePath.value, sourceKind.value);
+      s.toast("音乐来源已连接：" + count + " 首，已在曲库中显示");
     });
     s.busy = false;
   }
@@ -523,6 +668,22 @@ const filtered = computed(() =>
 const favoriteTracks = computed(() =>
   s.tracks.filter((t) => s.favorites.has(t.id)),
 );
+/** 曲库页的来源筛选条。 */
+const librarySourceOptions = computed(() => sourceFilterOptions(s.sources));
+/** 只显示当前选中的来源（加上搜索词）。 */
+const libraryTracks = computed(() =>
+  sourceTracks(filtered.value, librarySource.value),
+);
+const libraryAlbums = computed(() =>
+  sourceAlbums(
+    s.albums.filter((a) =>
+      `${a.title} ${a.artist}`.toLowerCase().includes(query.value.toLowerCase()),
+    ),
+    librarySource.value,
+  ),
+);
+/** 「最近添加」：刚连上的来源会排在最前面。 */
+const recentTracks = computed(() => recentlyAdded(s.tracks, 12));
 const playlistEntries = computed(() => {
   const playlist = activePlaylist.value;
   if (!playlist) return [];
@@ -669,7 +830,15 @@ function go(v: View) {
   view.value = v;
   album.value = null;
   query.value = "";
+  // 进曲库默认看全部来源；要看某一个来源请用 openSourceLibrary()。
+  librarySource.value = "";
   resetScroll();
+}
+/** 打开曲库并只看这个来源（空串 = 全部来源）。 */
+function openSourceLibrary(sourceId: string) {
+  go("library");
+  libraryMode.value = "songs";
+  librarySource.value = sourceId;
 }
 function openAlbum(a: Album) {
   album.value = a;
@@ -784,10 +953,10 @@ function addMusic() {
 async function pickFolder() {
   await s.run(async () => {
     const path = await call<string | null>("pick_music_folder");
-    if (path) {
-      sourcePath.value = path;
-      s.toast("已选择文件夹，点“连接曲库”开始扫描");
-    }
+    if (!path) return;
+    sourcePath.value = path;
+    const probe = await checkSourcePath();
+    s.toast(probe ? probe.message : "已选择文件夹，点“连接曲库”开始扫描");
   });
 }
 async function pickFiles() {
@@ -1097,6 +1266,8 @@ onMounted(() => {
   void loadWeekly();
   void loadInsight();
   void loadPresets();
+  // 启动就恢复 Plex 登录：不用打开浏览器，也不用再点一次授权。
+  void restorePlexAccount();
 });
 onUnmounted(() => {
   window.removeEventListener("keydown", keydown);
@@ -1578,13 +1749,20 @@ onUnmounted(() => {
                   aria-label="搜索曲库"
               /></label>
             </div>
+            <div v-if="s.sources.length > 1" class="source-filter" role="group" aria-label="按来源筛选曲库">
+              <span>来源</span>
+              <button
+                v-for="option in librarySourceOptions"
+                :key="option.id || 'all'"
+                :class="{ active: librarySource === option.id }"
+                @click="librarySource = option.id"
+              >
+                {{ option.label }}
+              </button>
+            </div>
             <div v-if="libraryMode === 'albums'" class="album-grid">
               <button
-                v-for="a in s.albums.filter((a) =>
-                  `${a.title} ${a.artist}`
-                    .toLowerCase()
-                    .includes(query.toLowerCase()),
-                )"
+                v-for="a in libraryAlbums"
                 :key="a.id"
                 class="album-card"
                 @click="openAlbum(a)"
@@ -1608,10 +1786,10 @@ onUnmounted(() => {
             </div>
             <TrackList
               v-else
-              :tracks="filtered"
+              :tracks="libraryTracks"
               :current-id="s.now?.id"
               :favorites="s.favorites"
-              @play="s.start($event, filtered)"
+              @play="s.start($event, libraryTracks)"
               @favorite="s.favorite"
               @edit="editingMedia = $event"
           /></template>
@@ -1953,14 +2131,7 @@ onUnmounted(() => {
                   >
                 </p>
                 <TelegramSponsored v-if="source.kind === 'telegram'" :source-id="source.id" />
-                <small
-                  >{{ source.track_count }} 首音乐 ·
-                  {{
-                    source.last_scan
-                      ? new Date(source.last_scan).toLocaleString("zh-CN")
-                      : "尚未扫描"
-                  }}</small
-                >
+                <small>{{ sourceStatusLine(source) }}</small>
                 <p v-if="s.sourceStatuses[source.id]?.error" class="job-error">
                   更新失败，保留上次曲库：{{
                     s.sourceStatuses[source.id].error
@@ -1980,13 +2151,33 @@ onUnmounted(() => {
                   />每 15 分钟自动更新</label
                 >
               </div>
-              <button
-                class="button"
-                :disabled="s.busy || !desktop"
-                @click="s.refreshSource(source)"
-              >
-                <Icon name="refresh" />{{ s.busy ? "扫描中…" : "更新曲库" }}
-              </button>
+              <div class="source-actions">
+                <button
+                  class="button"
+                  :disabled="!source.track_count"
+                  @click="openSourceLibrary(source.id)"
+                >
+                  <Icon name="list" />查看曲目
+                </button>
+                <button
+                  class="button"
+                  :disabled="s.busy || !desktop"
+                  @click="s.refreshSource(source)"
+                >
+                  <Icon name="refresh" />{{ s.busy ? "扫描中…" : "更新曲库" }}
+                </button>
+                <button
+                  class="text-button"
+                  :disabled="s.busy"
+                  @click="removeSource(source)"
+                >
+                  {{
+                    removingSource === source.id
+                      ? "再点一次确认移除"
+                      : "移除来源"
+                  }}
+                </button>
+              </div>
             </article>
             <div v-if="!s.sources.length" class="empty-state">
               <Icon name="database" :size="40" />
@@ -1997,6 +2188,25 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
+          <template v-if="recentTracks.length">
+            <div class="section-heading">
+              <div>
+                <h2>最近添加</h2>
+                <p>刚扫描进来的曲目，按加入时间排序。</p>
+              </div>
+              <button class="text-button" @click="openSourceLibrary('')">
+                打开曲库 <Icon name="arrow" />
+              </button>
+            </div>
+            <TrackList
+              :tracks="recentTracks"
+              :current-id="s.now?.id"
+              :favorites="s.favorites"
+              @play="s.start($event, recentTracks)"
+              @favorite="s.favorite"
+              @edit="editingMedia = $event"
+            />
+          </template>
           <section class="info-panel">
             <Icon name="spark" :size="24" />
             <div>
@@ -2767,7 +2977,18 @@ onUnmounted(() => {
                 : 'https://你的服务器/音乐目录/'
             "
             required
+            @blur="checkSourcePath"
           />
+          <p
+            v-if="['local', 'smb'].includes(sourceKind) && sourceProbe"
+            :class="sourceProbe.audio_count ? 'muted' : 'job-error'"
+            role="status"
+          >
+            {{ sourceProbe.message
+            }}<template v-if="sourceProbe.sample.length"
+              >：{{ sourceProbe.sample.join("、") }}</template
+            >
+          </p>
           <div
             v-if="['local', 'smb'].includes(sourceKind)"
             class="source-pick-row"
@@ -2799,6 +3020,21 @@ onUnmounted(() => {
                 " /></label
           ></template>
           <div v-if="sourceKind === 'plex' && desktop" class="plex-login">
+            <div class="plex-account">
+              <p class="muted">
+                <Icon name="shield" />{{ plexAccountLabel(plex.account) }}
+                <template v-if="plex.signedIn">· 登录状态已保存</template>
+              </p>
+              <button
+                v-if="plex.signedIn"
+                type="button"
+                class="text-button"
+                :disabled="plex.busy || plex.polling"
+                @click="forgetPlexAccount"
+              >
+                退出登录
+              </button>
+            </div>
             <button
               type="button"
               class="text-button"

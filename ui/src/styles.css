@@ -4481,3 +4481,37 @@ kbd {
 .import-gaps .gap-artists small {
   color: var(--muted);
 }
+
+/* ── 来源存档：每个来源能看曲目、能移除，Plex 账号状态一眼可见 ── */
+.source-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  min-width: 136px;
+}
+.source-actions .button {
+  justify-content: center;
+  white-space: nowrap;
+}
+.source-actions .text-button {
+  font-size: 11px;
+  color: var(--muted, var(--text-dim));
+  text-align: center;
+}
+.plex-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.plex-account p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+

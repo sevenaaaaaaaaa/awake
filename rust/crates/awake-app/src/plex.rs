@@ -1,17 +1,30 @@
 //! Plex 账号登录（PIN 授权）、服务器发现与音乐库列表。
 //!
 //! 只使用 Plex 官方公开接口。账号 Token 只放进请求头，不拼进 URL、日志或错误信息。
+//!
+//! 账号登录是**持久化**的：PIN 授权拿到的 Token 立刻写进凭据存储（vault），
+//! 服务器地址与所选音乐库写进 `plex-account.json`。下次启动不用再点一次
+//! 「用 Plex 账号登录」，打开「音乐来源」就能看到上次连的服务器和音乐库。
 use reqwest::{
     blocking::{Client, RequestBuilder, Response},
     header, Url,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{io::Read, time::Duration};
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+
+use crate::vault;
 
 const PLEX_TV: &str = "https://plex.tv";
 const PRODUCT: &str = "Awake";
 const MAX_BODY: usize = 1024 * 1024;
+/// 账号 Token 在凭据存储里的键名（不是来源的 password_key）。
+const ACCOUNT_KEY: &str = "plex.account";
+const ACCOUNT_FILE: &str = "plex-account.json";
 
 #[derive(Debug, Serialize)]
 pub struct PlexPin {
@@ -399,9 +412,240 @@ fn parse_sections(value: &Value) -> Vec<PlexSection> {
         .unwrap_or_default()
 }
 
+
+// ---------------------------------------------------------------------------
+// 账号记忆：PIN 授权一次，之后每次启动都还能看到服务器与音乐库
+// ---------------------------------------------------------------------------
+
+/// 已记住的 Plex 账号定位信息。Token 不在这个文件里，它在凭据存储（vault）里。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct PlexAccountFile {
+    #[serde(default)]
+    client_id: String,
+    #[serde(default)]
+    server_url: String,
+    #[serde(default)]
+    server_name: String,
+    #[serde(default)]
+    section_key: String,
+    #[serde(default)]
+    section_title: String,
+    #[serde(default)]
+    saved_at: i64,
+}
+
+/// 前端拿到的账号状态。token 用来直接列出服务器，和 plex_resources 的敏感级别一致。
+#[derive(Debug, Serialize)]
+pub struct PlexAccountView {
+    pub signed_in: bool,
+    pub client_id: String,
+    pub token: String,
+    pub server_url: String,
+    pub server_name: String,
+    pub section_key: String,
+    pub section_title: String,
+    pub saved_at: i64,
+}
+
+fn account_path(data_dir: &Path) -> PathBuf {
+    data_dir.join(ACCOUNT_FILE)
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn load_account(data_dir: &Path) -> PlexAccountFile {
+    std::fs::read_to_string(account_path(data_dir))
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+fn write_account(data_dir: &Path, file: &PlexAccountFile) -> Result<(), String> {
+    std::fs::create_dir_all(data_dir).map_err(|_| "无法创建数据目录".to_string())?;
+    let path = account_path(data_dir);
+    let tmp = path.with_extension("json.tmp");
+    let json = serde_json::to_string_pretty(file)
+        .map_err(|_| "Plex 账号状态序列化失败".to_string())?;
+    std::fs::write(&tmp, json).map_err(|_| "无法写入 Plex 账号状态".to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|_| "无法保存 Plex 账号状态".to_string())
+}
+
+fn sanitize_text(value: &str, limit: usize) -> String {
+    value
+        .trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(limit)
+        .collect()
+}
+
+fn sanitize_url(value: &str) -> String {
+    validate_server_url(value).unwrap_or_default()
+}
+
+/// 记住这次授权：Token 进凭据存储，其余定位信息进 plex-account.json。
+pub fn remember(
+    data_dir: &Path,
+    client_id: &str,
+    token: Option<&str>,
+    server_url: &str,
+    server_name: &str,
+    section_key: &str,
+    section_title: &str,
+) -> Result<(), String> {
+    let mut file = load_account(data_dir);
+    if !client_id.trim().is_empty() {
+        validate_client_id(client_id.trim())?;
+        file.client_id = client_id.trim().to_string();
+    }
+    if let Some(token) = token.map(str::trim).filter(|token| !token.is_empty()) {
+        validate_token(token)?;
+        vault::set(ACCOUNT_KEY, token)?;
+    }
+    let url = sanitize_url(server_url);
+    if !url.is_empty() {
+        file.server_url = url;
+    }
+    let name = sanitize_text(server_name, 120);
+    if !name.is_empty() {
+        file.server_name = name;
+    }
+    file.section_key = section_key
+        .trim()
+        .chars()
+        .filter(|c| c.is_ascii_digit())
+        .take(16)
+        .collect();
+    let title = sanitize_text(section_title, 120);
+    if !title.is_empty() || file.section_key.is_empty() {
+        file.section_title = title;
+    }
+    file.saved_at = now_ms();
+    write_account(data_dir, &file)
+}
+
+/// 读账号状态。Token 取不到时只算「记得服务器」，不算已登录。
+pub fn account_view(data_dir: &Path) -> PlexAccountView {
+    let file = load_account(data_dir);
+    let token = vault::get(ACCOUNT_KEY).unwrap_or_default();
+    PlexAccountView {
+        signed_in: vault::has(ACCOUNT_KEY) && !token.is_empty(),
+        client_id: file.client_id,
+        token,
+        server_url: file.server_url,
+        server_name: file.server_name,
+        section_key: file.section_key,
+        section_title: file.section_title,
+        saved_at: file.saved_at,
+    }
+}
+
+/// 退出登录：Token 与定位信息一起清掉，但不动已经连上的音乐来源。
+pub fn forget(data_dir: &Path) -> Result<(), String> {
+    vault::remove(ACCOUNT_KEY)?;
+    let path = account_path(data_dir);
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|_| "无法清除 Plex 账号状态".to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn plex_account_get(state: tauri::State<'_, crate::AppState>) -> PlexAccountView {
+    account_view(&state.data_dir)
+}
+
+#[tauri::command]
+pub fn plex_account_save(
+    client_id: String,
+    token: Option<String>,
+    server_url: String,
+    server_name: String,
+    section_key: String,
+    section_title: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<PlexAccountView, String> {
+    remember(
+        &state.data_dir,
+        &client_id,
+        token.as_deref(),
+        &server_url,
+        &server_name,
+        &section_key,
+        &section_title,
+    )?;
+    Ok(account_view(&state.data_dir))
+}
+
+#[tauri::command]
+pub fn plex_account_forget(state: tauri::State<'_, crate::AppState>) -> Result<(), String> {
+    forget(&state.data_dir)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("awake-plex-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn account_survives_a_restart_and_keeps_the_token_out_of_the_metadata_file() {
+        let _guard = crate::vault::test_guard();
+        crate::vault::set_keychain_mirror(false);
+        let dir = temp_dir("account");
+        crate::vault::init(&dir);
+        remember(
+            &dir,
+            "abc-123-xyz",
+            Some("token-1"),
+            "https://nas.local:32400/",
+            "客厅",
+            "3",
+            "音乐",
+        )
+        .unwrap();
+        let view = account_view(&dir);
+        assert!(view.signed_in, "授权过就应该算已登录");
+        assert_eq!(view.server_url, "https://nas.local:32400");
+        assert_eq!(view.section_key, "3");
+        assert_eq!(view.section_title, "音乐");
+        let raw = std::fs::read_to_string(dir.join(ACCOUNT_FILE)).unwrap();
+        assert!(!raw.contains("token-1"), "Token 只应该待在凭据存储里");
+        assert_eq!(account_view(&dir).token, "token-1", "重启后仍然读得到 Token");
+        forget(&dir).unwrap();
+        assert!(!account_view(&dir).signed_in, "退出登录后不再算已登录");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn account_rejects_a_bad_token_and_sanitizes_the_section() {
+        let _guard = crate::vault::test_guard();
+        crate::vault::set_keychain_mirror(false);
+        let dir = temp_dir("account-bad");
+        crate::vault::init(&dir);
+        assert!(remember(&dir, "abc-123-xyz", Some("bad\ntoken"), "", "", "", "").is_err());
+        remember(
+            &dir,
+            "abc-123-xyz",
+            Some("good-token"),
+            "https://nas.local:32400",
+            "客厅",
+            "3; rm -rf /",
+            "音乐",
+        )
+        .unwrap();
+        assert_eq!(account_view(&dir).section_key, "3");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn resources_prefer_https_and_keep_shared_tokens() {
