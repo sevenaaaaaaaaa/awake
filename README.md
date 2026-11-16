@@ -6,7 +6,7 @@
 
 ## 下载
 
-- **[macOS 0.9.3（Intel + Apple Silicon 通用，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.3)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。[发行说明](docs/releases/v0.9.3.md)
+- **[macOS 0.9.3（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.3)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。这一版先出 arm64 包；通用包在构建机空闲后补，Intel Mac 暂时继续用 0.9.2。[发行说明](docs/releases/v0.9.3.md)
 - **[iOS 0.9.3 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.3)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.9.3.md)
 
 ## 0.9.3 · 加进来的东西，找得到、留得住
