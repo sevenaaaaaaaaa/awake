@@ -62,6 +62,7 @@ iOS 侧的相邻版本按 `gh release list` 核对过，别凭记忆：已发布
 | 项 | 症状 | 已试过的做法 | 需要什么才能推进 |
 | --- | --- | --- | --- |
 | iOS XCTest 跑不起来 | `xcodebuild test` / `test-without-building` 都会卡在起 test host：日志里只有命令行回显，随后出现 `DTServiceHubClient failed to bless service hub for simulator <device>` 与 `Mach error -308 (ipc/mig) server died`；无 `.xcresult` 产出 | 重启 `com.apple.CoreSimulator.CoreSimulatorService`、`simctl erase` 重建设备、换 iPhone 17 / iPhone 17 Pro / ProbeFresh 三台设备、`-parallel-testing-enabled NO`、先 `build-for-testing` 再 `test-without-building` | 本机 Xcode-beta（27A5228h）里**没有 Simulator.app**，模拟器 GUI 起不来，service hub 也就无法 bless。换一台装了完整 Xcode（含 Simulator.app）的机器，或在真机上跑 |
+| 推送 github.com 偶发不通 | `git push` 报 `Error in the HTTP2 framing layer`，`curl https://github.com/` 超时；此时 `api.github.com` 与 `codeload.github.com` 正常，`gh` 命令可用。原因是 DNS 偶尔把 `github.com` 解析到不通的地址（2026-11-17 出现过 `20.247.166.64`），恢复后解析为 `20.205.243.166` 即正常 | 重试、等 DNS 恢复、把 `github.com` 临时指向可用 IP（如 `140.82.121.4`）走本地转发；只影响 `github.com` 直连，不影响 `gh`（走 `api.github.com`） | 推送前先 `curl -o /dev/null -w '%{http_code}' https://github.com/` 探一下，200 再推 |
 
 这台机器上能证明的只有两件事，都要按字面理解：`xcodebuild build-for-testing` 输出 `** TEST BUILD SUCCEEDED **`（测试代码能编译），以及纯逻辑用 `swiftc` 独立编译后跑出 **12 项断言 / 0 失败**（`PlexScanValidation` 与 `LibraryImportIdentity` 的真实源码行，机械抽取，不手抄）。**这不等于 XCTest 通过。**
 
@@ -84,7 +85,7 @@ iOS 侧的相邻版本按 `gh release list` 核对过，别凭记忆：已发布
 | iOS | 同一个文件/文件夹重复导入会生成随机新副本。现在按标准化路径（`standardizedFileURL.resolvingSymlinksInPath`）做稳定身份，重复导入不新增记录、不新增缓存；文件夹重扫时只移除本次扫描中消失的成员 | `ios/Awake/Models.swift` |
 | iOS | 远程来源只能加不能删。现在每个 WebDAV/Plex/Telegram 来源都有「移除来源」（二次确认），曲目、凭据、按曲目命名的缓存文件一起清；持久化失败时内存状态、缓存文件与凭据一起回滚 | `ios/Awake/Models.swift`、`ios/Awake/SettingsViews.swift` |
 
-验证数字（2026-11-17，本机，0.9.4 树上重跑）：Rust `cargo test -p awake-app --lib` = **107 通过 / 0 失败 / 10 按需忽略**，退出码 0；前端 `npm test --prefix ui` = **25 通过 / 0 失败**（版本号四落点 = 0.9.4）；iOS `xcodebuild build` = `** BUILD SUCCEEDED **`，`build-for-testing` = `** TEST BUILD SUCCEEDED **`；纯逻辑 harness = 12 项断言 0 失败；**XCTest 未跑起来**，原因见 3.4，不能记为通过。0.9.4 是在这个缺口下按用户决定先发版的（决定记录见 crew 的 CRD 0002），缺口不因此消失：下一次在完整 Xcode 或真机上要补跑 `AwakeTests`。
+验证数字（2026-11-17，本机，0.9.4 树上重跑）：Rust `cargo test -p awake-app --lib` = **107 通过 / 0 失败 / 10 按需忽略**，退出码 0；前端 `npm test --prefix ui` = **25 通过 / 0 失败**（版本号四落点 = 0.9.4）；iOS `xcodebuild build` = `** BUILD SUCCEEDED **`，`build-for-testing` = `** TEST BUILD SUCCEEDED **`；纯逻辑 harness = 12 项断言 0 失败；**XCTest 未跑起来**，原因见 3.4，不能记为通过。0.9.4 是在这个缺口下按用户决定先发版的（2026-11-17，用户明确选择不等 XCTest），缺口不因此消失：下一次在完整 Xcode 或真机上要补跑 `AwakeTests`。
 
 ### 4.2 上一版遗留项已随 0.9.3 发出（2026-11-17 核对）
 
