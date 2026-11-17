@@ -29,4 +29,6 @@ iPhone / iPad，iOS 17+。未签名 IPA，需要自行重签后安装。这一�
 ## 已发布产物
 
 - tag `ios-v0.9.4`，GitHub Release 标记 **Pre-release**（未签名 IPA，需要自行重签）。
-- IPA 与 `.sha256` 见 Release 附件；本轮先发 tag 与说明，包在构建完成后补进 Release。
+- tag `ios-v0.9.4`（合并提交 `6c8d73d`）。
+- `Awake-0.9.4-ios-arm64-unsigned.ipa`，3.1 MB（3,129,729 字节），sha256 `87edf222…64125f4c`，同名 `.sha256` 一并上传。
+- 打包（2026-11-17 21:33 本机）：`bash Tools/build_ios_app.sh` 先 `xcodegen generate`（`ios/project.yml` 版本源已改到 0.9.4，再生出的 `project.pbxproj` 与提交一致，`git status` 干净），`xcodebuild archive` 的 `generic/platform=iOS` Release 构建通过，`Payload/Awake.app` 正常入包。
