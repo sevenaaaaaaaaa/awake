@@ -382,6 +382,7 @@ struct RemoteEntry {
 }
 final class SourceXML: NSObject, XMLParserDelegate {
   var rows: [RemoteEntry] = [], sections: [String] = []
+  var totalSize: Int?
   var failures = 0
   private var current: RemoteEntry?, field = "", text = ""
   func parse(_ data: Data) throws {
@@ -396,6 +397,7 @@ final class SourceXML: NSObject, XMLParserDelegate {
   ) {
     field = elementName.lowercased()
     text = ""
+    if field == "mediacontainer" { totalSize = Int(attributes["totalSize"] ?? "") }
     if field == "response" { current = RemoteEntry() }
     if field == "collection" { current?.isDirectory = true }
     if field == "directory", attributes["type"] == "artist", let key = attributes["key"] {
@@ -433,6 +435,20 @@ final class SourceXML: NSObject, XMLParserDelegate {
     field = ""
   }
 }
+enum PlexScanValidation {
+  static func pageAtLimitIsTruncated(
+    offset: Int, count: Int, totalSize: Int?, pageSize: Int = 500, limit: Int = 20000
+  ) -> Bool {
+    guard offset + pageSize >= limit, count == pageSize else { return false }
+    return totalSize.map { $0 > offset + count } ?? true
+  }
+
+  static func validate(sectionCount: Int, songCount: Int) throws {
+    guard sectionCount > 0 else { throw AppFailure("Plex 没有可读取的音乐库分区，旧曲库已保留。") }
+    guard songCount > 0 else { throw AppFailure("Plex 没有返回曲目，旧曲库已保留。") }
+  }
+}
+
 enum SourceService {
   static func request(_ url: URL, source: MusicSource, secret: String) -> URLRequest {
     var r = URLRequest(url: url)
@@ -483,9 +499,17 @@ enum SourceService {
       if !wanted.isEmpty && !xml.sections.contains(wanted) {
         throw AppFailure("Plex 音乐库分区不存在或已删除，请重新选择音乐库。")
       }
+      let selectedSections = xml.sections.filter { wanted.isEmpty || $0 == wanted }
+      guard !selectedSections.isEmpty else {
+        throw AppFailure("Plex 没有可读取的音乐库分区，旧曲库已保留。")
+      }
+      guard selectedSections.count <= 30 else {
+        throw AppFailure("Plex 音乐库分区超过扫描上限，旧曲库已保留。")
+      }
       var songs: [Song] = []
-      for section in xml.sections.prefix(30) where wanted.isEmpty || section == wanted {
+      for section in selectedSections {
         var offset = 0
+        var sectionCount = 0
         while offset < 20000 {
           let u = try api("library/sections/\(section)/all")
           var components = URLComponents(url: u, resolvingAgainstBaseURL: false)!
@@ -503,6 +527,9 @@ enum SourceService {
           } catch {
             throw AppFailure("Plex 曲目分页读取失败：\(error.localizedDescription)")
           }
+          if let total = page.totalSize, offset == 0, total == 0 {
+            throw AppFailure("Plex 音乐库“\(section)”没有返回曲目，旧曲库已保留。")
+          }
           for row in page.rows {
             _ = try Network.child(row.href, base: base, restrictPath: false)
             songs.append(
@@ -510,10 +537,19 @@ enum SourceService {
                 title: row.title, artist: row.artist, album: row.album, duration: row.duration,
                 sourceID: source.id, locator: row.href))
           }
+          sectionCount += page.rows.count
           if page.rows.count < 500 { break }
+          if PlexScanValidation.pageAtLimitIsTruncated(
+            offset: offset, count: page.rows.count, totalSize: page.totalSize) {
+            throw AppFailure("Plex 曲库超过当前扫描上限，结果不完整，旧曲库已保留。")
+          }
           offset += 500
         }
+        guard sectionCount > 0 else {
+          throw AppFailure("Plex 音乐库“\(section)”没有返回曲目，旧曲库已保留。")
+        }
       }
+      try PlexScanValidation.validate(sectionCount: selectedSections.count, songCount: songs.count)
       return songs
     }
     var root = base

@@ -37,6 +37,12 @@ struct PendingTrack: Identifiable, Codable, Equatable, Hashable {
   var album = ""
 }
 
+enum LibraryImportIdentity {
+  static func locator(for url: URL) -> String { url.standardizedFileURL.resolvingSymlinksInPath().path }
+  static func existingSongID(locator: String, songs: [Song]) -> String? { songs.first(where: { $0.locator == locator })?.id }
+  static func removedLocators(previous: [String], current: Set<String>) -> [String] { previous.filter { !current.contains($0) } }
+}
+
 struct Playlist: Identifiable, Codable, Equatable {
   var id = UUID().uuidString
   var name: String
@@ -253,6 +259,7 @@ struct LibraryState: Codable {
   var musicModel = "music_v1"
   /// 听书进度：key 为书（专辑键或单曲 ID）。
   var bookProgress: [String: BookProgress]?
+  var importedFolderPaths: [String: [String]]?
 }
 struct AppFailure: LocalizedError {
   var message: String
@@ -293,6 +300,17 @@ enum Secrets {
       }
     } else if status != errSecSuccess {
       throw AppFailure("系统钥匙串保存失败")
+    }
+  }
+  static func remove(_ account: String) throws {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: service,
+      kSecAttrAccount as String: account,
+    ]
+    let status = SecItemDelete(query as CFDictionary)
+    guard status == errSecSuccess || status == errSecItemNotFound else {
+      throw AppFailure("系统钥匙串凭据清理失败")
     }
   }
 }
@@ -348,12 +366,66 @@ enum Secrets {
       to: root.appendingPathComponent("library.json"), options: .atomic)
   }
   func save() { do { try persist() } catch { message = "保存失败：\(error.localizedDescription)" } }
+  func commit(_ next: LibraryState) throws {
+    let previous = state
+    state = next
+    do { try persist() } catch { state = previous; throw error }
+  }
   func localURL(_ song: Song) -> URL? {
     guard let name = song.file, URL(fileURLWithPath: name).lastPathComponent == name else {
       return nil
     }
     let u = music.appendingPathComponent(name)
     return FileManager.default.fileExists(atPath: u.path) ? u : nil
+  }
+  func removeSource(_ sourceID: String) throws {
+    guard let source = state.sources.first(where: { $0.id == sourceID }),
+      ["webdav", "plex", "telegram"].contains(source.kind)
+    else { throw AppFailure("找不到可移除的远程来源") }
+    let removed = state.songs.filter { $0.sourceID == sourceID }
+    let previous = state
+    let credential = try Secrets.get("source." + sourceID)
+    var next = state
+    next.sources.removeAll { $0.id == sourceID }
+    next.songs.removeAll { $0.sourceID == sourceID }
+    let removedIDs = Set(removed.map(\.id))
+    next.playlists = next.playlists?.map { playlist in
+      var copy = playlist
+      copy.songIDs.removeAll { removedIDs.contains($0) }
+      return copy
+    }
+    next.listens.removeAll { removedIDs.contains($0.songID) }
+    next.bookProgress = next.bookProgress?.filter { _, progress in
+      guard let songID = progress.songID else { return true }
+      return !removedIDs.contains(songID)
+    }
+    let folders = next.importedFolderPaths ?? [:]
+    next.importedFolderPaths = folders.reduce(into: [:]) { result, entry in
+      let kept = entry.value.filter { locator in !removed.contains(where: { $0.locator == locator }) }
+      if !kept.isEmpty { result[entry.key] = kept }
+    }
+    let files = removed.compactMap { localURL($0) }
+    let stagedRoot = root.appendingPathComponent(".source-removal-\(UUID().uuidString)", isDirectory: true)
+    var staged: [(URL, URL)] = []
+    do {
+      try FileManager.default.createDirectory(at: stagedRoot, withIntermediateDirectories: true)
+      for (index, file) in files.enumerated() {
+        let backup = stagedRoot.appendingPathComponent(String(index))
+        try FileManager.default.moveItem(at: file, to: backup)
+        staged.append((file, backup))
+      }
+      try commit(next)
+      try Secrets.remove("source." + sourceID)
+      for (_, backup) in staged { try? FileManager.default.removeItem(at: backup) }
+      try FileManager.default.removeItem(at: stagedRoot)
+    } catch {
+      if credential.isEmpty == false { try? Secrets.set(credential, account: "source." + sourceID) }
+      for (original, backup) in staged.reversed() { try? FileManager.default.moveItem(at: backup, to: original) }
+      state = previous
+      try? persist()
+      try? FileManager.default.removeItem(at: stagedRoot)
+      throw error
+    }
   }
   func activeChain(route: String) -> ListeningChain? {
     state.chains.first { $0.id == state.activeChains[route] && $0.routeUID == route }
@@ -447,7 +519,37 @@ enum Secrets {
       guard !urls.isEmpty else {
         throw AppFailure("这个文件夹里没有支持的音频文件（mp3 / m4a / flac / wav / aiff / alac / caf）")
       }
+      let folder = LibraryImportIdentity.locator(for: url)
+      let currentLocators = Set(urls.map(LibraryImportIdentity.locator))
+      let previousLocators = state.importedFolderPaths?[folder] ?? []
+      let removed = Set(LibraryImportIdentity.removedLocators(previous: previousLocators, current: currentLocators))
+      let oldState = state
+      let oldSongs = state.songs
+      state.songs.removeAll { removed.contains($0.locator) && $0.sourceID == nil }
+      state.importedFolderPaths = state.importedFolderPaths ?? [:]
+      state.importedFolderPaths?[folder] = urls.map(LibraryImportIdentity.locator)
       await importFiles(urls, report: true)
+      let importedAll = currentLocators.allSatisfy { locator in
+        state.songs.contains(where: { $0.locator == locator })
+      }
+      guard importedAll else {
+        state = oldState
+        throw AppFailure("文件夹存在未成功导入的音频；已恢复原曲库，请修复文件后再试。")
+      }
+      do { try persist() } catch { state = oldState; throw error }
+      let removedIDs = Set(oldSongs.filter { removed.contains($0.locator) }.map(\.id))
+      if !removedIDs.isEmpty {
+        state.playlists = state.playlists?.map { playlist in
+          var value = playlist
+          value.songIDs.removeAll { removedIDs.contains($0) }
+          return value
+        }
+        state.listens.removeAll { removedIDs.contains($0.songID) }
+        try persist()
+        for song in oldSongs where removedIDs.contains(song.id) {
+          if let cached = localURL(song) { try? FileManager.default.removeItem(at: cached) }
+        }
+      }
     } catch { message = "导入失败：" + error.localizedDescription }
   }
   nonisolated static func audioFiles(in url: URL) throws -> [URL] {
@@ -475,6 +577,8 @@ enum Secrets {
       let access = url.startAccessingSecurityScopedResource()
       defer { if access { url.stopAccessingSecurityScopedResource() } }
       do {
+        let locator = LibraryImportIdentity.locator(for: url)
+        if LibraryImportIdentity.existingSongID(locator: locator, songs: state.songs) != nil { continue }
         let ext = url.pathExtension.lowercased()
         guard ["mp3", "m4a", "aac", "wav", "aif", "aiff", "caf", "flac", "alac"].contains(ext)
         else { throw AppFailure("不支持的文件：\(url.lastPathComponent)") }
@@ -485,6 +589,7 @@ enum Secrets {
         }.value
         do {
           var song = try await Self.readSong(dest, file: name)
+          song.locator = locator
           song.addedAt = Date()
           song.originalFilename = url.lastPathComponent
           let folder = url.deletingLastPathComponent().lastPathComponent

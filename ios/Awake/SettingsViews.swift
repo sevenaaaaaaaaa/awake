@@ -9,6 +9,8 @@ struct SettingsView: View {
   @State private var musicKey = ""
   @State private var shareFile: SharedFile?
   @State private var sourceSheet = false
+  @State private var sourceToRemove: MusicSource?
+  @State private var sourceRemovalError = ""
   @State private var backupCreate = false
   @State private var backupCandidate: BackupCandidate?
   @State private var restoredBackup: BackupPreview?
@@ -57,7 +59,13 @@ struct SettingsView: View {
             Text("\(s.kind.uppercased()) · \(store.state.songs.filter{$0.sourceID==s.id}.count) 首")
               .font(.caption).foregroundStyle(.secondary)
             if s.kind == "telegram" { TelegramSponsoredView(source: s) }
-            Button("刷新来源") { Task { await refresh(s) } }.disabled(store.busy)
+            HStack {
+              Button("刷新来源") { Task { await refresh(s) } }.disabled(store.busy)
+              Spacer()
+              Button("移除来源", systemImage: "trash", role: .destructive) { sourceToRemove = s }
+                .disabled(store.busy)
+                .accessibilityIdentifier("removeSource_\(s.id)")
+            }
           }
         }
         if store.busy {
@@ -142,6 +150,20 @@ struct SettingsView: View {
     }
     .navigationTitle("设置")
     .sheet(isPresented: $sourceSheet) { SourceEditor() }
+    .alert("移除来源？", isPresented: Binding(get: { sourceToRemove != nil }, set: { if !$0 { sourceToRemove = nil } })) {
+      Button("取消", role: .cancel) { sourceToRemove = nil }
+      Button("移除来源及已缓存曲目", role: .destructive) {
+        guard let source = sourceToRemove else { return }
+        do {
+          if store.state.songs.contains(where: { $0.sourceID == source.id && $0.id == player.song?.id }) { player.stop() }
+          try store.removeSource(source.id)
+          store.message = "已移除来源及其缓存曲目"
+        } catch { store.message = "移除失败：\(error.localizedDescription)" }
+        sourceToRemove = nil
+      }
+    } message: {
+      if let source = sourceToRemove { Text("将移除 \(source.name)、关联曲目和 Awake 缓存音频；手动导入的曲目会保留。") }
+    }
     .sheet(item: $shareFile) { file in ShareView(url: file.url) }
     .sheet(isPresented: $backupCreate) { BackupCreateSheet() }
     .sheet(item: $backupCandidate) { candidate in
