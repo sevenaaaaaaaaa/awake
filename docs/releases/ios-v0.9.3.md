@@ -18,3 +18,9 @@ iPhone / iPad，iOS 17+。未签名 IPA，需要自行重签后安装。这一�
 - 构建：`Tools/build_ios_app.sh` 产出 `dist-ios/Awake-0.9.3-ios-arm64-unsigned.ipa`（3.1 MB），sha256 `9246a1d1…541d`。
 - 安装包已复制到 iCloud Drive 根目录，便于在手机上取用。
 - 未验证：真机重签后的安装与导入交互（需要开发者证书与真机）。
+
+## 已发布产物（GitHub Release ios-v0.9.3，标记为 Pre-release）
+
+- `Awake-0.9.3-ios-arm64-unsigned.ipa`，及其 `.sha256`。未签名，需要自行重签后安装。
+- 标记 Pre-release 的原因：没有开发者证书，无法提供一个可直接安装的包；功能验证只到 build 与安装包产出。
+- 相邻的 iOS 发布按 `gh release list` 核对：`ios-v0.9.2` 与 `ios-v0.9.3` 已发布（都标 Pre-release），再往前是 `ios-v0.8.1`。`ios-v0.9.0` 与 `ios-v0.9.1` **既没有发布也没有 tag**。

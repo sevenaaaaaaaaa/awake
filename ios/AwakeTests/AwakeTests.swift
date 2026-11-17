@@ -89,6 +89,133 @@ final class AwakeTests: XCTestCase {
     XCTAssertThrowsError(try TelegramService.request(base: "https://example.test/root/", path: "../outside", secret: "secret"))
   }
 
+  func testLocalImportIdentityDeduplicatesCanonicalURLs() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let audio = root.appendingPathComponent("track.mp3")
+    try Data([1]).write(to: audio)
+    let locator = LibraryImportIdentity.locator(for: audio)
+    let alias = root.appendingPathComponent("folder/../track.mp3")
+    XCTAssertEqual(locator, LibraryImportIdentity.locator(for: alias))
+    let song = Song(title: "track", file: "cached.mp3", locator: locator)
+    XCTAssertEqual(LibraryImportIdentity.existingSongID(locator: locator, songs: [song]), song.id)
+    XCTAssertEqual(LibraryImportIdentity.removedLocators(previous: [locator, "/gone.mp3"], current: [locator]), ["/gone.mp3"])
+  }
+
+  func testFolderImportIdentityDeduplicatesAndFindsRemovedMembers() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let original = root.appendingPathComponent("one.mp3")
+    try Data([1]).write(to: original)
+    let locator = LibraryImportIdentity.locator(for: original)
+    let song = Song(title: "one", file: "cached.mp3", locator: locator)
+    XCTAssertEqual(LibraryImportIdentity.existingSongID(locator: locator, songs: [song]), song.id)
+    let removed = LibraryImportIdentity.removedLocators(previous: [locator, "missing"], current: [])
+    XCTAssertEqual(removed, [locator, "missing"])
+  }
+
+  func testStableLocalImportIdentityAndFolderMembership() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("track.mp3")
+    try Data([1]).write(to: file)
+    let locator = LibraryImportIdentity.locator(for: file)
+    XCTAssertEqual(locator, LibraryImportIdentity.locator(for: root.appendingPathComponent("folder/../track.mp3")))
+    let song = Song(title: "track", file: "cached.mp3", locator: locator)
+    XCTAssertEqual(LibraryImportIdentity.existingSongID(locator: locator, songs: [song]), song.id)
+    XCTAssertEqual(LibraryImportIdentity.removedLocators(previous: [locator, "removed"], current: []), [locator, "removed"])
+  }
+
+  @MainActor func testRemovingSourceRollsBackWhenLibraryPathCannotPersist() throws {
+    let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let root = parent.appendingPathComponent("store", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: parent) }
+    let store = MobileStore(root: root)
+    let source = MusicSource(id: "source-test", name: "fixture", kind: "plex", url: "https://plex.example")
+    var song = Song(title: "one", file: "one.mp3", sourceID: source.id, locator: "plex://one")
+    song.id = "song-test"
+    store.state.sources = [source]
+    store.state.songs = [song]
+    try Data([1, 2, 3]).write(to: store.music.appendingPathComponent("one.mp3"))
+    let tokenSet = (try? Secrets.set("token", account: "source.source-test")) != nil
+    try FileManager.default.createDirectory(
+      at: root.appendingPathComponent("library.json", isDirectory: true),
+      withIntermediateDirectories: true)
+    XCTAssertThrowsError(try store.removeSource(source.id))
+    XCTAssertEqual(store.state.sources.count, 1)
+    XCTAssertEqual(store.state.songs.count, 1)
+    XCTAssertEqual(store.state.songs.first?.id, "song-test")
+    XCTAssertEqual(store.state.songs.first?.sourceID, "source-test")
+    XCTAssertEqual(try Data(contentsOf: store.music.appendingPathComponent("one.mp3")), Data([1, 2, 3]))
+    if tokenSet { XCTAssertEqual(try Secrets.get("source.source-test"), "token") }
+    try? Secrets.remove("source.source-test")
+  }
+
+  @MainActor func testRepeatedImportDeduplicatesByStableLocator() async throws {
+    let input = try directory()
+    let output = try directory()
+    defer { try? FileManager.default.removeItem(at: input); try? FileManager.default.removeItem(at: output) }
+    try wav(input.appendingPathComponent("one.wav"))
+    let store = MobileStore(root: output)
+    await store.importAudioFolder(input)
+    let first = try XCTUnwrap(store.state.songs.first)
+    XCTAssertEqual(first.locator, LibraryImportIdentity.locator(for: input.appendingPathComponent("one.wav")))
+    await store.importAudioFolder(input)
+    XCTAssertEqual(store.state.songs.count, 1)
+    XCTAssertEqual(store.state.songs.first?.id, first.id)
+    let cached = try FileManager.default.contentsOfDirectory(at: store.music, includingPropertiesForKeys: nil)
+      .filter { $0.pathExtension == "wav" }
+    XCTAssertEqual(cached.count, 1)
+  }
+
+  @MainActor func testRemovingSourceCleansTracksCacheAndCredential() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = MobileStore(root: root)
+    let source = MusicSource(
+      id: "source-clean", name: "fixture", kind: "webdav", url: "https://dav.example")
+    var remote = Song(title: "remote", file: "remote.mp3", sourceID: source.id)
+    remote.id = "song-remote"
+    remote.locator = "https://dav.example/remote.mp3"
+    var local = Song(title: "local", file: "local.mp3")
+    local.id = "song-local"
+    store.state.sources = [source]
+    store.state.songs = [remote, local]
+    store.state.playlists = [Playlist(name: "mix", songIDs: ["song-remote", "song-local"])]
+    try Data([9, 9]).write(to: store.music.appendingPathComponent("remote.mp3"))
+    try Data([7, 7]).write(to: store.music.appendingPathComponent("local.mp3"))
+    let tokenSet = (try? Secrets.set("token", account: "source.source-clean")) != nil
+    try store.removeSource(source.id)
+    XCTAssertEqual(store.state.sources.count, 0)
+    XCTAssertEqual(store.state.songs.count, 1)
+    XCTAssertEqual(store.state.songs.first?.id, "song-local")
+    XCTAssertEqual(store.state.playlists?.first?.songIDs, ["song-local"])
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: store.music.appendingPathComponent("remote.mp3").path))
+    XCTAssertTrue(
+      FileManager.default.fileExists(atPath: store.music.appendingPathComponent("local.mp3").path))
+    if tokenSet { XCTAssertEqual(try Secrets.get("source.source-clean"), "") }
+    try? Secrets.remove("source.source-clean")
+  }
+
+  func testPlexScanRejectsTruncatedPagination() throws {
+    XCTAssertFalse(PlexScanValidation.pageAtLimitIsTruncated(offset: 19_500, count: 500, totalSize: 20_000))
+    XCTAssertTrue(PlexScanValidation.pageAtLimitIsTruncated(offset: 19_500, count: 500, totalSize: 20_001))
+    XCTAssertTrue(PlexScanValidation.pageAtLimitIsTruncated(offset: 19_500, count: 500, totalSize: nil))
+    XCTAssertFalse(PlexScanValidation.pageAtLimitIsTruncated(offset: 19_500, count: 499, totalSize: 20_001))
+  }
+
+  func testPlexScanRejectsEmptyOrInvalidLibrary() throws {
+    XCTAssertThrowsError(try PlexScanValidation.validate(sectionCount: 0, songCount: 0))
+    XCTAssertThrowsError(try PlexScanValidation.validate(sectionCount: 1, songCount: 0))
+    XCTAssertNoThrow(try PlexScanValidation.validate(sectionCount: 1, songCount: 1))
+  }
+
   @MainActor func testAudioFolderIgnoresSymlinksAndNonAudio() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
