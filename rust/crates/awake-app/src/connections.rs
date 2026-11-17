@@ -176,11 +176,68 @@ pub fn remove_source(id: String, state: tauri::State<'_, AppState>) -> Result<us
     Ok(removed)
 }
 #[tauri::command]
+pub(crate) fn refresh_result_is_current(
+    current: Option<&MediaSource>,
+    scanned: &MediaSource,
+) -> Result<(), String> {
+    let current = current.ok_or("来源已移除，已放弃过期扫描结果")?;
+    if current.id != scanned.id
+        || current.name != scanned.name
+        || current.kind != scanned.kind
+        || current.url != scanned.url
+        || current.username != scanned.username
+        || current.password_key != scanned.password_key
+        || current.trust_self_signed != scanned.trust_self_signed
+        || current.section != scanned.section
+        || current.files != scanned.files
+        || current.last_scan != scanned.last_scan
+    {
+        return Err("来源已更改，已放弃过期扫描结果".into());
+    }
+    Ok(())
+}
+
+fn commit_refresh_result(
+    source: MediaSource,
+    tracks: Vec<Track>,
+    state: &AppState,
+) -> Result<usize, String> {
+    let count = tracks.len();
+    let mut lib = state.library.lock();
+    let current = lib.snapshot.sources.iter().find(|s| s.id == source.id);
+    refresh_result_is_current(current, &source)?;
+    let mut source = current.cloned().ok_or("来源已移除，已放弃过期扫描结果")?;
+    let previous = lib.snapshot.clone();
+    let old = lib.tracks_by_locator(&source.id);
+    let mut tracks = tracks;
+    for track in &mut tracks {
+        if let Some(existing) = old.get(&track.locator) {
+            track.favorite = existing.favorite;
+            track.play_count = existing.play_count;
+            track.last_played = existing.last_played;
+            track.added_at = existing.added_at;
+        }
+    }
+    lib.replace_source_tracks(&source.id, tracks);
+    source.track_count = count;
+    source.last_scan = Some(awake_core::models::now_ms());
+    if let Some(current) = lib.snapshot.sources.iter_mut().find(|s| s.id == source.id) {
+        *current = source;
+    }
+    lib.snapshot.scanned_at = Some(awake_core::models::now_ms());
+    if let Err(error) = lib.save() {
+        lib.snapshot = previous;
+        return Err(error.to_string());
+    }
+    Ok(count)
+}
+
+#[tauri::command]
 pub async fn refresh_remote_source(
     id: String,
     state: State<'_, AppState>,
 ) -> Result<usize, String> {
-    let mut source = state
+    let source = state
         .library
         .lock()
         .snapshot
@@ -194,11 +251,7 @@ pub async fn refresh_remote_source(
         tauri::async_runtime::spawn_blocking(move || access.scan().map_err(|e| e.to_string()))
             .await
             .map_err(|e| e.to_string())??;
-    source.track_count = tracks.len();
-    source.last_scan = Some(awake_core::models::now_ms());
-    let count = tracks.len();
-    save(source, tracks, &state)?;
-    Ok(count)
+    commit_refresh_result(source, tracks, &state)
 }
 
 #[derive(Clone, Default, serde::Serialize)]
@@ -377,6 +430,19 @@ pub fn start_refresh_worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn manual_refresh_rejects_removed_or_reconfigured_source() {
+        let source = MediaSource::new(SourceKind::Plex, "Plex", "https://plex.example:32400");
+        assert!(refresh_result_is_current(None, &source).unwrap_err().contains("已移除"));
+
+        let mut changed = source.clone();
+        changed.section = "2".into();
+        let error = refresh_result_is_current(Some(&changed), &source).unwrap_err();
+        assert!(error.contains("已更改"));
+
+        assert!(refresh_result_is_current(Some(&source), &source).is_ok());
+    }
+
     #[test]
     fn background_scan_updates_revision_and_failure_preserves_old_library() {
         for fail in [false, true] {
