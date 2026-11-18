@@ -2,6 +2,7 @@ import { curateLocally } from "./agent";
 import { APP_VERSION } from "./version";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { call, desktop, importAudio } from "./bridge";
+import { configurePluginHost, resolvePluginTrack } from "./plugins";
 import {
   emptyTaste,
   frequencies,
@@ -274,6 +275,32 @@ export function useAwake() {
       },
     });
   }
+  /** 插件来源的曲目 id 集合：这些曲目播放前必须先用插件解析出直连地址。 */
+  const pluginSourceIds = computed(
+    () => new Set(sources.value.filter((source) => source.kind === "plugin").map((source) => source.id)),
+  );
+  /**
+   * 播放前解析：队列里所有插件曲目逐条调 getMediaSource。
+   * 当前这首解析失败就整体拦下（给出可读原因）；队列里后面的失败交给后端跳过。
+   */
+  async function resolveForPlayback(list: Track[]): Promise<{
+    resolved: Record<string, { url: string; headers: [string, string][] }>;
+    blocked: string | null;
+  }> {
+    const resolved: Record<string, { url: string; headers: [string, string][] }> = {};
+    if (!desktop || !pluginSourceIds.value.size) return { resolved, blocked: null };
+    let blocked: string | null = null;
+    for (const track of list) {
+      if (!pluginSourceIds.value.has(track.source_id)) continue;
+      try {
+        resolved[track.id] = await resolvePluginTrack(track.source_id, track.locator);
+      } catch (error) {
+        const message = `《${track.title}》暂时无法播放：${String(error).replace(/^Error: /, "")}`;
+        if (track.id === list[0]?.id) blocked = message;
+      }
+    }
+    return { resolved, blocked };
+  }
   async function start(t: Track, list?: Track[]) {
     if (transition) return;
     transition = true;
@@ -283,16 +310,23 @@ export function useAwake() {
       if (!queue.value.some((x) => x.id === t.id)) queue.value = [t];
       queueIndex.value = queue.value.findIndex((x) => x.id === t.id);
       backendQueueBase = queueIndex.value;
+      const playbackQueue = queue.value.slice(queueIndex.value);
+      const { resolved, blocked } = await resolveForPlayback(playbackQueue);
+      if (blocked) {
+        fault.value = blocked;
+        return;
+      }
       await call("play_track", {
         req: {
           source_id: t.source_id,
           locator: t.locator,
           gains: [...gains.value],
           queue: desktop
-            ? queue.value
-                .slice(queueIndex.value + 1)
-                .map((t) => ({ source_id: t.source_id, locator: t.locator }))
+            ? playbackQueue
+                .slice(1)
+                .map((x) => ({ source_id: x.source_id, locator: x.locator }))
             : [],
+          resolved,
         },
       });
       now.value = t;
@@ -425,15 +459,19 @@ export function useAwake() {
         if (saved) toast(`已恢复 ${info.name} 的听感`);
         if (outputChanged && now.value && playing.value && desktop) {
           const position = playback.value.position;
+          const list = queue.value.slice(queueIndex.value);
+          // 换输出设备会重建后端队列；插件曲目要重新解析地址。
+          const { resolved } = await resolveForPlayback(list);
           await call("play_track", {
             req: {
               source_id: now.value.source_id,
               locator: now.value.locator,
               gains: [...gains.value],
               continuation: true,
-              queue: queue.value
-                .slice(queueIndex.value + 1)
-                .map((t) => ({ source_id: t.source_id, locator: t.locator })),
+              queue: list
+                .slice(1)
+                .map((track) => ({ source_id: track.source_id, locator: track.locator })),
+              resolved,
             },
           });
           backendQueueBase = queueIndex.value;
@@ -598,6 +636,10 @@ export function useAwake() {
     });
   }
   async function refreshSource(source: Source) {
+    if (source.kind === "plugin") {
+      toast("插件来源按搜索入库，没有目录可扫描；请在来源卡片里点「搜索并入库」");
+      return;
+    }
     if (["webdav", "plex", "telegram"].includes(source.kind)) {
       busy.value = true;
       await run(async () => {
@@ -661,6 +703,13 @@ export function useAwake() {
     await run(() => call("set_volume", { volume: volume.value }));
   }
   onMounted(async () => {
+    if (desktop) {
+      // 插件宿主：读数据目录里的插件文件 + 代发 HTTP（WebView 直连会被 CORS 拦住）。
+      configurePluginHost({
+        readCode: (sourceId) => call<string>("read_plugin_source", { id: sourceId }),
+        http: (request) => call("plugin_http", { req: request }),
+      });
+    }
     await run(refresh);
     if (desktop)
       await run(async () => {

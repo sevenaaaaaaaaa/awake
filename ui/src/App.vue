@@ -21,6 +21,8 @@ import PlaylistImport from "./PlaylistImport.vue";
 import DataTransfer from "./DataTransfer.vue";
 import BooksView from "./BooksView.vue";
 import WeeklySummary from "./WeeklySummary.vue";
+import PluginSearch from "./PluginSearch.vue";
+import { invalidatePlugin, validatePluginCode } from "./plugins";
 import { useAwake } from "./useAwake";
 import { call, desktop } from "./bridge";
 import {
@@ -176,6 +178,49 @@ const sourceKind = ref("local"),
   sourceName = ref(""),
   sourceUsername = ref(""),
   sourceSecret = ref("");
+/** 网络音乐插件（枪弹分离）：选中的插件代码、文件名与试运行结果。 */
+const pluginCode = ref(""),
+  pluginFileName = ref(""),
+  pluginPlatform = ref(""),
+  pluginError = ref("");
+/** 正在搜索的插件来源：非空时打开搜索面板。 */
+const pluginSearchSource = ref<Source | null>(null);
+function resetPluginDraft() {
+  pluginCode.value = "";
+  pluginFileName.value = "";
+  pluginPlatform.value = "";
+  pluginError.value = "";
+}
+async function readPluginFile(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  resetPluginDraft();
+  if (!file) return;
+  if (file.size > 512 * 1024) {
+    pluginError.value = "插件文件超过 512 KB，请确认这是音乐插件";
+    input.value = "";
+    return;
+  }
+  try {
+    const code = await file.text();
+    const info = validatePluginCode(code);
+    pluginCode.value = code;
+    pluginFileName.value = file.name;
+    pluginPlatform.value = info.platform || "未命名插件";
+    if (!info.hasSearch) {
+      pluginError.value = "这个插件没有 search 接口，只能解析固定来源";
+    }
+  } catch (error) {
+    pluginError.value = String(error).replace(/^Error: /, "");
+  }
+  input.value = "";
+}
+async function openPluginSearch(source: Source) {
+  pluginSearchSource.value = source;
+}
+async function onPluginImported() {
+  await s.refresh();
+}
 const correctionName = ref(""),
   measurementSource = ref(""),
   correctionTarget = ref(""),
@@ -199,6 +244,7 @@ const sourceLabel = (kind: string) =>
     webdav: "WebDAV",
     plex: "Plex",
     telegram: "Telegram 个人媒体库",
+    plugin: "网络音乐插件",
   })[kind] || kind;
 const telegramReady = computed(() => /\/v1\/libraries\/[a-f0-9]{24}\/?$/.test(sourcePath.value));
 const activeTelegramSource = computed(() => s.sources.find(source => source.id === s.now?.source_id && source.kind === "telegram"));
@@ -549,6 +595,31 @@ async function importSourceConfig(event: Event) {
 }
 async function connectSource() {
   if (sourceKind.value === "telegram" && !telegramReady.value) { s.fault = "请先选择 Telegram 频道或收藏夹"; return; }
+  if (sourceKind.value === "plugin") {
+    if (!pluginCode.value) {
+      s.fault = "请先选择一个插件文件（.js，MusicFree 兼容）";
+      return;
+    }
+    s.busy = true;
+    await s.run(async () => {
+      // 试运行一次：坏插件当场报错，不会把半截来源写进曲库。
+      validatePluginCode(pluginCode.value);
+      const imported = await call<{ id: string; name: string }>("import_plugin", {
+        code: pluginCode.value,
+        name: sourceName.value.trim() || null,
+      });
+      // 同一来源重新导入 = 更新插件：丢掉沙箱缓存，下一次搜索用新代码。
+      invalidatePlugin(imported.id);
+      await s.refresh();
+      sourceOpen.value = false;
+      s.toast(`插件来源已添加：${imported.name}，先搜索再入库`);
+      resetPluginDraft();
+      const source = s.sources.find((item) => item.id === imported.id);
+      if (source) pluginSearchSource.value = source;
+    });
+    s.busy = false;
+    return;
+  }
   if (sourceKind.value === "local" || sourceKind.value === "smb") {
     // 先验路径，再扫描：路径形态不对或权限被拒时，直接说清楚原因。
     const probe = await checkSourcePath();
@@ -2123,11 +2194,15 @@ onUnmounted(() => {
                 <span class="subtle-badge">{{ sourceLabel(source.kind) }}</span>
                 <h2>{{ source.name }}</h2>
                 <p class="source-path">
-                  {{ source.url
-                  }}<template v-if="source.files?.length">
-                    · {{ source.files.length }} 个文件（原地读取）</template
-                  ><template v-else-if="source.section">
-                    · 音乐库 {{ source.section }}</template
+                  <template v-if="source.kind === 'plugin'"
+                    >插件文件 · 搜索入库</template
+                  ><template v-else
+                    >{{ source.url
+                    }}<template v-if="source.files?.length">
+                      · {{ source.files.length }} 个文件（原地读取）</template
+                    ><template v-else-if="source.section">
+                      · 音乐库 {{ source.section }}</template
+                    ></template
                   >
                 </p>
                 <TelegramSponsored v-if="source.kind === 'telegram'" :source-id="source.id" />
@@ -2137,7 +2212,7 @@ onUnmounted(() => {
                     s.sourceStatuses[source.id].error
                   }}
                 </p>
-                <label class="cloud-option"
+                <label v-if="source.kind !== 'plugin'" class="cloud-option"
                   ><input
                     type="checkbox"
                     :checked="source.enabled !== false"
@@ -2153,6 +2228,14 @@ onUnmounted(() => {
               </div>
               <div class="source-actions">
                 <button
+                  v-if="source.kind === 'plugin'"
+                  class="button primary"
+                  :disabled="!desktop"
+                  @click="openPluginSearch(source)"
+                >
+                  <Icon name="search" />搜索并入库
+                </button>
+                <button
                   class="button"
                   :disabled="!source.track_count"
                   @click="openSourceLibrary(source.id)"
@@ -2160,6 +2243,7 @@ onUnmounted(() => {
                   <Icon name="list" />查看曲目
                 </button>
                 <button
+                  v-if="source.kind !== 'plugin'"
                   class="button"
                   :disabled="s.busy || !desktop"
                   @click="s.refreshSource(source)"
@@ -2955,6 +3039,7 @@ onUnmounted(() => {
               <option value="webdav">WebDAV</option>
               <option value="plex">Plex</option>
               <option value="telegram">Telegram 个人媒体库</option>
+              <option value="plugin">网络音乐插件（枪弹分离 JS）</option>
               <option value="rss">RSS / Atom 元数据匹配</option>
             </select></label
           >
@@ -2963,22 +3048,24 @@ onUnmounted(() => {
               v-model="sourceName"
               placeholder="可选，给它一个好认的名字"
           /></label>
-          <label for="source-path">{{
-            ["local", "smb"].includes(sourceKind)
-              ? "音乐文件夹完整路径"
-              : "服务器地址"
-          }}</label>
-          <input
-            id="source-path"
-            v-model="sourcePath"
-            :placeholder="
-              ['local', 'smb'].includes(sourceKind)
-                ? '/Volumes/我的音乐'
-                : 'https://你的服务器/音乐目录/'
-            "
-            required
-            @blur="checkSourcePath"
-          />
+          <template v-if="sourceKind !== 'plugin'">
+            <label for="source-path">{{
+              ["local", "smb"].includes(sourceKind)
+                ? "音乐文件夹完整路径"
+                : "服务器地址"
+            }}</label>
+            <input
+              id="source-path"
+              v-model="sourcePath"
+              :placeholder="
+                ['local', 'smb'].includes(sourceKind)
+                  ? '/Volumes/我的音乐'
+                  : 'https://你的服务器/音乐目录/'
+              "
+              required
+              @blur="checkSourcePath"
+            />
+          </template>
           <p
             v-if="['local', 'smb'].includes(sourceKind) && sourceProbe"
             :class="sourceProbe.audio_count ? 'muted' : 'job-error'"
@@ -3003,7 +3090,27 @@ onUnmounted(() => {
           <p v-if="['local', 'smb'].includes(sourceKind)" class="muted">
             也可以直接把文件夹或音频文件拖进窗口。文件会原地读取，不复制、不移动。
           </p>
-          <template v-else
+          <div v-if="sourceKind === 'plugin'" class="plugin-pick">
+            <label
+              >插件文件（.js，MusicFree 兼容）<input
+                type="file"
+                accept=".js,application/javascript,text/javascript"
+                :disabled="s.busy"
+                @change="readPluginFile"
+            /></label>
+            <p v-if="pluginFileName" class="muted">
+              已选择：{{ pluginFileName
+              }}<template v-if="pluginPlatform"> · {{ pluginPlatform }}</template>
+            </p>
+            <p v-if="pluginError" class="job-error" role="alert">
+              {{ pluginError }}
+            </p>
+            <p class="muted">
+              枪弹分离：插件是独立的 JS 文件，定义搜索与解析；Awake
+              只负责运行播放器与代发请求。只导入你信任来源的插件，添加后点「搜索并入库」挑歌。
+            </p>
+          </div>
+          <template v-if="!['local', 'smb', 'plugin'].includes(sourceKind)"
             ><label v-if="!['plex', 'telegram'].includes(sourceKind)"
               >账号<input
                 v-model="sourceUsername"
@@ -3140,8 +3247,15 @@ onUnmounted(() => {
           </p>
           <label v-if="desktop">导入个人连接配置（JSON / XML / TXT）<input type="file" accept=".json,.xml,.txt" :disabled="s.busy" @change="importSourceConfig" /></label>
           <p v-if="sourceConfigError" class="job-error" role="alert">{{ sourceConfigError }}</p>
-          <button class="button primary" :disabled="s.busy || (sourceKind === 'telegram' && !telegramReady)">
-            {{ s.busy ? "正在连接曲库…" : "连接曲库" }}
+          <button
+            class="button primary"
+            :disabled="
+              s.busy ||
+              (sourceKind === 'telegram' && !telegramReady) ||
+              (sourceKind === 'plugin' && !pluginCode)
+            "
+          >
+            {{ s.busy ? "正在连接曲库…" : sourceKind === 'plugin' ? "添加插件来源" : "连接曲库" }}
           </button>
         </form>
         <form v-else-if="saveOpen" @submit.prevent="saveList">
@@ -3226,6 +3340,13 @@ onUnmounted(() => {
       :scan-folder="rescanForImport"
       @close="importOpen = false"
       @created="onPlaylistImported"
+    />
+    <PluginSearch
+      v-if="pluginSearchSource"
+      :source="pluginSearchSource"
+      @close="pluginSearchSource = null"
+      @toast="s.toast"
+      @imported="onPluginImported"
     />
     <SwipeMode
       v-if="swipeOpen && s.now"

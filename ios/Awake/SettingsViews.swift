@@ -230,26 +230,10 @@ struct SettingsView: View {
     store.busy = true
     defer { store.busy = false }
     do {
-      let rows = try await SourceService.scan(s, secret: Secrets.get("source." + s.id))
+      let rows = try await SourceService.scan(
+        s, secret: Secrets.get("source." + s.id), artwork: store.artworkDirectory)
       let old = store.state.songs.filter { $0.sourceID == s.id }
-      let merged = rows.map { row -> Song in
-        if let previous = old.first(where: { $0.locator == row.locator }) {
-          var updated = row
-          updated.id = previous.id
-          updated.favorite = previous.favorite
-          updated.file = previous.file
-          updated.originalFilename = previous.originalFilename
-          updated.artwork = previous.artwork
-          updated.lyrics = previous.lyrics
-          updated.comment = previous.comment
-          if let info = previous.mediaInfo {
-            updated.title = previous.title; updated.artist = previous.artist; updated.album = previous.album
-            updated.mediaInfo = info
-          }
-          return updated
-        }
-        return row
-      }
+      let merged = store.mergeScannedSongs(rows, previous: old)
       store.state.songs.removeAll { $0.sourceID == s.id }
       store.state.songs.append(contentsOf: merged)
       store.save()
@@ -497,16 +481,41 @@ struct SourceEditor: View {
     defer { busy = false }
     do {
       _ = try Network.endpoint(url, localHTTP: true)
-      let source = MusicSource(
+      var source = MusicSource(
         name: name.trimmingCharacters(in: .whitespaces), kind: kind, url: url,
         username: kind == "webdav" ? username : "",
         trustSelfSigned: kind == "webdav" ? trustSelfSigned : false,
         section: kind == "plex" && !selectedSection.isEmpty ? selectedSection : nil)
-      let songs = try await SourceService.scan(source, secret: secret)
+      // 同一地址、同一分区的重复连接：复用来源 id，扫描结果按 locator 合并，
+      // 不再出现「连两次 → 两份来源 + 两份曲目」。
+      func normalised(_ value: String) -> String {
+        value.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+      }
+      let existing = store.state.sources.first {
+        $0.kind == source.kind && normalised($0.url) == normalised(source.url)
+          && ($0.section ?? "") == (source.section ?? "")
+      }
+      if let existing { source.id = existing.id }
+      let songs = try await SourceService.scan(
+        source, secret: secret, artwork: store.artworkDirectory)
       try Secrets.set(secret, account: "source." + source.id)
       let previous = store.state
-      store.state.sources.append(source)
-      store.state.songs.append(contentsOf: songs)
+      var next = store.state
+      if let existing {
+        let old = next.songs.filter { $0.sourceID == existing.id }
+        let merged = store.mergeScannedSongs(songs, previous: old)
+        if let index = next.sources.firstIndex(where: { $0.id == existing.id }) {
+          next.sources[index] = source
+        } else {
+          next.sources.append(source)
+        }
+        next.songs.removeAll { $0.sourceID == existing.id }
+        next.songs.append(contentsOf: merged)
+      } else {
+        next.sources.append(source)
+        next.songs.append(contentsOf: songs)
+      }
+      store.state = next
       do { try store.persist() } catch { store.state = previous; throw error }
       secret = ""
       dismiss()

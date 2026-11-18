@@ -29,6 +29,8 @@ pub struct Access {
     pub secret: String,
     /// Digest 认证的 nonce 与 nc 计数（按连接实例共享）。
     digest: Arc<Mutex<DigestState>>,
+    /// 扫描期封面落盘目录（Plex 专辑图）；播放用不到的调用方留空。
+    pub art_dir: Option<std::path::PathBuf>,
 }
 impl Access {
     pub fn new(source: MediaSource, secret: impl Into<String>) -> Self {
@@ -36,6 +38,7 @@ impl Access {
             source,
             secret: secret.into(),
             digest: Arc::new(Mutex::new(DigestState::default())),
+            art_dir: None,
         }
     }
     pub fn base(&self) -> Result<Url> {
@@ -247,7 +250,7 @@ impl Access {
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_string();
-        let source = HttpSource::open(self.clone(), url)?;
+        let source = HttpSource::open_access(self.clone(), url)?;
         StreamDecoder::open_source(Box::new(source), &extension)
     }
     pub fn factory(&self, locator: String) -> DecoderFactory {
@@ -471,7 +474,8 @@ impl Access {
         let sections: serde_json::Value = parse_json(&data, "Plex 目录")?;
         let dirs = sections["MediaContainer"]["Directory"]
             .as_array()
-            .ok_or_else(|| anyhow::anyhow!("Plex 目录格式无效"))?;
+            .cloned()
+            .unwrap_or_default();
         let wanted = self.source.section.trim();
         let is_music = |s: &&serde_json::Value| {
             matches!(s["type"].as_str(), Some("artist") | Some("music"))
@@ -484,6 +488,9 @@ impl Access {
             anyhow::bail!("Plex 音乐库分区不存在或已删除，请重新选择音乐库");
         }
         let mut tracks = Vec::new();
+        // 专辑图：一张专辑只抓一次。键是专辑名，值是服务器上的 thumb 路径。
+        let mut album_thumbs: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
         for section in dirs
             .iter()
             .filter(is_music)
@@ -502,10 +509,22 @@ impl Access {
                     .append_pair("X-Plex-Container-Size", "500");
                 let (bytes, _) = self.bytes(Method::GET, url, None)?;
                 let data: serde_json::Value = parse_json(&bytes, "Plex 曲目列表")?;
-                let rows = data["MediaContainer"]["Metadata"]
-                    .as_array()
-                    .ok_or_else(|| anyhow::anyhow!("Plex 曲目列表格式无效"))?;
-                for row in rows {
+                let container = &data["MediaContainer"];
+                // 空分区 / 翻页到底时 Plex 返回 size=0 且不带 Metadata —— 这是正常的空页，
+                // 不是「格式无效」。size 与 Metadata 都缺失才是服务器返回了垃圾。
+                let rows = match container["Metadata"].as_array() {
+                    Some(rows) => rows.clone(),
+                    None => {
+                        let size_known = container["size"].as_u64().is_some()
+                            || container["totalSize"].as_u64().is_some();
+                        anyhow::ensure!(
+                            size_known,
+                            "Plex 曲目列表格式无效：请确认服务器地址与 Token 后重试"
+                        );
+                        Vec::new()
+                    }
+                };
+                for row in &rows {
                     let Some(part) = row["Media"][0]["Part"][0]["key"].as_str() else {
                         continue;
                     };
@@ -524,6 +543,17 @@ impl Access {
                     track.track_number = row["index"].as_u64().map(|n| n as u32);
                     track.year = row["year"].as_i64().map(|n| n as i32);
                     track.file_size = media["Part"][0]["size"].as_i64().unwrap_or(0);
+                    if !track.album.is_empty() && album_thumbs.len() < 400 {
+                        let thumb = row["parentThumb"]
+                            .as_str()
+                            .or_else(|| row["thumb"].as_str())
+                            .or_else(|| row["grandparentThumb"].as_str());
+                        if let Some(thumb) = thumb.filter(|t| !t.is_empty()) {
+                            album_thumbs
+                                .entry(track.album.clone())
+                                .or_insert_with(|| thumb.to_string());
+                        }
+                    }
                     tracks.push(track);
                 }
                 let total = data["MediaContainer"]["totalSize"]
@@ -536,7 +566,80 @@ impl Access {
                 anyhow::ensure!(tracks.len() <= 100000, "Plex 曲目超过上限");
             }
         }
+        // 与 iOS 0.9.4 同一条规则：一个可识别的 Plex 音乐目录里一首都没有才算真空，
+        // 但「连一个分区目录都没有 / 各分区合计 0 首」一律按失败处理 ——
+        // 失败走「保留原曲库」路径，不会把来源上次的曲目清光。
+        anyhow::ensure!(
+            !tracks.is_empty(),
+            "Plex 没有读到任何曲目：请确认服务器里有音乐类型的媒体库，且当前账号可以访问"
+        );
+        self.attach_plex_artwork(&mut tracks, &album_thumbs);
         Ok(tracks)
+    }
+
+    /// 抓取 Plex 专辑封面并落到封面目录，再按专辑名回填到曲目。
+    /// 抓不到只影响封面，不影响曲目录入。
+    fn attach_plex_artwork(
+        &self,
+        tracks: &mut [Track],
+        album_thumbs: &std::collections::HashMap<String, String>,
+    ) {
+        let Some(art_dir) = &self.art_dir else {
+            return;
+        };
+        if album_thumbs.is_empty() {
+            return;
+        }
+        let mut persisted: std::collections::HashMap<String, Option<String>> =
+            std::collections::HashMap::new();
+        for (album, thumb) in album_thumbs {
+            let path = persisted
+                .entry(thumb.clone())
+                .or_insert_with(|| self.fetch_plex_artwork(thumb, art_dir).ok().flatten());
+            if let Some(path) = path {
+                for track in tracks.iter_mut().filter(|t| &t.album == album) {
+                    track.artwork_path = Some(path.clone());
+                }
+            }
+        }
+    }
+
+    /// 下载一张封面图并按内容魔数落盘；返回文件路径。
+    fn fetch_plex_artwork(
+        &self,
+        thumb: &str,
+        art_dir: &std::path::Path,
+    ) -> Result<Option<String>> {
+        let url = if thumb.starts_with("http://") || thumb.starts_with("https://") {
+            Url::parse(thumb).map_err(|_| anyhow::anyhow!("Plex 封面地址无效"))?
+        } else {
+            self.url(thumb)?
+        };
+        let hash = format!("{:x}", sha2::Sha256::digest(thumb.as_bytes()));
+        let stem = format!("plex-{}", &hash[..16]);
+        for ext in ["jpg", "png", "webp"] {
+            let existing = art_dir.join(format!("{stem}.{ext}"));
+            if existing.is_file() {
+                return Ok(Some(existing.to_string_lossy().to_string()));
+            }
+        }
+        let (bytes, _) = self.bytes(Method::GET, url, None)?;
+        if bytes.len() < 64 {
+            return Ok(None);
+        }
+        let ext = if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+            "jpg"
+        } else if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+            "png"
+        } else if bytes.starts_with(b"RIFF") {
+            "webp"
+        } else {
+            return Ok(None);
+        };
+        std::fs::create_dir_all(art_dir)?;
+        let path = art_dir.join(format!("{stem}.{ext}"));
+        std::fs::write(&path, bytes)?;
+        Ok(Some(path.to_string_lossy().to_string()))
     }
 }
 fn is_redirect(status: StatusCode) -> bool {
@@ -584,23 +687,26 @@ fn request_uri(url: &Url) -> String {
 }
 
 fn network_error(error: &reqwest::Error) -> anyhow::Error {
+    anyhow::anyhow!("{}", network_hint(error))
+}
+
+/// 给插件 HTTP 通道等调用方复用的一句话错误描述。
+pub fn network_hint(error: &reqwest::Error) -> String {
     let location = error
         .url()
         .map(safe_url)
         .unwrap_or_else(|| "来源地址".into());
     let text = error.to_string().to_lowercase();
     if error.is_timeout() {
-        anyhow::anyhow!("连接超时：服务器没有在限定时间内响应（{location}），请检查地址与网络")
+        format!("连接超时：服务器没有在限定时间内响应（{location}），请检查地址与网络")
     } else if text.contains("certificate") || text.contains("tls") || text.contains("handshake") {
-        anyhow::anyhow!(
-            "HTTPS 证书校验失败（{location}）：如果这是你自己的 NAS，请勾选“允许自签名证书”后重试"
-        )
+        format!("HTTPS 证书校验失败（{location}）：如果这是你自己的 NAS，请勾选“允许自签名证书”后重试")
     } else if error.is_connect() {
-        anyhow::anyhow!("无法连接服务器（{location}）：请检查地址、端口与网络")
+        format!("无法连接服务器（{location}）：请检查地址、端口与网络")
     } else if error.is_body() || error.is_decode() {
-        anyhow::anyhow!("读取服务器响应失败（{location}）：请稍后重试")
+        format!("读取服务器响应失败（{location}）：请稍后重试")
     } else {
-        anyhow::anyhow!("来源连接失败（{location}）：请检查地址与网络")
+        format!("来源连接失败（{location}）：请检查地址与网络")
     }
 }
 
@@ -960,8 +1066,15 @@ fn empty_track(source: &MediaSource, locator: &str) -> Track {
 }
 
 /// Seekable HTTP byte ranges. No complete-song download, token URL, or unbounded cache.
+enum HttpAuth {
+    /// WebDAV / Plex / Telegram：带凭据的请求，沿用 Access 的重定向与 Digest 逻辑。
+    Access(Access),
+    /// 插件解析出的直连地址：只带插件声明的请求头，同源重定向最多 3 跳。
+    Direct(Vec<(String, String)>),
+}
+
 struct HttpSource {
-    access: Access,
+    auth: HttpAuth,
     client: Client,
     url: Url,
     len: u64,
@@ -970,10 +1083,29 @@ struct HttpSource {
     cache: Vec<u8>,
 }
 impl HttpSource {
-    fn open(access: Access, url: Url) -> Result<Self> {
+    fn open_access(access: Access, url: Url) -> Result<Self> {
         let client = access.client()?;
         let mut source = Self {
-            access,
+            auth: HttpAuth::Access(access),
+            client,
+            url,
+            len: 0,
+            pos: 0,
+            start: 0,
+            cache: Vec::new(),
+        };
+        source.fill(0)?;
+        Ok(source)
+    }
+    fn open_direct(url: Url, headers: Vec<(String, String)>, trust_self_signed: bool) -> Result<Self> {
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(8))
+            .timeout(Duration::from_secs(25))
+            .redirect(reqwest::redirect::Policy::none())
+            .danger_accept_invalid_certs(trust_self_signed)
+            .build()?;
+        let mut source = Self {
+            auth: HttpAuth::Direct(headers),
             client,
             url,
             len: 0,
@@ -986,23 +1118,30 @@ impl HttpSource {
     }
     fn fill(&mut self, start: u64) -> Result<()> {
         let end = start.saturating_add(524287);
-        let access = self.access.clone();
-        let client = self.client.clone();
-        let (response, final_url) = access.exchange(
-            &client,
-            &Method::GET,
-            &self.url,
-            |client, url, authorization| {
-                let mut request = access
-                    .request(client, Method::GET, url.clone())
-                    .header(header::RANGE, format!("bytes={start}-{end}"))
-                    .header(header::ACCEPT_ENCODING, "identity");
-                if let Some(value) = authorization {
-                    request = request.header(header::AUTHORIZATION, value);
-                }
-                request
-            },
-        )?;
+        let range = format!("bytes={start}-{end}");
+        let (response, final_url) = match &self.auth {
+            HttpAuth::Access(access) => {
+                let access = access.clone();
+                access.exchange(
+                    &self.client,
+                    &Method::GET,
+                    &self.url,
+                    |client, url, authorization| {
+                        let mut request = access
+                            .request(client, Method::GET, url.clone())
+                            .header(header::RANGE, &range)
+                            .header(header::ACCEPT_ENCODING, "identity");
+                        if let Some(value) = authorization {
+                            request = request.header(header::AUTHORIZATION, value);
+                        }
+                        request
+                    },
+                )?
+            }
+            HttpAuth::Direct(headers) => {
+                direct_exchange(&self.client, &self.url, headers, &range)?
+            }
+        };
         // 记住重定向后的地址，后续 Range 请求不必重复跳转。
         self.url = final_url.clone();
         let status = response.status();
@@ -1053,6 +1192,80 @@ impl HttpSource {
         self.cache = cache;
         Ok(())
     }
+}
+
+/// 直连地址（插件解析结果）的 Range 请求：同源重定向最多 3 跳。
+fn direct_exchange(
+    client: &Client,
+    start: &Url,
+    headers: &[(String, String)],
+    range: &str,
+) -> Result<(Response, Url)> {
+    let origin = start.origin().ascii_serialization();
+    let mut url = start.clone();
+    for _ in 0..=MAX_REDIRECTS {
+        let mut request = client
+            .get(url.clone())
+            .header(header::RANGE, range)
+            .header(header::ACCEPT_ENCODING, "identity");
+        for (name, value) in headers {
+            request = request.header(name, value);
+        }
+        let response = request.send().map_err(|error| network_error(&error))?;
+        if !is_redirect(response.status()) {
+            return Ok((response, url));
+        }
+        let location = response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .ok_or_else(|| anyhow::anyhow!("音频地址返回了缺少 Location 的重定向"))?;
+        let target = url
+            .join(location)
+            .map_err(|_| anyhow::anyhow!("音频地址返回了无效的重定向"))?;
+        anyhow::ensure!(
+            target.origin().ascii_serialization() == origin,
+            "音频地址重定向到了其他站点，已停止播放"
+        );
+        anyhow::ensure!(
+            target.username().is_empty() && target.password().is_none(),
+            "重定向地址包含账号信息，已停止播放"
+        );
+        url = target;
+    }
+    anyhow::bail!("音频地址重定向次数过多（最多 {MAX_REDIRECTS} 次）")
+}
+
+/// 插件解析出的直连地址：播放解码器工厂。
+pub fn direct_decoder(
+    url: &str,
+    headers: Vec<(String, String)>,
+    trust_self_signed: bool,
+) -> Result<StreamDecoder> {
+    let url = Url::parse(url).context("插件解析出的播放地址无效")?;
+    anyhow::ensure!(
+        matches!(url.scheme(), "http" | "https") && url.host_str().is_some(),
+        "插件解析出的播放地址必须是 http(s) 地址"
+    );
+    anyhow::ensure!(
+        url.username().is_empty() && url.password().is_none(),
+        "插件解析出的播放地址不允许带账号信息"
+    );
+    let extension = std::path::Path::new(url.path())
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+    let source = HttpSource::open_direct(url, headers, trust_self_signed)?;
+    StreamDecoder::open_source(Box::new(source), &extension)
+}
+
+pub fn direct_factory(
+    url: String,
+    headers: Vec<(String, String)>,
+    trust_self_signed: bool,
+) -> DecoderFactory {
+    Arc::new(move || direct_decoder(&url, headers.clone(), trust_self_signed))
 }
 impl Read for HttpSource {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -1277,6 +1490,26 @@ mod tests {
                         let second = target.contains("Start=1");
                         let id = if second { "2" } else { "1" };
                         ("200 OK","application/json",format!(r#"{{"MediaContainer":{{"totalSize":2,"Metadata":[{{"title":"Track {id}","grandparentTitle":"Artist","parentTitle":"Album","duration":2000,"Media":[{{"audioCodec":"flac","Part":[{{"key":"/audio/{id}.wav"}}]}}]}}]}}}}"#).into_bytes(),String::new())
+                    } else if target.starts_with("/plex-mixed/library/sections/8/all") {
+                        // 空分区：size=0，不带 Metadata —— 这是正常空页，不是格式错误。
+                        ("200 OK","application/json",br#"{"MediaContainer":{"size":0,"totalSize":0}}"#.to_vec(),String::new())
+                    } else if target.starts_with("/plex-mixed/library/sections/1/all") {
+                        ("200 OK","application/json",br#"{"MediaContainer":{"totalSize":1,"Metadata":[{"title":"Track 1","grandparentTitle":"Artist","parentTitle":"Album","duration":2000,"Media":[{"audioCodec":"flac","Part":[{"key":"/audio/1.wav"}]}]}]}}"#.to_vec(),String::new())
+                    } else if target == "/plex-mixed/library/sections" {
+                        ("200 OK","application/json",br#"{"MediaContainer":{"Directory":[{"key":"1","type":"artist"},{"key":"8","type":"artist"}]}}"#.to_vec(),String::new())
+                    } else if target.starts_with("/plex-empty/library/sections/7/all") {
+                        ("200 OK","application/json",br#"{"MediaContainer":{"size":0,"totalSize":0}}"#.to_vec(),String::new())
+                    } else if target == "/plex-empty/library/sections" {
+                        ("200 OK","application/json",br#"{"MediaContainer":{"Directory":[{"key":"7","type":"artist"}]}}"#.to_vec(),String::new())
+                    } else if target.starts_with("/plex-art/library/sections/3/all") {
+                        ("200 OK","application/json",br#"{"MediaContainer":{"totalSize":1,"Metadata":[{"title":"Cover Song","grandparentTitle":"Artist","parentTitle":"Covered","parentThumb":"/library/metadata/9/thumb/1","duration":2000,"Media":[{"audioCodec":"flac","Part":[{"key":"/audio/1.wav"}]}]}]}}"#.to_vec(),String::new())
+                    } else if target == "/plex-art/library/sections" {
+                        ("200 OK","application/json",br#"{"MediaContainer":{"Directory":[{"key":"3","type":"artist"}]}}"#.to_vec(),String::new())
+                    } else if target.starts_with("/library/metadata/9/thumb/1") {
+                        // 一张 1x1 PNG：魔数正确即可。
+                        let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+                        png.extend_from_slice(&[0; 64]);
+                        ("200 OK", "image/png", png, String::new())
                     } else if target == "/library/sections" {
                         ("200 OK","application/json",br#"{"MediaContainer":{"Directory":[{"key":"1","type":"artist"},{"key":"2","type":"movie"}]}}"#.to_vec(),String::new())
                     } else if target.starts_with("/bad") {
@@ -1402,6 +1635,52 @@ mod tests {
         assert!(logs
             .iter()
             .all(|r| !r.lines().next().unwrap().contains("pass")));
+    }
+
+    #[test]
+    fn plex_empty_section_is_an_empty_page_not_a_format_error() {
+        let server = Server::new();
+        // 一个分区有曲目、一个分区是空的：空分区不该拖垮整个扫描。
+        let tracks = access(&server, SourceKind::Plex, "/plex-mixed/")
+            .scan()
+            .unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].title, "Track 1");
+    }
+
+    #[test]
+    fn plex_zero_track_library_fails_instead_of_wiping_the_source() {
+        let server = Server::new();
+        // 全部音乐分区都是空的：按失败处理，刷新路径才能保住上次的曲库。
+        let error = access(&server, SourceKind::Plex, "/plex-empty/")
+            .scan()
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("没有读到任何曲目"), "{error}");
+    }
+
+    #[test]
+    fn plex_album_artwork_is_fetched_once_per_album() {
+        let server = Server::new();
+        let mut first_access = access(&server, SourceKind::Plex, "/plex-art/");
+        let art_dir = server.dir.join("artwork");
+        first_access.art_dir = Some(art_dir.clone());
+        let tracks = first_access.scan().unwrap();
+        assert_eq!(tracks.len(), 1);
+        let artwork = tracks[0].artwork_path.as_ref().expect("专辑封面应落盘");
+        assert!(artwork.ends_with(".png"), "{artwork}");
+        assert!(std::path::Path::new(artwork).is_file());
+        // 第二次扫描命中缓存文件，不再发封面请求。
+        let mut again_access = access(&server, SourceKind::Plex, "/plex-art/");
+        again_access.art_dir = Some(art_dir);
+        let again = again_access.scan().unwrap();
+        assert!(again[0].artwork_path.is_some());
+        let logs = server.requests.lock().unwrap();
+        let thumb_requests = logs
+            .iter()
+            .filter(|request| request.starts_with("GET /library/metadata/9/thumb/1"))
+            .count();
+        assert_eq!(thumb_requests, 1, "封面已缓存时不应重复下载");
     }
     #[test]
     #[ignore = "uses default CoreAudio silently with a loopback Range server"]

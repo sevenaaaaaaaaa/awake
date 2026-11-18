@@ -34,6 +34,7 @@ mod media_info;
 mod news;
 mod playback;
 mod playlist_import;
+mod plugin;
 mod preset;
 mod plex;
 mod remote;
@@ -408,6 +409,10 @@ pub struct PlayRequest {
     pub continuation: bool,
     #[serde(default)]
     pub queue: Vec<QueueReference>,
+    /// 插件来源的曲目：前端沙箱先用 getMediaSource 解析出地址与请求头，
+    /// key 是曲目 id。别的来源忽略这个字段。
+    #[serde(default)]
+    pub resolved: std::collections::HashMap<String, plugin::ResolvedTrack>,
 }
 #[derive(Deserialize)]
 pub struct QueueReference {
@@ -417,7 +422,15 @@ pub struct QueueReference {
 
 #[tauri::command]
 fn play_track(req: PlayRequest, state: State<'_, AppState>) -> Result<String, String> {
-    if let Some(gains) = req.gains {
+    let PlayRequest {
+        source_id,
+        locator: play_locator,
+        gains,
+        continuation,
+        queue,
+        resolved,
+    } = req;
+    if let Some(gains) = gains {
         let current = state.player.curve.lock().clone();
         let curve = experience::with_correction(
             &gains,
@@ -430,68 +443,103 @@ fn play_track(req: PlayRequest, state: State<'_, AppState>) -> Result<String, St
         *state.player.curve.lock() = curve;
     }
     let mut references = vec![QueueReference {
-        source_id: req.source_id.clone(),
-        locator: req.locator.clone(),
+        source_id: source_id.clone(),
+        locator: play_locator.clone(),
     }];
-    references.extend(req.queue.into_iter().take(9999));
+    references.extend(queue.into_iter().take(9999));
     let queued = {
         let lib = state.library.lock();
         let mut access_cache = std::collections::HashMap::new();
-        references
-            .into_iter()
-            .map(|r| {
-                let track = lib
-                    .snapshot
-                    .tracks
-                    .iter()
-                    .find(|t| t.source_id == r.source_id && t.locator == r.locator)
-                    .ok_or("队列曲目不存在")?;
-                let source = lib
-                    .snapshot
-                    .sources
-                    .iter()
-                    .find(|s| s.id == r.source_id)
-                    .ok_or("队列来源不存在")?;
-                let remote = matches!(
-                    source.kind,
-                    SourceKind::Webdav | SourceKind::Plex | SourceKind::Telegram
-                );
-                let path = if remote {
-                    PathBuf::new()
-                } else {
-                    PathBuf::from(&source.url).join(&track.locator)
-                };
-                if !remote && !path.is_file() {
-                    return Err(format!("文件不存在：{}", path.display()));
-                }
-                let opener = if remote {
-                    if !access_cache.contains_key(&source.id) {
-                        access_cache.insert(source.id.clone(), connections::access(source)?);
+        let mut tracks = Vec::new();
+        for (index, r) in references.into_iter().enumerate() {
+            let track = match lib
+                .snapshot
+                .tracks
+                .iter()
+                .find(|t| t.source_id == r.source_id && t.locator == r.locator)
+            {
+                Some(track) => track,
+                None => return Err("队列曲目不存在".into()),
+            };
+            let source = match lib
+                .snapshot
+                .sources
+                .iter()
+                .find(|s| s.id == r.source_id)
+            {
+                Some(source) => source,
+                None => return Err("队列来源不存在".into()),
+            };
+            // 插件来源：地址由前端沙箱解析，随请求传来；拿不到解析结果就跳过队列条目，
+            // 第一首（用户点的那首）拿不到则直接报错，让用户回到搜索页重试。
+            if source.kind == SourceKind::Plugin {
+                let Some(resolved) = resolved.get(&track.id) else {
+                    if index == 0 {
+                        return Err(format!(
+                            "《{}》还没有解析出播放地址：回到这个插件来源里重新搜索一次",
+                            track.title
+                        ));
                     }
-                    Some(
-                        access_cache
-                            .get(&source.id)
-                            .unwrap()
-                            .factory(track.locator.clone()),
-                    )
-                } else {
-                    None
+                    log::warn!("跳过没有解析地址的插件曲目：{}", track.title);
+                    continue;
                 };
-                Ok(playback::QueueTrack {
+                let resolved = resolved.clone().validated()?;
+                tracks.push(playback::QueueTrack {
                     id: track.id.clone(),
-                    path,
-                    opener,
+                    path: PathBuf::new(),
+                    opener: Some(remote::direct_factory(
+                        resolved.url,
+                        resolved.headers,
+                        source.trust_self_signed,
+                    )),
                     duration: track.duration,
                     sample_rate: track.sample_rate,
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()?
+                });
+                continue;
+            }
+            let remote = matches!(
+                source.kind,
+                SourceKind::Webdav | SourceKind::Plex | SourceKind::Telegram
+            );
+            let path = if remote {
+                PathBuf::new()
+            } else {
+                PathBuf::from(&source.url).join(&track.locator)
+            };
+            if !remote && !path.is_file() {
+                return Err(format!("文件不存在：{}", path.display()));
+            }
+            let opener = if remote {
+                if !access_cache.contains_key(&source.id) {
+                    access_cache.insert(source.id.clone(), connections::access(source)?);
+                }
+                Some(
+                    access_cache
+                        .get(&source.id)
+                        .unwrap()
+                        .factory(track.locator.clone()),
+                )
+            } else {
+                None
+            };
+            tracks.push(playback::QueueTrack {
+                id: track.id.clone(),
+                path,
+                opener,
+                duration: track.duration,
+                sample_rate: track.sample_rate,
+            });
+        }
+        tracks
     };
+    if queued.is_empty() {
+        return Err("队列里没有可播放的曲目".into());
+    }
     let taste = state.taste.clone();
     let data_dir = state.data_dir.clone();
     state.player.play_queue(
         queued,
-        !req.continuation,
+        !continuation,
         move |id, seconds, completed, skipped| {
             if let Err(e) =
                 experience::record_session(&taste, &data_dir, id, seconds, completed, skipped)
@@ -500,7 +548,7 @@ fn play_track(req: PlayRequest, state: State<'_, AppState>) -> Result<String, St
             }
         },
     )?;
-    Ok(req.locator)
+    Ok(play_locator)
 }
 
 #[tauri::command]
@@ -615,15 +663,20 @@ async fn analyze_track(
     locator: String,
     state: State<'_, AppState>,
 ) -> Result<Analysis, String> {
-    let root = {
+    let (kind, root) = {
         let lib = state.library.lock();
-        lib.snapshot
+        let source = lib
+            .snapshot
             .sources
             .iter()
             .find(|s| s.id == source_id)
-            .map(|s| s.url.clone())
-            .ok_or_else(|| "找不到来源".to_string())?
+            .ok_or_else(|| "找不到来源".to_string())?;
+        (source.kind, source.url.clone())
     };
+    if kind == SourceKind::Plugin {
+        // 插件曲目的音频地址是每次播放按需解析的，频谱画像不做额外解析请求。
+        return Err("网络插件来源暂不支持频谱分析，播放不受影响".into());
+    }
     let path = PathBuf::from(root).join(&locator);
     tauri::async_runtime::spawn_blocking(move || {
         let mut decoder = decode::StreamDecoder::open(&path).map_err(|e| e.to_string())?;
@@ -1055,6 +1108,10 @@ pub fn run() {
             preset::ai_presets,
             import_local_files,
             pick_music_files,
+            plugin::import_plugin,
+            plugin::read_plugin_source,
+            plugin::save_plugin_tracks,
+            plugin::plugin_http,
             audiobook::audiobook_shelf,
             audiobook::audiobook_progress,
             audiobook::audiobook_forget,

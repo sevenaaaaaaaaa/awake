@@ -65,7 +65,9 @@ pub async fn connect_source(
         req.kind,
         SourceKind::Webdav | SourceKind::Plex | SourceKind::Telegram
     ) {
-        return Err("NAS 与网盘请先挂载，再选择挂载目录".into());
+        return Err(
+            "NAS 与网盘请先挂载，再选择挂载目录；网络音乐插件请在来源类型里选「导入插件文件」".into(),
+        );
     }
     let mut source = {
         let lib = state.library.lock();
@@ -111,6 +113,8 @@ pub async fn connect_source(
     };
     let access = Access::new(source.clone(), secret.clone());
     access.base().map_err(|e| e.to_string())?;
+    let mut access = access;
+    access.art_dir = Some(state.data_dir.join("artwork"));
     let tracks =
         tauri::async_runtime::spawn_blocking(move || access.scan().map_err(|e| e.to_string()))
             .await
@@ -173,6 +177,10 @@ pub fn remove_source(id: String, state: tauri::State<'_, AppState>) -> Result<us
     }
     drop(lib);
     let _ = vault::remove(&source.password_key);
+    // 插件来源：代码文件跟着来源一起删，避免留下无主的 .js。
+    if source.kind == SourceKind::Plugin {
+        crate::plugin::delete_plugin_files(&state.data_dir, &source.id);
+    }
     Ok(removed)
 }
 #[tauri::command]
@@ -246,7 +254,12 @@ pub async fn refresh_remote_source(
         .find(|s| s.id == id)
         .cloned()
         .ok_or("来源不存在")?;
+    if source.kind == SourceKind::Plugin {
+        return Err("插件来源没有目录可扫描：请回到这个来源的搜索页，重新搜索并入库".into());
+    }
     let access = access(&source)?;
+    let mut access = access;
+    access.art_dir = Some(state.data_dir.join("artwork"));
     let tracks =
         tauri::async_runtime::spawn_blocking(move || access.scan().map_err(|e| e.to_string()))
             .await
@@ -306,7 +319,8 @@ pub fn start_refresh_worker(
                 if !alive.load(std::sync::atomic::Ordering::Acquire) {
                     return;
                 }
-                if !source.enabled || source.id == "awake-generated" {
+                // 插件来源的曲目按搜索入库，没有周期性刷新的语义；生成来源自带刷新。
+                if !source.enabled || source.id == "awake-generated" || source.kind == SourceKind::Plugin {
                     continue;
                 }
                 let last_attempt = statuses
@@ -331,7 +345,9 @@ pub fn start_refresh_worker(
                         source.kind,
                         SourceKind::Webdav | SourceKind::Plex | SourceKind::Telegram
                     ) {
-                        access(&source)?.scan().map_err(|e| e.to_string())?
+                        let mut access = access(&source)?;
+                        access.art_dir = Some(data_dir.join("artwork"));
+                        access.scan().map_err(|e| e.to_string())?
                     } else {
                         let existing = library.lock().tracks_by_locator(&source.id);
                         if source.files.is_empty() {

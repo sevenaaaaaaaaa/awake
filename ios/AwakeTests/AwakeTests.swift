@@ -172,6 +172,91 @@ final class AwakeTests: XCTestCase {
     XCTAssertEqual(cached.count, 1)
   }
 
+  @MainActor func testFolderImportKeepsGoodFilesWhenOneIsUnreadable() async throws {
+    let input = try directory()
+    let output = try directory()
+    defer { try? FileManager.default.removeItem(at: input); try? FileManager.default.removeItem(at: output) }
+    try wav(input.appendingPathComponent("good.wav"))
+    // 扩展名合法、内容不是音频：AVAudioFile 读不了，但绝不能因此回滚整次导入。
+    try Data("not audio".utf8).write(to: input.appendingPathComponent("bad.flac"))
+    let store = MobileStore(root: output)
+    await store.importAudioFolder(input)
+    XCTAssertEqual(store.state.songs.count, 1, "能导入的文件要留下，不再整批回滚")
+    XCTAssertEqual(store.state.songs.first?.title, "good")
+    XCTAssertTrue(store.message.contains("1 首失败"), "失败要当面说清：\(store.message)")
+    XCTAssertTrue(store.message.contains("bad.flac"), "\(store.message)")
+    // 结果已经落盘：重新打开仍是 1 首。
+    XCTAssertEqual(MobileStore(root: output).state.songs.count, 1)
+  }
+
+  @MainActor func testReimportHealsMissingLocalFileWithoutDuplicating() async throws {
+    let input = try directory()
+    let output = try directory()
+    defer { try? FileManager.default.removeItem(at: input); try? FileManager.default.removeItem(at: output) }
+    try wav(input.appendingPathComponent("one.wav"))
+    let store = MobileStore(root: output)
+    await store.importAudioFolder(input)
+    let first = try XCTUnwrap(store.state.songs.first)
+    let cached = try XCTUnwrap(first.file)
+    try FileManager.default.removeItem(at: store.music.appendingPathComponent(cached))
+    await store.importAudioFolder(input)
+    XCTAssertEqual(store.state.songs.count, 1, "补齐不应产生第二首")
+    let healed = try XCTUnwrap(store.state.songs.first)
+    XCTAssertEqual(healed.id, first.id, "补齐保留曲目 id，歌单引用不失效")
+    XCTAssertNotEqual(healed.file, cached, "换用新的本机缓存文件")
+    XCTAssertNotNil(store.localURL(healed), "补齐后必须有可播放的本机文件")
+    XCTAssertTrue(store.message.contains("补齐"), "\(store.message)")
+  }
+
+  @MainActor func testMergeScannedSongsPreservesUserState() {
+    var previous = Song(title: "old", file: "cached.wav", sourceID: "s1", locator: "a")
+    previous.id = "keep-me"
+    previous.favorite = true
+    previous.artwork = "cover.jpg"
+    previous.lyrics = "[00:01]line"
+    previous.mediaInfo = MediaInfo(original_title: "old", original_artist: "", original_album: "", cover_style: "forest")
+    let row = Song(title: "server title", artist: "artist", album: "album", sourceID: "s1", locator: "a")
+    let fresh = Song(title: "new", sourceID: "s1", locator: "b")
+    let store = MobileStore(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+    let merged = store.mergeScannedSongs([row, fresh], previous: [previous])
+    XCTAssertEqual(merged[0].id, "keep-me")
+    XCTAssertTrue(merged[0].favorite)
+    XCTAssertEqual(merged[0].file, "cached.wav")
+    XCTAssertEqual(merged[0].artwork, "cover.jpg")
+    XCTAssertEqual(merged[0].lyrics, "[00:01]line")
+    XCTAssertEqual(merged[0].title, "old", "人工整理过的标题不被扫描覆盖")
+    XCTAssertEqual(merged[0].mediaInfo?.cover_style, "forest")
+    XCTAssertEqual(merged[1].title, "new")
+  }
+
+  func testSourceXMLReadsMusicSectionsAndPlexThumbs() throws {
+    let xml = SourceXML()
+    let body = """
+    <MediaContainer size="1" totalSize="1" offset="0">
+      <Directory key="1" type="artist" title="音乐" />
+      <Directory key="2" type="music" title="另一个音乐库" />
+      <Directory key="3" type="movie" title="电影" />
+      <Track title="Song" grandparentTitle="Artist" parentTitle="Album" duration="200000"
+             parentThumb="/library/metadata/9/thumb/1">
+        <Media audioCodec="flac" audioChannels="2">
+          <Part key="/library/parts/1234/1660000000.flac" size="2048" />
+        </Media>
+      </Track>
+    </MediaContainer>
+    """
+    try xml.parse(Data(body.utf8))
+    XCTAssertEqual(xml.sections, ["1", "2"], "artist 与 music 两种音乐分区都要认")
+    XCTAssertEqual(xml.totalSize, 1)
+    XCTAssertEqual(xml.rows.count, 1)
+    let row = try XCTUnwrap(xml.rows.first)
+    XCTAssertEqual(row.title, "Song")
+    XCTAssertEqual(row.artist, "Artist")
+    XCTAssertEqual(row.album, "Album")
+    XCTAssertEqual(row.duration, 200)
+    XCTAssertEqual(row.href, "/library/parts/1234/1660000000.flac")
+    XCTAssertEqual(row.thumb, "/library/metadata/9/thumb/1", "专辑封面地址要带出来")
+  }
+
   @MainActor func testRemovingSourceCleansTracksCacheAndCredential() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

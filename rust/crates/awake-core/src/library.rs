@@ -24,10 +24,23 @@ pub fn is_audio_file(path: &Path) -> bool {
 }
 
 /// 收集目录下所有音频文件（跳过隐藏文件）。
+///
+/// 跟随符号链接：macOS 用户常把「音乐」软链到外置盘，`DirEntry::file_type()`
+/// 来自 lstat、不跟随链接，会把整棵链接树静默判成「不是目录也不是文件」，
+/// 结果就是选了文件夹却一个文件也找不到。改用 `metadata()`（stat）判断类型，
+/// 并用已访问目录集合 + 深度上限挡住链接环。
 pub fn collect_audio_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
+    let mut stack = vec![(root.to_path_buf(), 0usize)];
+    let mut visited = std::collections::HashSet::new();
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > 32 {
+            continue;
+        }
+        let key = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+        if !visited.insert(key) {
+            continue;
+        }
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
@@ -37,9 +50,10 @@ pub fn collect_audio_files(root: &Path) -> Vec<PathBuf> {
             if name.starts_with('.') {
                 continue;
             }
-            match entry.file_type() {
-                Ok(ft) if ft.is_dir() => stack.push(path),
-                Ok(ft) if ft.is_file() => {
+            // metadata() 跟随符号链接；读不到元数据的条目直接跳过。
+            match entry.metadata() {
+                Ok(meta) if meta.is_dir() => stack.push((path, depth + 1)),
+                Ok(meta) if meta.is_file() => {
                     if is_audio_file(&path) {
                         out.push(path);
                     }
@@ -52,22 +66,46 @@ pub fn collect_audio_files(root: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// 带错误报告的收集：只有**根目录**读不了才报错。
+/// 深层子目录读不了（权限、损坏挂载点）不再拖垮整次导入，记录后跳过，
+/// 与探测（probe）看到的「有 N 个音频文件」保持一致。
 fn collect_checked(root: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        for entry in
-            std::fs::read_dir(&dir).with_context(|| format!("无法读取目录：{}", dir.display()))?
-        {
-            let entry = entry?;
+    let mut stack = vec![(root.to_path_buf(), 0usize)];
+    let mut visited = std::collections::HashSet::new();
+    let mut first = true;
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > 32 {
+            continue;
+        }
+        let key = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+        if !visited.insert(key) {
+            continue;
+        }
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(error) if first => {
+                return Err(error)
+                    .with_context(|| format!("无法读取目录：{}", dir.display()));
+            }
+            Err(error) => {
+                log::info!("跳过读不了的子目录 {}：{error}", dir.display());
+                continue;
+            }
+        };
+        first = false;
+        for entry in entries.flatten() {
             if entry.file_name().to_string_lossy().starts_with('.') {
                 continue;
             }
-            let kind = entry.file_type()?;
             let path = entry.path();
-            if kind.is_dir() {
-                stack.push(path);
-            } else if kind.is_file() && is_audio_file(&path) {
+            let Ok(meta) = entry.metadata() else {
+                log::info!("跳过读不了元数据的条目：{}", path.display());
+                continue;
+            };
+            if meta.is_dir() {
+                stack.push((path, depth + 1));
+            } else if meta.is_file() && is_audio_file(&path) {
                 out.push(path);
             }
         }
@@ -600,5 +638,53 @@ mod tests {
         assert_eq!(reloaded.snapshot.sources.len(), 1);
         assert_eq!(reloaded.snapshot.sources[0].name, "演示");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_music_folders_are_traversed_not_skipped() {
+        use std::os::unix::fs::symlink;
+        let dir = crate::test_audio::directory();
+        let real = dir.join("real");
+        std::fs::create_dir(&real).unwrap();
+        crate::test_audio::wav(&real.join("song.wav"), 48000, 2, &vec![0; 480]);
+        // 常见布局：音乐根目录里放一个指向外置盘的符号链接。
+        symlink(&real, dir.join("外置盘")).unwrap();
+        // 链接环：根目录里的回指链接，绝不能把扫描卡死。
+        symlink(dir.join("..").canonicalize().unwrap().join(dir.file_name().unwrap()), dir.join("loop")).unwrap();
+
+        let collected = collect_audio_files(&dir);
+        assert_eq!(collected.len(), 1, "符号链接里的音频必须收集到");
+        let checked = collect_checked(&dir).unwrap();
+        assert_eq!(checked.len(), 1, "符号链接目录必须递归");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_subdirectory_does_not_kill_the_whole_scan() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = crate::test_audio::directory();
+        crate::test_audio::wav(&dir.join("ok.wav"), 48000, 2, &vec![0; 480]);
+        let denied = dir.join("denied");
+        std::fs::create_dir(&denied).unwrap();
+        crate::test_audio::wav(&denied.join("hidden.wav"), 48000, 2, &vec![0; 480]);
+        std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let result = collect_checked(&dir);
+        // 收尾先恢复权限，事后才删得掉。
+        std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let files = result.expect("深层子目录读不了不该拖垮整个导入");
+        assert_eq!(files.len(), 1, "只有根目录读不了才报错");
+        assert!(files[0].ends_with("ok.wav"));
+
+        // 根目录本身读不了时仍然要明确报错。
+        let denied_root = crate::test_audio::directory();
+        std::fs::set_permissions(&denied_root, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let root_result = collect_checked(&denied_root);
+        std::fs::set_permissions(&denied_root, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(root_result.is_err(), "根目录读不了必须报错，而不是静默 0 首");
+        std::fs::remove_dir_all(dir).unwrap();
+        std::fs::remove_dir_all(denied_root).unwrap();
     }
 }

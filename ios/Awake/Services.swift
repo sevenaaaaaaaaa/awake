@@ -378,7 +378,7 @@ enum Network {
 }
 struct RemoteEntry {
   var href = "", title = "", artist = "", album = "", duration: Double = 0, isDirectory = false,
-    status = "", length: Int64 = 0
+    status = "", length: Int64 = 0, thumb = ""
 }
 final class SourceXML: NSObject, XMLParserDelegate {
   var rows: [RemoteEntry] = [], sections: [String] = []
@@ -400,15 +400,22 @@ final class SourceXML: NSObject, XMLParserDelegate {
     if field == "mediacontainer" { totalSize = Int(attributes["totalSize"] ?? "") }
     if field == "response" { current = RemoteEntry() }
     if field == "collection" { current?.isDirectory = true }
-    if field == "directory", attributes["type"] == "artist", let key = attributes["key"] {
+    if field == "directory",
+      attributes["type"] == "artist" || attributes["type"] == "music",
+      let key = attributes["key"]
+    {
       sections.append(key)
     }
     if field == "track" {
-      current = RemoteEntry(
+      var entry = RemoteEntry(
         title: attributes["title"] ?? "未命名",
         artist: attributes["grandparentTitle"] ?? attributes["originalTitle"] ?? "未知艺人",
         album: attributes["parentTitle"] ?? "",
         duration: (Double(attributes["duration"] ?? "0") ?? 0) / 1000)
+      // 专辑封面：parentThumb 是专辑图；thumb 是曲目图；grandparentThumb 是艺人图。
+      entry.thumb =
+        attributes["parentThumb"] ?? attributes["thumb"] ?? attributes["grandparentThumb"] ?? ""
+      current = entry
     }
     if field == "part", current?.href.isEmpty == true { current?.href = attributes["key"] ?? "" }
   }
@@ -476,7 +483,9 @@ enum SourceService {
     }
     return nil
   }
-  static func scan(_ source: MusicSource, secret: String) async throws -> [Song] {
+  static func scan(_ source: MusicSource, secret: String, artwork: URL? = nil) async throws
+    -> [Song]
+  {
     if source.kind == "telegram" { return try await TelegramService.scan(source, secret: secret) }
     let base = try Network.endpoint(source.url, localHTTP: true)
     if source.kind == "plex" {
@@ -507,9 +516,11 @@ enum SourceService {
         throw AppFailure("Plex 音乐库分区超过扫描上限，旧曲库已保留。")
       }
       var songs: [Song] = []
+      var thumbs: [String: String] = [:]
       for section in selectedSections {
         var offset = 0
-        var sectionCount = 0
+        var sectionTotal: Int?
+        var sectionSongs = 0
         while offset < 20000 {
           let u = try api("library/sections/\(section)/all")
           var components = URLComponents(url: u, resolvingAgainstBaseURL: false)!
@@ -527,29 +538,60 @@ enum SourceService {
           } catch {
             throw AppFailure("Plex 曲目分页读取失败：\(error.localizedDescription)")
           }
-          if let total = page.totalSize, offset == 0, total == 0 {
-            throw AppFailure("Plex 音乐库“\(section)”没有返回曲目，旧曲库已保留。")
-          }
+          if offset == 0 { sectionTotal = page.totalSize }
+          // 空分区是正常形态（例如「有声书」分区还没放东西）：跳过它，
+          // 不再用它把整次连接杀掉 —— 这是 iOS 端「Plex 连上却什么都不显示」的根因之一。
+          if let total = sectionTotal, total == 0 { break }
           for row in page.rows {
             _ = try Network.child(row.href, base: base, restrictPath: false)
             songs.append(
               Song(
                 title: row.title, artist: row.artist, album: row.album, duration: row.duration,
                 sourceID: source.id, locator: row.href))
+            if !row.album.isEmpty, thumbs[row.album] == nil, !row.thumb.isEmpty,
+              thumbs.count < 200
+            {
+              thumbs[row.album] = row.thumb
+            }
           }
-          sectionCount += page.rows.count
-          if page.rows.count < 500 { break }
+          sectionSongs += page.rows.count
+          let received = page.rows.count
+          offset += 500
+          if received == 0 { break }
+          if let total = sectionTotal {
+            if total > 20000 {
+              throw AppFailure("Plex 曲库超过当前扫描上限（\(total) 首），结果不完整，旧曲库已保留。")
+            }
+            if offset >= total { break }
+          } else if received < 500 {
+            break
+          }
           if PlexScanValidation.pageAtLimitIsTruncated(
-            offset: offset, count: page.rows.count, totalSize: page.totalSize) {
+            offset: offset - 500, count: received, totalSize: sectionTotal)
+          {
             throw AppFailure("Plex 曲库超过当前扫描上限，结果不完整，旧曲库已保留。")
           }
-          offset += 500
         }
-        guard sectionCount > 0 else {
+        if sectionSongs == 0 {
+          // 扫描全部音乐库时，空分区（例如还没放东西的有声书库）直接跳过；
+          // 用户点名选中的分区才是真的「没有曲目」。
+          if wanted.isEmpty { continue }
           throw AppFailure("Plex 音乐库“\(section)”没有返回曲目，旧曲库已保留。")
         }
       }
       try PlexScanValidation.validate(sectionCount: selectedSections.count, songCount: songs.count)
+      // 专辑封面：一张专辑抓一次，失败只影响封面。
+      if let artwork, !thumbs.isEmpty {
+        let names = await albumArtwork(
+          thumbs, base: base, source: source, secret: secret, auth: plexAuth, directory: artwork)
+        if !names.isEmpty {
+          songs = songs.map { song in
+            var copy = song
+            if copy.artwork == nil { copy.artwork = names[copy.album] }
+            return copy
+          }
+        }
+      }
       return songs
     }
     var root = base
@@ -621,6 +663,25 @@ enum SourceService {
       throw AppFailure("这个 WebDAV 目录是空的，或没有读取到任何条目")
     }
     return songs
+  }
+  /// Plex 专辑封面：一张专辑抓一次，最多 200 张；失败只影响封面，不影响曲库。
+  static func albumArtwork(
+    _ thumbs: [String: String], base: URL, source: MusicSource, secret: String,
+    auth: Network.Auth, directory: URL
+  ) async -> [String: String] {
+    var names: [String: String] = [:]
+    for (album, thumb) in thumbs {
+      do {
+        let url = try Network.child(thumb, base: base, restrictPath: false)
+        var req = request(url, source: source, secret: secret)
+        req.timeoutInterval = 8
+        let data = try await Network.data(req, limit: 8 * 1024 * 1024, auth: auth)
+        if let name = try? MediaArt.persist(data, directory: directory) { names[album] = name }
+      } catch {
+        continue
+      }
+    }
+    return names
   }
   static func cache(_ song: Song, source: MusicSource, secret: String, directory: URL) async throws
     -> Song

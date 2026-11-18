@@ -11,6 +11,8 @@ pub enum SourceKind {
     Webdav,
     Plex,
     Telegram,
+    /// 网络音乐插件（枪弹分离 JS）：插件定义搜索与解析，应用只负责运行与播放。
+    Plugin,
 }
 
 impl SourceKind {
@@ -21,6 +23,7 @@ impl SourceKind {
             SourceKind::Webdav => "webdav",
             SourceKind::Plex => "plex",
             SourceKind::Telegram => "telegram",
+            SourceKind::Plugin => "plugin",
         }
     }
 
@@ -31,6 +34,7 @@ impl SourceKind {
             SourceKind::Webdav => "WebDAV",
             SourceKind::Plex => "Plex",
             SourceKind::Telegram => "Telegram 个人媒体库",
+            SourceKind::Plugin => "网络音乐插件",
         }
     }
 }

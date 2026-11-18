@@ -1,4 +1,4 @@
-# Awake 0.9.3
+# Awake 0.9.5
 
 **让好音乐，越来越合拍。** macOS 本地播放器：流式音频、后端连续队列、自有音乐来源、可解释的偏好学习，以及用户主动触发的 AI 策展和创作。
 
@@ -6,8 +6,22 @@
 
 ## 下载
 
+- **[macOS 0.9.5（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.5)**：解压后拖入「应用程序」，首次打开需在「隐私与安全性」中允许。[发行说明](docs/releases/v0.9.5.md)
+- **[iOS 0.9.5 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.5)**：未签名 IPA，需自行重签安装；同一份 IPA 也在 iCloud Drive 里。[发行说明](docs/releases/ios-v0.9.5.md)
 - **[macOS 0.9.3（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.3)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。这一版先出 arm64 包；通用包在构建机空闲后补，Intel Mac 暂时继续用 0.9.2。[发行说明](docs/releases/v0.9.3.md)
 - **[iOS 0.9.3 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.3)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.9.3.md)
+
+## 0.9.5 · 三个基础问题落地：本地导入、Plex 显示、网络插件源
+
+**本地文件导入不再「选了文件夹却扫不出东西」。** 两个根因：扫描用 `DirEntry::file_type()` 判断条目类型，它来自 lstat、不跟随符号链接——把「音乐」软链到外置盘是 macOS 最常见的用法，旧代码会把整棵链接树静默跳过；另一半是任何一层子目录读不了（权限、损坏挂载点）都会让整次导入失败，哪怕探测已经数到文件。现在扫描跟随符号链接（已访问集合 + 32 层深度上限，链接环不会卡死），只有根目录读不了才报错，深层子目录失败记录后跳过。
+
+**Plex 曲库显示对齐 iOS 0.9.4 的规则。** 空音乐库 / 空分页以前会报「曲目列表格式无效」并中止整个扫描；现在 `size` / `totalSize` 明确为 0 时按空页处理，只有响应完全无法识别才报错。一个可识别的音乐目录里合计 0 首按失败处理，手动刷新不会再把来源上次的曲库清空。扫描同时抓取专辑封面（`parentThumb → thumb → grandparentThumb`，一张专辑只抓一次，命中缓存不重复下载），专辑视图不再是清一色占位图。
+
+**新增「网络音乐插件（枪弹分离 JS）」来源类型，兼容 MusicFree 风格插件。** 插件是独立 `.js`（`platform` / `search` / `getMediaSource`…），导入后从来源卡片的「搜索并入库」挑歌；入库只保存曲目信息（按平台 id 去重），播放前由插件解析出直连地址与请求头，再交给本地 HTTP Range 播放管线。插件沙箱自带 `fetch`（经后端受限通道，绕过 CORS，地址 / 方法 / 头 / 体都有上限）与 `CryptoJS` 子集（MD5 / SHA1 / SHA256 / HMAC + Utf8 / Base64 / Hex），签名类插件不用再装依赖。插件按用户显式导入处理，信任级别等同用户自己安装的应用——只导入你信任来源的插件。
+
+**iOS 0.9.5：本地导入与 Plex 显示也按同样的根因修了。** 本地导入不再「一个坏文件回滚整批」、不再「缺失的本机文件被跳过」、不再「一个读不了的条目中断整个文件夹扫描」；Plex 扫描不再因空分区整次失败，翻页按 `totalSize` 走，补上专辑封面，重复连接会合并而不是叠一份副本。详见 [iOS 0.9.5 发行说明](docs/releases/ios-v0.9.5.md)。
+
+验证：Rust `awake-app` 116 通过 / 0 失败 / 10 按需忽略，`awake-core` 44 通过；前端 34 通过 / 0 失败。iOS：`build-for-testing` 通过，`LibraryImport` 逻辑 harness 15 项断言通过；模拟器 XCTest 本机无法执行（服务握手失败），需在可跑模拟器的机器或真机补跑。详见 [0.9.5 发行说明](docs/releases/v0.9.5.md)。
 
 ## 0.9.3 · 加进来的东西，找得到、留得住
 

@@ -507,86 +507,149 @@ enum Secrets {
       return x == y ? a.title.localizedStandardCompare(b.title) == .orderedAscending : x > y
     }
   }
+  /// 一次导入的结果：给调用方决定「要不要回滚」与「怎么报告」。
+  struct ImportResult {
+    var added = 0
+    var healed = 0
+    var skipped = 0
+    var failed: [String] = []
+    var changed: Bool { added + healed > 0 }
+  }
+
+  /// 用一次扫描结果替换某个来源的曲目：按 locator 保留收藏、本机缓存文件名、封面、
+  /// 歌词、评论与人工整理过的元数据。重复连接同一来源时不会再叠加一份副本。
+  func mergeScannedSongs(_ rows: [Song], previous: [Song]) -> [Song] {
+    let byLocator = Dictionary(previous.map { ($0.locator, $0) }, uniquingKeysWith: { first, _ in first })
+    return rows.map { row in
+      guard let old = byLocator[row.locator] else { return row }
+      var updated = row
+      updated.id = old.id
+      updated.favorite = old.favorite
+      updated.file = old.file
+      updated.originalFilename = old.originalFilename
+      if old.artwork != nil { updated.artwork = old.artwork }
+      if old.lyrics?.isEmpty == false { updated.lyrics = old.lyrics }
+      if old.comment?.isEmpty == false { updated.comment = old.comment }
+      if let info = old.mediaInfo {
+        updated.title = old.title
+        updated.artist = old.artist
+        updated.album = old.album
+        updated.mediaInfo = info
+      }
+      return updated
+    }
+  }
   func importAudioFolder(_ url: URL) async {
     let access = url.startAccessingSecurityScopedResource()
     defer { if access { url.stopAccessingSecurityScopedResource() } }
     busy = true
     defer { busy = false }
+    // 枚举放到后台：大目录（上千首）在主线程序列化会把界面卡住。
+    let scan = await Task.detached(priority: .userInitiated) {
+      LibraryImport.audioFiles(in: url)
+    }.value
+    guard !scan.exceeded else {
+      message = "导入失败：文件夹超过两万首，请选择更小的目录"
+      return
+    }
+    guard !scan.files.isEmpty else {
+      message =
+        scan.unreadable > 0
+        ? "导入失败：文件夹里有 \(scan.unreadable) 个条目读不了，且没有找到可导入的音频；请先在文件 App 里把文件下载到本机再试"
+        : "这个文件夹里没有支持的音频文件（mp3 / m4a / flac / wav / aiff / alac / caf）"
+      return
+    }
+    let folder = LibraryImportIdentity.locator(for: url)
+    let currentLocators = Set(scan.files.map(LibraryImportIdentity.locator))
+    let previousLocators = state.importedFolderPaths?[folder] ?? []
+    let removed = Set(
+      LibraryImportIdentity.removedLocators(previous: previousLocators, current: currentLocators))
+    let oldState = state
+    let oldSongs = state.songs
+    state.songs.removeAll { removed.contains($0.locator) && $0.sourceID == nil }
+    state.importedFolderPaths = state.importedFolderPaths ?? [:]
+    state.importedFolderPaths?[folder] = scan.files.map(LibraryImportIdentity.locator)
+    let result = await importFiles(scan.files, report: false, manageBusy: false)
+    // 只有「一首都没进来、而且确实有文件失败」才整体回滚。
+    // 个别文件读不了不再连坐：能导入的先导入，失败的名字当面说清楚。
+    guard result.changed || result.failed.isEmpty else {
+      state = oldState
+      let sample = result.failed.prefix(3).joined(separator: "、")
+      let more = result.failed.count > 3 ? " 等 \(result.failed.count) 首" : ""
+      message = "导入失败：\(sample)\(more) 无法读取；已恢复原曲库"
+      return
+    }
     do {
-      let urls: [URL] = try await Task.detached(priority: .userInitiated) {
-        try Self.audioFiles(in: url)
-      }.value
-      guard !urls.isEmpty else {
-        throw AppFailure("这个文件夹里没有支持的音频文件（mp3 / m4a / flac / wav / aiff / alac / caf）")
+      try persist()
+    } catch {
+      state = oldState
+      message = "导入失败：无法写入曲库（\(error.localizedDescription)）"
+      return
+    }
+    let removedIDs = Set(oldSongs.filter { removed.contains($0.locator) }.map(\.id))
+    if !removedIDs.isEmpty {
+      state.playlists = state.playlists?.map { playlist in
+        var value = playlist
+        value.songIDs.removeAll { removedIDs.contains($0) }
+        return value
       }
-      let folder = LibraryImportIdentity.locator(for: url)
-      let currentLocators = Set(urls.map(LibraryImportIdentity.locator))
-      let previousLocators = state.importedFolderPaths?[folder] ?? []
-      let removed = Set(LibraryImportIdentity.removedLocators(previous: previousLocators, current: currentLocators))
-      let oldState = state
-      let oldSongs = state.songs
-      state.songs.removeAll { removed.contains($0.locator) && $0.sourceID == nil }
-      state.importedFolderPaths = state.importedFolderPaths ?? [:]
-      state.importedFolderPaths?[folder] = urls.map(LibraryImportIdentity.locator)
-      await importFiles(urls, report: true)
-      let importedAll = currentLocators.allSatisfy { locator in
-        state.songs.contains(where: { $0.locator == locator })
+      state.listens.removeAll { removedIDs.contains($0.songID) }
+      try? persist()
+      for song in oldSongs where removedIDs.contains(song.id) {
+        if let cached = localURL(song) { try? FileManager.default.removeItem(at: cached) }
       }
-      guard importedAll else {
-        state = oldState
-        throw AppFailure("文件夹存在未成功导入的音频；已恢复原曲库，请修复文件后再试。")
-      }
-      do { try persist() } catch { state = oldState; throw error }
-      let removedIDs = Set(oldSongs.filter { removed.contains($0.locator) }.map(\.id))
-      if !removedIDs.isEmpty {
-        state.playlists = state.playlists?.map { playlist in
-          var value = playlist
-          value.songIDs.removeAll { removedIDs.contains($0) }
-          return value
-        }
-        state.listens.removeAll { removedIDs.contains($0.songID) }
-        try persist()
-        for song in oldSongs where removedIDs.contains(song.id) {
-          if let cached = localURL(song) { try? FileManager.default.removeItem(at: cached) }
-        }
-      }
-    } catch { message = "导入失败：" + error.localizedDescription }
+    }
+    if let verdict = LibraryImport.statusMessage(
+      added: result.added, healed: result.healed, skipped: result.skipped, failed: result.failed)
+    {
+      message = verdict
+    }
   }
   nonisolated static func audioFiles(in url: URL) throws -> [URL] {
-        guard let entries = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) else {
-          throw AppFailure("无法读取选择的文件夹")
-        }
-        var files: [URL] = []
-        for case let file as URL in entries {
-          let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-          if values.isSymbolicLink == true { entries.skipDescendants(); continue }
-          if values.isRegularFile == true && ["mp3", "m4a", "aac", "wav", "aif", "aiff", "caf", "flac", "alac"].contains(file.pathExtension.lowercased()) {
-            files.append(file)
-            guard files.count <= 20000 else { throw AppFailure("文件夹超过两万首，请选择更小的目录") }
-          }
-        }
-        return files.sorted { $0.path < $1.path }
+    let scan = LibraryImport.audioFiles(in: url)
+    guard !scan.exceeded else { throw AppFailure("文件夹超过两万首，请选择更小的目录") }
+    guard !scan.files.isEmpty else {
+      throw AppFailure(
+        scan.unreadable > 0
+          ? "文件夹里有 \(scan.unreadable) 个条目读不了，且没有找到可导入的音频；请先在文件 App 里下载到本机"
+          : "这个文件夹里没有支持的音频文件（mp3 / m4a / flac / wav / aiff / alac / caf）")
+    }
+    return scan.files
   }
-  func importFiles(_ urls: [URL], report: Bool = false) async {
-    busy = true
-    defer { busy = false }
-    var added = 0
-    var failed = 0
-    var firstFailure = ""
+  @discardableResult
+  func importFiles(_ urls: [URL], report: Bool = false, manageBusy: Bool = true) async
+    -> ImportResult
+  {
+    if manageBusy { busy = true }
+    defer { if manageBusy { busy = false } }
+    var result = ImportResult()
     for url in urls {
       let access = url.startAccessingSecurityScopedResource()
       defer { if access { url.stopAccessingSecurityScopedResource() } }
       do {
         let locator = LibraryImportIdentity.locator(for: url)
-        if LibraryImportIdentity.existingSongID(locator: locator, songs: state.songs) != nil { continue }
+        let existing = state.songs.first(where: { $0.locator == locator && $0.sourceID == nil })
+        // 已有曲目且本机文件还在 → 真正重复；本机文件不在（备份恢复、缓存被清、
+        // 上次复制失败）→ 继续走复制，把缺失的文件补齐。
+        if let existing, !LibraryImport.shouldImport(existingHasLocalFile: localURL(existing) != nil)
+        {
+          result.skipped += 1
+          continue
+        }
         let ext = url.pathExtension.lowercased()
-        guard ["mp3", "m4a", "aac", "wav", "aif", "aiff", "caf", "flac", "alac"].contains(ext)
-        else { throw AppFailure("不支持的文件：\(url.lastPathComponent)") }
+        guard LibraryImport.audioExtensions.contains(ext) else {
+          throw AppFailure("不支持的文件：\(url.lastPathComponent)")
+        }
         let name = UUID().uuidString + "." + ext
         let dest = music.appendingPathComponent(name)
-        try await Task.detached(priority: .userInitiated) {
-          try Self.copyImported(url, to: dest)
-        }.value
+        do {
+          try await Task.detached(priority: .userInitiated) {
+            try Self.copyImported(url, to: dest)
+          }.value
+        } catch {
+          try? FileManager.default.removeItem(at: dest)
+          throw error
+        }
         do {
           var song = try await Self.readSong(dest, file: name)
           song.locator = locator
@@ -598,26 +661,37 @@ enum Secrets {
           if song.title == dest.deletingPathExtension().lastPathComponent {
             song.title = url.deletingPathExtension().lastPathComponent
           }
-          state.songs.append(song)
+          if let existing, let index = state.songs.firstIndex(where: { $0.id == existing.id }) {
+            // 补齐缺失的本机文件：保留 id（歌单、听书记录都靠它），只换文件与缺失的元数据。
+            var healed = existing
+            healed.file = name
+            if healed.duration <= 0 { healed.duration = song.duration }
+            if healed.sampleRate <= 0 { healed.sampleRate = song.sampleRate }
+            if healed.title.isEmpty { healed.title = song.title }
+            if healed.artwork == nil { healed.artwork = song.artwork }
+            if healed.lyrics == nil || healed.lyrics?.isEmpty == true { healed.lyrics = song.lyrics }
+            state.songs[index] = healed
+            result.healed += 1
+          } else {
+            state.songs.append(song)
+            result.added += 1
+          }
           save()
-          added += 1
         } catch {
           try? FileManager.default.removeItem(at: dest)
           throw error
         }
       } catch {
-        failed += 1
-        if firstFailure.isEmpty { firstFailure = error.localizedDescription }
+        result.failed.append(url.lastPathComponent)
       }
     }
-    if failed > 0 {
-      message =
-        added > 0
-        ? "已导入 \(added) 首，\(failed) 首失败：\(firstFailure)"
-        : "导入失败：" + firstFailure
-    } else if added > 0, report || added > 1 {
-      message = "已导入 \(added) 首到本机"
+    if report || result.added + result.healed > 1,
+      let verdict = LibraryImport.statusMessage(
+        added: result.added, healed: result.healed, skipped: result.skipped, failed: result.failed)
+    {
+      message = verdict
     }
+    return result
   }
 
   /// iCloud Drive / 文件提供者返回的 URL 直接 copy 可能失败；用 NSFileCoordinator 触发下载后再复制。

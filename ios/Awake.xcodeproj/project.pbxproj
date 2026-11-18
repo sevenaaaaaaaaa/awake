@@ -18,6 +18,7 @@
 		2D354382B64F71453AC2C869 /* PlaylistImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F05A592A950DD8CF372A75D7 /* PlaylistImport.swift */; };
 		3C2D20B4E55CC99F689E2D3E /* PlexAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 046C135D8C11B5D31D674698 /* PlexAuth.swift */; };
 		3EEE4B57BC5DDD7C667C8C79 /* Services.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E9A956315BB1CF4C1AC0C /* Services.swift */; };
+		3F8161AA90CF78F84770D5CF /* LibraryImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0073BC27DA1A09A393D4F89 /* LibraryImport.swift */; };
 		43F5D7F071B4E2C84A216C9B /* headphones-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = 5FDBF46097E81A062E813ACF /* headphones-v1.json */; };
 		47C542D8C2026F53FE215AB8 /* EffectViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14CA279FE9B8282B5072B66 /* EffectViews.swift */; };
 		497D52CB533B00A0D227D048 /* BooksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC5AF23378B5703359849E3D /* BooksTests.swift */; };
@@ -91,6 +92,7 @@
 		868E0EA19433684BA307B61D /* FileImportPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileImportPicker.swift; sourceTree = "<group>"; };
 		9099E526F9866ECBED6C6F72 /* BackupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupTests.swift; sourceTree = "<group>"; };
 		9275739D9FAAB1E4A6121F61 /* Handoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Handoff.swift; sourceTree = "<group>"; };
+		A0073BC27DA1A09A393D4F89 /* LibraryImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryImport.swift; sourceTree = "<group>"; };
 		A25772CF3D1E1165C2FC3C88 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A554254510F4AFDF55A474ED /* AwakeIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AwakeIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7700F7B34C8ED756CD34503 /* AwakeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AwakeTests.swift; sourceTree = "<group>"; };
@@ -167,6 +169,7 @@
 				1833ADE45B358BE7D885F231 /* HandoffReceiver.swift */,
 				D60BC7EC39C288BF72662FCD /* HandoffReceiveView.swift */,
 				F144CAD80E2FA1490AE8F500 /* LabViews.swift */,
+				A0073BC27DA1A09A393D4F89 /* LibraryImport.swift */,
 				B171903FC8AE4346A5AC0C83 /* MediaInfo.swift */,
 				577909C48018E6F4BB732837 /* MediaInfoView.swift */,
 				C39625E967E4D9282FC678BB /* MobilePlayer.swift */,
@@ -341,6 +344,7 @@
 				2CC306AC027657AF44C1B679 /* HandoffReceiveView.swift in Sources */,
 				2543ED26990FCB6149816193 /* HandoffReceiver.swift in Sources */,
 				BEFE026FF88841E93F33C788 /* LabViews.swift in Sources */,
+				3F8161AA90CF78F84770D5CF /* LibraryImport.swift in Sources */,
 				733BB4FB46BFE7D39660EC54 /* MediaInfo.swift in Sources */,
 				7E206D5ACCAF7A80D855093A /* MediaInfoView.swift in Sources */,
 				63F16572E47029185FA00BF4 /* MobilePlayer.swift in Sources */,
@@ -498,7 +502,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.4;
+				MARKETING_VERSION = 0.9.5;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -615,7 +619,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.4;
+				MARKETING_VERSION = 0.9.5;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
