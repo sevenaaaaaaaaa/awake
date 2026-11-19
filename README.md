@@ -1,4 +1,4 @@
-# Awake 0.9.5
+# Awake 0.9.8
 
 **让好音乐，越来越合拍。** macOS 本地播放器：流式音频、后端连续队列、自有音乐来源、可解释的偏好学习，以及用户主动触发的 AI 策展和创作。
 
@@ -6,6 +6,7 @@
 
 ## 下载
 
+- **[macOS 0.9.8（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.8)**：解压后拖入「应用程序」，首次打开需在「隐私与安全性」中允许。本版把「正在播放」改成仪器面板，并让 31 段均衡曲线可以直接拖：按住改最近一段、Shift 拖过一段区间一起涂、双击复位、滚轮 0.1 dB 微调。[发行说明](docs/releases/v0.9.8.md)
 - **[macOS 0.9.5（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.5)**：解压后拖入「应用程序」，首次打开需在「隐私与安全性」中允许。[发行说明](docs/releases/v0.9.5.md)
 - **[iOS 0.9.8 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.8)**：未签名 IPA，需自行重签安装；同一份 IPA 也在 iCloud Drive 里。本版重做「正在播放」：链路条写真实数值、31 段曲线可拖动改真实 EQ、没有链路时给入口而不是画空线、右上角的「完成」胶囊换成下拉箭头并改为全屏呈现。[发行说明](docs/releases/ios-v0.9.8.md)
 - **[iOS 0.9.7 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.7)**：未签名 IPA，需自行重签安装；同一份 IPA 也在 iCloud Drive 里。本版修「Plex 连上了却看不到」：曲库新增来源筛选条，连接成功后自动切到曲库并筛到刚连上的来源，连接结果明确提示 N 首。[发行说明](docs/releases/ios-v0.9.7.md)
@@ -29,6 +30,16 @@
 ![还没有链路时](docs/ios-screenshots/player-instrument-empty.png)
 
 验证方式：模拟器里跑 `AWAKE_E2E_PLAYER=1`（+ `AWAKE_E2E_CHAIN=1` 造一条演示链路）截的图，两张都在 `docs/ios-screenshots/`。模拟器在本机没有可点击的 GUI，所以播放页用应用内自检入口打开，截图即真机和模拟器上同一份视图代码渲染的结果。
+
+## 桌面 0.9.8 · 曲线能拖了，正在播放也是仪器面板
+
+这一版没有加功能，把已有的能力变成能上手的东西。
+
+**「声音」页的曲线本身就是控件。** 原来调一个频段要在 31 根细滑块里找那一根，上面的折线只是结果预览、不跟手；现在按住曲线上下拖就改最近那一段，曲线实时跟随，松手写回听感链路。Shift + 拖动把经过的频段一起涂改（中间不漏段），双击复位那一段，滚轮在当前段上 0.1 dB 微调，方向键选段与步进，Delete 复位。拖动中每 80 ms 生效一次、松手立即生效——跟手，但不把后端打满。需要逐段对数值时，31 根滑块还在「精确调整」折叠区里。
+
+**「正在播放」搬了 iOS 0.9.8 那套仪器排法。** 链路条写着这一首的真实值（`FLAC / 24 bit / 96 kHz · 2 声道` · `31 段` · `本机输出`），下面是当前链路实际生效的 31 段曲线：对数频率轴、0 dB 基线、±6 dB 虚线、频率刻度、峰值标注。没有链路时写一句话加一个入口，而不是画一条看起来像坏了的平线。封面旁边是格式、时长、来源、加入时间的清单，歌词单独一栏。
+
+实现分在 [EqCurveEditor.vue](ui/src/EqCurveEditor.vue)（指针、滚轮、键盘）与 [eqInteraction.ts](ui/src/eqInteraction.ts)（比例换算、涂抹区间）；曲线几何在 [stageCurve.ts](ui/src/stageCurve.ts)。抽出来是因为「涂改时中间漏没漏段」「对数轴位置差 1 px」这类错在界面上看不出来。
 
 ## iOS 0.9.7 · Plex 连上了却看不到：补上「连完就看见」
 

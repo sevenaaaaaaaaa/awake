@@ -4515,3 +4515,129 @@ kbd {
   margin: 0;
 }
 
+
+/* —— 播放页：仪器面板（与 iOS 0.9.8 同一套规则） —— */
+.stage-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 15px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.stage-kicker {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.stage-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.stage-sub {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.stage-body {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.2fr) minmax(220px, 0.8fr);
+  gap: 48px;
+  padding: 24px 15px 8px;
+  align-items: start;
+}
+.stage-side {
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+}
+.stage-side .artwork.large {
+  width: 100%;
+  max-width: 320px;
+  box-shadow: none;
+}
+.stage-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  width: 100%;
+  max-width: 320px;
+}
+.stage-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 6px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--line);
+}
+.stage-facts dt {
+  margin: 0;
+  color: var(--muted);
+}
+.stage-facts dd {
+  margin: 0;
+  font-family: var(--mono);
+  color: var(--text);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stage-lyrics-panel {
+  margin-top: 28px;
+  padding: 24px 15px 0;
+  border-top: 1px solid var(--line);
+}
+.stage-section-title {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.stage-lyrics {
+  max-height: 300px;
+}
+.stage-lyrics > button {
+  font-size: 18px;
+  line-height: 1.55;
+}
+.stage-lyrics .lyrics-empty {
+  font-size: 12px;
+  color: var(--dim);
+  margin: 0;
+}
+
+/* 频谱画像：收掉绿色渐变，统一成一个中性强调色 */
+.spectrum-bars span {
+  background: color-mix(in srgb, var(--accent) 52%, transparent);
+}
+.spectrum-section .between span,
+.spectrum-section .between small {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+.lyrics-empty .icon {
+  color: var(--dim);
+}
+
+@media (max-width: 1080px) {
+  .stage-body {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+}
+.eq-sliders-toggle {
+  margin-top: 14px;
+}
+.eq-sliders-toggle summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 0;
+}
+.eq-sliders-toggle[open] summary {
+  color: var(--text);
+}

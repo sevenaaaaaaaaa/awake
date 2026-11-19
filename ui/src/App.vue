@@ -14,6 +14,8 @@ import SoundChain from "./SoundChain.vue";
 import MediaInspector from "./MediaInspector.vue";
 import TelegramSource from "./TelegramSource.vue";
 import TelegramSponsored from "./TelegramSponsored.vue";
+import StageInstrument from "./StageInstrument.vue";
+import EqCurveEditor from "./EqCurveEditor.vue";
 import Artwork from "./Artwork.vue";
 import TrackList from "./TrackList.vue";
 import SwipeMode from "./SwipeMode.vue";
@@ -713,6 +715,34 @@ const studioPrompt = ref(""),
   briefBusy = ref(false),
   fileInput = ref<HTMLInputElement | null>(null),
   commandInput = ref<HTMLInputElement | null>(null);
+const stageSourceName = computed(() => {
+  const t = s.now;
+  if (!t) return "";
+  return (
+    s.sources.find((x) => x.id === t.source_id)?.name ??
+    (t.is_remote ? "远程来源" : "本机曲库")
+  );
+});
+const stageFacts = computed(() => {
+  const t = s.now;
+  if (!t) return { format: "—", duration: "—", source: "—", added: "—" };
+  const rate = t.sample_rate > 0
+    ? `${Number.isInteger(t.sample_rate / 1000) ? t.sample_rate / 1000 : (t.sample_rate / 1000).toFixed(1)} kHz`
+    : "";
+  const format = [
+    t.codec || "音频",
+    t.bit_depth > 0 ? `${t.bit_depth} bit` : "",
+    rate,
+    t.channels > 0 ? (t.channels === 1 ? "单声道" : `${t.channels} 声道`) : "",
+  ].filter(Boolean).join(" · ");
+  const total = Math.max(0, Math.round(t.duration));
+  return {
+    format,
+    duration: `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`,
+    source: stageSourceName.value,
+    added: t.added_at ? new Date(t.added_at).toLocaleDateString("zh-CN") : "—",
+  };
+});
 const analysis = ref<number[]>([]),
   analysisNote = ref(""),
   lyrics = ref<{ time: number; text: string }[]>([]);
@@ -878,6 +908,10 @@ const heroAlbum = computed(
       a.tracks.some((t) => t.id === suggested.value[0]?.id),
     ) || s.albums[0],
 );
+/** 曲线编辑器交回来的新增益：就地写回，保持 s.gains 这个引用不变。 */
+function updateGains(next: number[]) {
+  s.gains.splice(0, s.gains.length, ...next);
+}
 const eqPoints = computed(() =>
   s.gains.map((g, i) => `${(i * 600) / 30},${80 - g * 4}`).join(" "),
 );
@@ -2421,28 +2455,29 @@ onUnmounted(() => {
                 恢复原声 <Icon name="refresh" />
               </button>
             </div>
-            <div class="eq-chart" aria-hidden="true">
-              <span>+12 dB</span><span class="zero-label">0 dB</span
-              ><span class="bottom-label">−12 dB</span
-              ><svg viewBox="0 0 600 160" preserveAspectRatio="none">
-                <line x1="0" x2="600" y1="80" y2="80" />
-                <polyline :points="eqPoints" />
-              </svg>
-            </div>
-            <div class="eq-sliders">
-              <label v-for="(f, i) in frequencies" :key="f"
-                ><span class="sr-only">{{ f }} Hz</span
-                ><input
-                  v-model.number="s.gains[i]"
-                  type="range"
-                  min="-12"
-                  max="12"
-                  step="0.5"
-                  :aria-label="`${f} Hz 均衡增益`"
-                  @change="s.applyEq()"
-                /><small>{{ f >= 1000 ? f / 1000 + "k" : f }}</small></label
-              >
-            </div>
+            <EqCurveEditor
+              :gains="s.gains"
+              :frequencies="frequencies"
+              @update:gains="updateGains"
+              @apply="s.applyEq()"
+            />
+            <details class="eq-sliders-toggle">
+              <summary>精确调整（31 段滑块）</summary>
+              <div class="eq-sliders">
+                <label v-for="(f, i) in frequencies" :key="f"
+                  ><span class="sr-only">{{ f }} Hz</span
+                  ><input
+                    v-model.number="s.gains[i]"
+                    type="range"
+                    min="-12"
+                    max="12"
+                    step="0.5"
+                    :aria-label="`${f} Hz 均衡增益`"
+                    @change="s.applyEq()"
+                  /><small>{{ f >= 1000 ? f / 1000 + "k" : f }}</small></label
+                >
+              </div>
+            </details>
             <div class="preset-row">
               <span>从一种听感开始</span
               ><button @click="s.preset('warm')">温暖低频</button
@@ -2737,25 +2772,51 @@ onUnmounted(() => {
         </template>
 
         <template v-else-if="view === 'stage'">
-          <div class="page-intro">
+          <div class="stage-head">
             <div>
-              <p class="eyebrow">HERE. NOW. NOTHING ELSE.</p>
-              <h1>把这一刻，留给音乐。</h1>
+              <p class="stage-kicker">正在播放</p>
+              <h1 class="stage-title">{{ s.now?.title || '还没有在播放' }}</h1>
+              <p v-if="s.now" class="stage-sub">
+                {{ s.now.artist }}<template v-if="s.now.album"> · {{ s.now.album }}</template>
+              </p>
             </div>
             <button class="text-button" @click="queueOpen = !queueOpen">
               播放队列 <Icon name="list" />
             </button>
           </div>
-          <section v-if="s.now" class="listening-stage">
-            <div>
-              <Artwork :path="s.now.artwork_path" :seed="s.now.album || s.now.title" :style-name="s.now.media_info?.cover_style" large />
-              <div class="stage-caption">
-                <button class="text-button" @click="editingMedia = s.now">整理封面、歌词与乐评</button>
-                <h2>{{ s.now.title }}</h2>
-                <p>{{ s.now.artist }} · {{ s.now.album }}</p>
-                <small class="mono">{{ format(s.now) }}</small>
-              </div>
-            </div>
+          <section v-if="s.now" class="stage-body">
+            <StageInstrument
+              :track="s.now"
+              :gains="s.gains"
+              :source-name="stageSourceName"
+            />
+            <aside class="stage-side">
+              <Artwork
+                :path="s.now.artwork_path"
+                :seed="s.now.album || s.now.title"
+                :style-name="s.now.media_info?.cover_style"
+                large
+              />
+              <dl class="stage-facts">
+                <div><dt>格式</dt><dd>{{ stageFacts.format }}</dd></div>
+                <div><dt>时长</dt><dd>{{ stageFacts.duration }}</dd></div>
+                <div><dt>来源</dt><dd>{{ stageFacts.source }}</dd></div>
+                <div><dt>加入</dt><dd>{{ stageFacts.added }}</dd></div>
+              </dl>
+              <button class="text-button" @click="editingMedia = s.now">
+                整理封面、歌词与乐评
+              </button>
+            </aside>
+          </section>
+          <div v-else class="empty-state">
+            <Icon name="music" :size="42" />
+            <h2>先放一首喜欢的音乐。</h2>
+            <button class="button primary" @click="go('library')">
+              去音乐资料库
+            </button>
+          </div>
+          <section v-if="s.now" class="stage-lyrics-panel">
+            <p class="stage-section-title">歌词</p>
             <div class="stage-lyrics">
               <template v-if="lyrics.length"
                 ><button
@@ -2768,21 +2829,11 @@ onUnmounted(() => {
                 </button></template
               >
               <pre v-else-if="s.now.lyrics" class="plain-lyrics">{{ s.now.lyrics }}</pre>
-              <div v-else class="lyrics-empty">
-                <Icon name="wave" :size="42" />
-                <h2>有些旋律，<br />不需要文字。</h2>
-                <p>未找到这首歌的同步歌词。</p>
-                <small>桌面版支持与音频同名的 .lrc 文件。</small>
-              </div>
+              <p v-else class="lyrics-empty">
+                没有同步歌词。与音频同名的 .lrc 文件会被自动读取。
+              </p>
             </div>
           </section>
-          <div v-else class="empty-state">
-            <Icon name="music" :size="42" />
-            <h2>先放一首喜欢的音乐。</h2>
-            <button class="button primary" @click="go('library')">
-              去音乐资料库
-            </button>
-          </div>
           <div v-if="s.now" class="spectrum-section">
             <div class="between">
               <span>曲目频谱画像</span><small>{{ analysisNote }}</small>
