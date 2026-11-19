@@ -324,6 +324,10 @@ enum Secrets {
   /// 刚连上的来源：曲库用它把列表筛到这一个来源，连完就能看见自己刚加的东西。
   /// 读取后由曲库清空，避免每次进曲库都被上一次的连接结果锁住。
   @Published var pendingLibrarySource: String?
+  /// 正在播放页的开合；MiniPlayer 与端到端自检都用它。
+  @Published var playerSheetOpen = false
+  /// 请求切到某个底部标签（播放页的「去设置」用）。读完即清空。
+  @Published var requestedTab: Int?
   var generationTask: Task<Void, Never>?
   var jobs: [CreationJob] {
     get { state.creations ?? [] }

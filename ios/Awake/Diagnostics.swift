@@ -126,6 +126,8 @@ extension Diagnostics {
       do {
         let songs = try await SourceService.scan(
           source, secret: secret, artwork: store.artworkDirectory)
+        // 和设置页连接时一样把凭据写进钥匙串，否则播放时缓存远程音频会 401。
+        try Secrets.set(secret, account: "source." + source.id)
         var next = store.state
         next.sources.append(source)
         next.songs.append(contentsOf: songs)
@@ -140,6 +142,51 @@ extension Diagnostics {
         log("E2E 扫描失败 error=\(error.localizedDescription)")
       }
     }
+  }
+}
+#endif
+
+#if DEBUG
+extension Diagnostics {
+  /// 播放页自检：`AWAKE_E2E_PLAYER=1` 时播第一首并打开「正在播放」，
+  /// 用来在模拟器里截取播放界面（模拟器没有可点击的 GUI）。
+  @MainActor static func e2ePlayIfRequested(store: MobileStore, player: MobilePlayer) {
+    guard ProcessInfo.processInfo.environment["AWAKE_E2E_PLAYER"] == "1" else { return }
+    guard let song = store.state.songs.first else {
+      log("E2E 播放：曲库为空")
+      return
+    }
+    Task {
+      if ProcessInfo.processInfo.environment["AWAKE_E2E_CHAIN"] == "1" {
+        seedDemoChain(store: store, player: player)
+      }
+      await playSong(song, store: store, player: player)
+      store.playerSheetOpen = true
+      log("E2E 播放：\(song.title)")
+    }
+  }
+
+  /// 造一条演示用的听感链路，用来在模拟器里看到「有曲线时」的播放页。
+  /// 只在显式传 `AWAKE_E2E_CHAIN=1` 时创建，不是产品逻辑。
+  @MainActor static func seedDemoChain(store: MobileStore, player: MobilePlayer) {
+    guard store.state.chains.isEmpty else {
+      if let chain = store.activeChain(route: player.route.uid) { player.useChain(chain, announce: false) }
+      return
+    }
+    var chain = ListeningChain(
+      routeUID: player.route.uid, name: "演示链路", headphone: "演示耳机", connection: "3.5 mm")
+    let curve: [Float] = [
+      3.0, 3.2, 3.0, 2.6, 2.0, 1.4, 0.8, 0.4, 0.0, -0.2, -0.2, 0.0, 0.4, 0.8,
+      1.2, 1.4, 1.5, 1.4, 1.2, 0.8, 0.4, 0.0, -0.4, -0.8, -1.2, -1.6, -2.0,
+      -2.4, -2.8, -3.2, -3.6,
+    ]
+    chain.gains = curve
+    chain.measurementSource = "演示数据"
+    store.state.chains.append(chain)
+    store.state.activeChains[chain.routeUID] = chain.id
+    store.save()
+    player.useChain(chain, announce: false)
+    log("E2E 已建立演示链路 route=\(chain.routeUID)")
   }
 }
 #endif

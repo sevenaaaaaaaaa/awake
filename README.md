@@ -7,10 +7,28 @@
 ## 下载
 
 - **[macOS 0.9.5（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.5)**：解压后拖入「应用程序」，首次打开需在「隐私与安全性」中允许。[发行说明](docs/releases/v0.9.5.md)
+- **[iOS 0.9.8 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.8)**：未签名 IPA，需自行重签安装；同一份 IPA 也在 iCloud Drive 里。本版重做「正在播放」：链路条写真实数值、31 段曲线可拖动改真实 EQ、没有链路时给入口而不是画空线、右上角的「完成」胶囊换成下拉箭头并改为全屏呈现。[发行说明](docs/releases/ios-v0.9.8.md)
 - **[iOS 0.9.7 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.7)**：未签名 IPA，需自行重签安装；同一份 IPA 也在 iCloud Drive 里。本版修「Plex 连上了却看不到」：曲库新增来源筛选条，连接成功后自动切到曲库并筛到刚连上的来源，连接结果明确提示 N 首。[发行说明](docs/releases/ios-v0.9.7.md)
 - **[iOS 0.9.6 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.6)**：修「本地文件选不了/播不出」：选择器不再按 `.audio` 过滤、导入与播放都加了 AVFoundation 回退、设置里新增自检与诊断日志。[发行说明](docs/releases/ios-v0.9.6.md)
 - **[macOS 0.9.3（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.3)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。这一版先出 arm64 包；通用包在构建机空闲后补，Intel Mac 暂时继续用 0.9.2。[发行说明](docs/releases/v0.9.3.md)
 - **[iOS 0.9.3 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.3)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.9.3.md)
+
+## 播放界面 · 从「封面 + 胶囊」改成仪器面板（iOS）
+
+原来的「正在播放」是一个任何音乐 App 都有的页面：紫蓝渐变封面占掉三分之一屏，中间一个 `✨ EQ 增强已就绪` 的发光胶囊，下面两排四个按钮，底部一个 `Speaker` 裸英文。产品的独有价值——这条链路在做什么——全被藏了起来。
+
+现在按声学仪器来排：
+
+- **链路条**：`音源 · 解码 · EQ · 输出` 四段，每段写真实数值（WAV / 48 kHz / 28 段 / 本机扬声器）。路由名做了本地化，不再出现 `Speaker`。
+- **31 段曲线**：这台设备当前实际生效的增益，对数频率轴、0 dB 基线、频率刻度、峰值标注。**能拖**——按住曲线上下拖直接改那一段，松手写回听感链路；没有链路时不画空网格，改成一句现状 + 「去声音建立链路」。
+- **静默封面**：没有封面图时用中性面 + 顶部刻度，不再画渐变球和 `PERSONAL SOUND ARCHIVE` 标语。
+- **主操作只剩一个**：播放键是唯一的实心按钮；刷音乐压到图标，接力/接收/整理收进「更多」。
+- **填住下方空白**：同专辑其它曲目直接列出，可点播。
+
+![有听感链路时](docs/ios-screenshots/player-instrument.png)
+![还没有链路时](docs/ios-screenshots/player-instrument-empty.png)
+
+验证方式：模拟器里跑 `AWAKE_E2E_PLAYER=1`（+ `AWAKE_E2E_CHAIN=1` 造一条演示链路）截的图，两张都在 `docs/ios-screenshots/`。模拟器在本机没有可点击的 GUI，所以播放页用应用内自检入口打开，截图即真机和模拟器上同一份视图代码渲染的结果。
 
 ## iOS 0.9.7 · Plex 连上了却看不到：补上「连完就看见」
 

@@ -56,13 +56,19 @@ struct RootView: View {
       // 来源刚连上：直接把人送到曲库，列表已经筛到那个来源。
       if value != nil { tab = 1 }
     }
+    .onChange(of: store.requestedTab) { _, value in
+      guard let value else { return }
+      tab = value
+      store.requestedTab = nil
+    }
     .onOpenURL { url in
       Task { await store.importFiles([url]) }
     }
     .task {
       #if DEBUG
-        // 端到端自检通道（见 Diagnostics.e2eConnectIfRequested）；只有显式传环境变量时才动。
+        // 端到端自检通道（见 Diagnostics）；只有显式传环境变量时才动。
         Diagnostics.e2eConnectIfRequested(store)
+        Diagnostics.e2ePlayIfRequested(store: store, player: player)
       #endif
       player.onListen = { song, seconds in
         store.recordListen(song, seconds: seconds)
@@ -168,12 +174,12 @@ struct Cover: View {
 }
 struct MiniPlayer: View {
   @EnvironmentObject var player: MobilePlayer
-  @State private var expanded = false
+  @EnvironmentObject var store: MobileStore
   var body: some View {
     if let song = player.song {
       HStack(spacing: 12) {
         Button {
-          expanded = true
+          store.playerSheetOpen = true
         } label: {
           HStack {
             Cover(title: song.title, artwork: song.artwork, style: song.mediaInfo?.cover_style ?? "auto", size: 40)
@@ -183,7 +189,7 @@ struct MiniPlayer: View {
             }
           }.frame(maxWidth: .infinity, alignment: .leading)
         }.buttonStyle(.plain).accessibilityLabel("打开正在播放")
-        EnhancementBadge(compact: true)
+        MiniEnhancementLabel()
         Button {
           player.toggle()
         } label: {
@@ -195,8 +201,9 @@ struct MiniPlayer: View {
         } label: {
           Image(systemName: "forward.end.fill").frame(width: 32, height: 44)
         }.accessibilityLabel("下一首")
-      }.padding(.horizontal, 16).padding(.vertical, 8).background(.regularMaterial).sheet(
-        isPresented: $expanded
+      }.padding(.horizontal, 16).padding(.vertical, 8).background(.regularMaterial).fullScreenCover(
+        isPresented: Binding(
+          get: { store.playerSheetOpen }, set: { store.playerSheetOpen = $0 })
       ) { NowPlayingView() }
     }
   }
@@ -209,6 +216,8 @@ struct NowPlayingView: View {
   @State private var swiping = false
   @State private var handingOff = false
   @State private var receiving = false
+  @State private var showEnhancement = false
+  @State private var gains = Array(repeating: Float(0), count: 31)
   var body: some View {
     if swiping {
       SwipePlayerView(onClose: { swiping = false })
@@ -220,93 +229,75 @@ struct NowPlayingView: View {
   }
   private var nowPlaying: some View {
     NavigationStack {
-      ScrollView {
-        VStack(spacing: 28) {
+      ZStack(alignment: .top) {
+        Color(hex: store.state.skin.colors.bg).ignoresSafeArea()
+        ScrollView {
+        VStack(alignment: .leading, spacing: 0) {
           if let song = player.song {
-            Cover(title: song.title, artwork: song.artwork, style: song.mediaInfo?.cover_style ?? "auto", size: 240).padding(.top, 30)
-            VStack(spacing: 8) {
-              Text(song.title).font(.title2.bold()).multilineTextAlignment(.center)
-              Text(song.artist).foregroundStyle(.secondary)
+            ChainStrip(steps: chainSteps(song))
+            if activeChain != nil {
+              EQCurvePanel(gains: $gains, editable: true, onCommit: commitGains)
+                .padding(.top, 20)
+              statusLine(song)
+                .padding(.top, 8)
+            } else {
+              // 没有链路就不画一条空线：说明现状，并给出下一步。
+              chainEmptyBlock
+                .padding(.top, 20)
             }
-            HStack(spacing: 12) {
-              Button("刷音乐") { swiping = true }
-                .accessibilityIdentifier("swipeModeEntry")
-              Button("整理封面、歌词与乐评") { editingInfo = true }
-                .accessibilityIdentifier("editPlayingMedia")
-            }
-            HStack(spacing: 12) {
-              Button {
-                handingOff = true
-              } label: {
-                Label("接力到电脑", systemImage: "airplayaudio")
-              }
-              .accessibilityIdentifier("handoffToMac")
-              .accessibilityHint("把正在播放的曲目和进度交给同一局域网的电脑继续播放")
-              Button {
-                receiving = true
-              } label: {
-                Label("接收接力", systemImage: "iphone.and.arrow.forward")
-              }
-              .accessibilityIdentifier("handoffFromMac")
-              .accessibilityHint("让同一局域网的电脑把正在播放的曲目接力到这台手机")
-            }
-            EnhancementBadge()
-            Slider(
-              value: Binding(get: { player.position }, set: { player.seek($0) }),
-              in: 0...max(1, player.duration)
-            ).accessibilityLabel("播放进度")
-            HStack {
-              Text(clock(player.position))
-              Spacer()
-              Text(clock(player.duration))
-            }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            HStack(spacing: 38) {
-              Button {
-                player.previous()
-              } label: {
-                Image(systemName: "backward.end.fill")
-              }
-              Button {
-                player.toggle()
-              } label: {
-                Image(systemName: player.playing ? "pause.circle.fill" : "play.circle.fill").font(
-                  .system(size: 64))
-              }
-              Button {
-                player.next()
-              } label: {
-                Image(systemName: "forward.end.fill")
-              }
-            }.font(.title2)
-            HStack {
-              Text(player.route.name).font(.caption)
-              Spacer()
-              RoutePicker().frame(width: 40, height: 40)
-            }
-            if let text = song.lyrics, !text.isEmpty {
-              GroupBox("歌词") { MediaLyricsView(text: text) }
-            }
-            if let reviews = song.mediaInfo?.reviews, !reviews.isEmpty {
-              GroupBox("听众乐评") {
-                VStack(alignment: .leading, spacing: 14) {
-                  ForEach(reviews.prefix(3)) { review in
-                    Text((review.scope == "release_group" ? "专辑乐评" : review.scope == "recording" ? "单曲乐评" : "导入评论") + " · " + review.author).font(.caption).foregroundStyle(.secondary)
-                    Text(review.text).font(.body).lineLimit(7)
-                    Text(review.source + " · " + review.license).font(.caption).foregroundStyle(.secondary)
-                    if let url = URL(string: review.url), ["https", "http"].contains(url.scheme ?? "") { Link("查看原文与署名", destination: url) }
-                  }
-                  Button("查看全部与来源") { editingInfo = true }
+            HStack(alignment: .top, spacing: 16) {
+              PlayerPlate(title: song.title, artwork: song.artwork, size: 112)
+              VStack(alignment: .leading, spacing: 4) {
+                Text(song.title)
+                  .font(.system(size: 20, weight: .medium))
+                  .lineLimit(2)
+                Text(song.artist)
+                  .font(.system(size: 13, weight: .regular))
+                  .foregroundStyle(.secondary)
+                  .lineLimit(1)
+                if !song.album.isEmpty {
+                  Text(song.album)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
                 }
+                Text(metaLine(song))
+                  .font(.system(size: 11, weight: .regular, design: .monospaced))
+                  .foregroundStyle(.tertiary)
+                  .lineLimit(1)
               }
+              Spacer(minLength: 0)
             }
-            Text("PCM \(Int(player.route.rate)) Hz · 无线编码由系统协商").font(.caption).foregroundStyle(
-              .secondary)
+            .padding(.top, 24)
+            scrubber
+              .padding(.top, 24)
+            transport
+              .padding(.top, 20)
+            tools(song)
+              .padding(.top, 24)
+            if let text = song.lyrics, !text.isEmpty {
+              instrumentSection("歌词") { MediaLyricsView(text: text) }
+                .padding(.top, 32)
+            }
+            siblingsSection(song)
+            if let reviews = song.mediaInfo?.reviews, !reviews.isEmpty {
+              instrumentSection("听众乐评") { reviewsBody(reviews) }
+                .padding(.top, 24)
+            }
           }
-        }.padding(24)
-      }.appSurface().navigationTitle("正在播放").navigationBarTitleDisplayMode(.inline).toolbar {
-        Button("完成") { dismiss() }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 32)
       }
-    }.sheet(isPresented: $editingInfo) { if let song = player.song { MediaInfoView(song: song) } }
+        .safeAreaInset(edge: .top, spacing: 0) { playerHeader }
+      }
+      .toolbar(.hidden, for: .navigationBar)
+      .presentationBackground(Color(hex: store.state.skin.colors.bg))
+      .onAppear { syncGains() }
+      .onChange(of: player.route.uid) { _, _ in syncGains() }
+    }
+    .sheet(isPresented: $editingInfo) { if let song = player.song { MediaInfoView(song: song) } }
     .sheet(isPresented: $handingOff) { HandoffSheet() }
     .sheet(isPresented: $receiving) {
       HandoffReceiveView()
@@ -314,6 +305,377 @@ struct NowPlayingView: View {
         .environmentObject(player)
     }
     .overlay(alignment: .top) { EffectActivationOverlay(priority: 1) }
+  }
+
+  // MARK: 顶部条
+
+  /// 自绘顶部条：一个下拉箭头和一行小标题。系统 toolbar 的「完成」胶囊和仪器面板不搭。
+  private var playerHeader: some View {
+    HStack(spacing: 0) {
+      Button {
+        dismiss()
+      } label: {
+        Image(systemName: "chevron.down")
+          .font(.system(size: 15, weight: .medium))
+          .foregroundStyle(.secondary)
+          .frame(width: 44, height: 44)
+          .contentShape(Rectangle())
+      }
+      .accessibilityLabel("关闭正在播放")
+      Spacer(minLength: 0)
+      Text("正在播放")
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(.secondary)
+      Spacer(minLength: 0)
+      Color.clear.frame(width: 44, height: 44)
+    }
+    .padding(.horizontal, 4)
+    .background(Color(hex: store.state.skin.colors.bg))
+    .overlay(alignment: .bottom) {
+      Rectangle().fill(Color(hex: store.state.skin.colors.border).opacity(0.5)).frame(height: 0.5)
+    }
+  }
+
+  // MARK: 仪器区
+
+  private var activeChain: ListeningChain? {
+    store.activeChain(route: player.route.uid)
+  }
+
+  /// 没有听感链路时的仪器区：不画空曲线，直接说清楚现在是什么状态、下一步去哪。
+  private var chainEmptyBlock: some View {
+    Button {
+      store.playerSheetOpen = false
+      store.requestedTab = 2
+    } label: {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack(alignment: .firstTextBaseline) {
+          Text("31 段曲线")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.secondary)
+          Spacer(minLength: 0)
+          Text("平直")
+            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+        }
+        HStack(alignment: .center, spacing: 12) {
+          VStack(alignment: .leading, spacing: 4) {
+            Text("还没有听感链路")
+              .font(.system(size: 13, weight: .medium))
+              .foregroundStyle(.primary)
+            Text("当前输出按平直曲线播放。在「声音」里选耳机型号与链路后，这里会画出实际生效的 31 段曲线。")
+              .font(.system(size: 12, weight: .regular))
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+              .multilineTextAlignment(.leading)
+          }
+          Spacer(minLength: 0)
+          Image(systemName: "chevron.right")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+          RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(Color(hex: store.state.skin.colors.surface).opacity(0.5)))
+        .overlay(
+          RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .stroke(Color(hex: store.state.skin.colors.border), lineWidth: 0.5))
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier("enhancementBadge")
+    .accessibilityLabel("还没有听感链路，去声音里设置")
+  }
+
+  private func chainSteps(_ song: Song) -> [(label: String, value: String)] {
+    let enhancement = player.enhancement
+    let bands = enhancement.graphicBands + enhancement.correctionBands
+    let eq: String
+    if enhancement.enabled {
+      eq = bands > 0 ? "\(bands) 段" : "已启用"
+    } else {
+      eq = enhancement.bypassed ? "旁路" : "平直"
+    }
+    return [
+      ("音源", PlayerFormat.format(song.file ?? song.locator)),
+      ("解码", PlayerFormat.hz(player.route.rate)),
+      ("EQ", eq),
+      ("输出", PlayerFormat.routeName(player.route.name, transport: player.route.transport)),
+    ]
+  }
+
+  private func metaLine(_ song: Song) -> String {
+    var parts: [String] = []
+    if song.sampleRate >= 8000 { parts.append(PlayerFormat.hz(song.sampleRate)) }
+    if let chain = activeChain, !chain.headphone.isEmpty { parts.append(chain.headphone) }
+    return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+  }
+
+  /// 音效状态：一行真实状态，点开是详情。原来的发光胶囊去掉了。
+  private func statusLine(_ song: Song) -> some View {
+    Button {
+      if activeChain == nil {
+        // 没有听感链路时，这一行最有用的动作是去「声音」把链路建起来。
+        store.playerSheetOpen = false
+        store.requestedTab = 2
+      } else {
+        showEnhancement = true
+      }
+    } label: {
+      HStack(spacing: 6) {
+        Circle()
+          .fill(
+            player.enhancement.enabled
+              ? Color(hex: store.state.skin.colors.accent)
+              : Color(hex: store.state.skin.colors.muted)
+          )
+          .frame(width: 5, height: 5)
+        Text(enhancementLine)
+          .font(.system(size: 12, weight: .regular, design: .monospaced))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.85)
+        Spacer(minLength: 0)
+        if activeChain == nil {
+          Text("去设置")
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundStyle(Color(hex: store.state.skin.colors.accent))
+        }
+      }
+      .frame(minHeight: 28)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier("enhancementBadge")
+    .accessibilityValue(player.enhancement.title(playing: player.playing))
+    .sheet(isPresented: $showEnhancement) {
+      EnhancementDetails().environmentObject(store).environmentObject(player)
+    }
+  }
+
+  private var enhancementLine: String {
+    let enhancement = player.enhancement
+    if enhancement.bypassed { return "EQ 已旁路 · 原声直出" }
+    if !enhancement.configured { return "平直曲线 · 未设置听感链路" }
+    if !enhancement.enabled { return "原声 · \(enhancement.profile)" }
+    let bands = enhancement.graphicBands + enhancement.correctionBands
+    var parts = [enhancement.origin.title]
+    if bands > 0 { parts.append("\(bands) 段") }
+    if abs(enhancement.preamp) >= 0.05 { parts.append("前级 " + PlayerFormat.db(enhancement.preamp)) }
+    return parts.joined(separator: " · ")
+  }
+
+  private var scrubber: some View {
+    VStack(spacing: 6) {
+      GeometryReader { geo in
+        let progress = player.duration > 0
+          ? min(1, max(0, player.position / player.duration)) : 0
+        ZStack(alignment: .leading) {
+          Capsule().fill(Color(hex: store.state.skin.colors.border)).frame(height: 2)
+          Capsule()
+            .fill(Color(hex: store.state.skin.colors.accent))
+            .frame(width: max(1, geo.size.width * progress), height: 2)
+        }
+        .frame(maxHeight: .infinity, alignment: .center)
+        .contentShape(Rectangle())
+        .gesture(
+          DragGesture(minimumDistance: 0).onChanged { value in
+            guard player.duration > 0, geo.size.width > 0 else { return }
+            let ratio = max(0, min(1, value.location.x / geo.size.width))
+            player.seek(Double(ratio) * player.duration)
+          })
+      }
+      .frame(height: 20)
+      HStack {
+        Text(clock(player.position))
+        Spacer()
+        Text(clock(player.duration))
+      }
+      .font(.system(size: 11, weight: .regular, design: .monospaced))
+      .foregroundStyle(.secondary)
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("播放进度")
+  }
+
+  private var transport: some View {
+    HStack(spacing: 0) {
+      Button {
+        player.previous()
+      } label: {
+        Image(systemName: "backward.end.fill")
+          .font(.system(size: 17, weight: .medium))
+          .foregroundStyle(.secondary)
+          .frame(width: 56, height: 56)
+      }
+      .accessibilityLabel("上一首")
+      Spacer(minLength: 0)
+      Button {
+        player.toggle()
+      } label: {
+        ZStack {
+          Circle()
+            .fill(Color(hex: store.state.skin.colors.text))
+            .frame(width: 56, height: 56)
+          Image(systemName: player.playing ? "pause.fill" : "play.fill")
+            .font(.system(size: 19, weight: .semibold))
+            .foregroundStyle(Color(hex: store.state.skin.colors.bg))
+            .offset(x: player.playing ? 0 : 1.5)
+        }
+      }
+      .accessibilityLabel(player.playing ? "暂停" : "播放")
+      Spacer(minLength: 0)
+      Button {
+        player.next()
+      } label: {
+        Image(systemName: "forward.end.fill")
+          .font(.system(size: 17, weight: .medium))
+          .foregroundStyle(.secondary)
+          .frame(width: 56, height: 56)
+      }
+      .accessibilityLabel("下一首")
+    }
+  }
+
+  private func tools(_ song: Song) -> some View {
+    HStack(spacing: 20) {
+      Button {
+        if let index = store.state.songs.firstIndex(where: { $0.id == song.id }) {
+          store.state.songs[index].favorite.toggle()
+          store.save()
+        }
+      } label: {
+        Image(systemName: song.favorite ? "heart.fill" : "heart")
+          .font(.system(size: 16, weight: .regular))
+          .foregroundStyle(
+            song.favorite ? Color(hex: store.state.skin.colors.accent) : .secondary)
+          .frame(width: 32, height: 32)
+      }
+      .accessibilityLabel(song.favorite ? "取消收藏" : "收藏")
+      Button {
+        swiping = true
+      } label: {
+        Image(systemName: "shuffle")
+          .font(.system(size: 16, weight: .regular))
+          .foregroundStyle(.secondary)
+          .frame(width: 32, height: 32)
+      }
+      .accessibilityLabel("刷音乐")
+      .accessibilityIdentifier("swipeModeEntry")
+      Spacer(minLength: 0)
+      Menu {
+        Button("接力到电脑", systemImage: "airplayaudio") { handingOff = true }
+          .accessibilityIdentifier("handoffToMac")
+        Button("接收接力", systemImage: "iphone.and.arrow.forward") { receiving = true }
+          .accessibilityIdentifier("handoffFromMac")
+        Divider()
+        Button("整理封面、歌词与乐评", systemImage: "square.and.pencil") { editingInfo = true }
+          .accessibilityIdentifier("editPlayingMedia")
+      } label: {
+        Image(systemName: "ellipsis.circle")
+          .font(.system(size: 17, weight: .regular))
+          .foregroundStyle(.secondary)
+          .frame(width: 32, height: 32)
+      }
+      .accessibilityLabel("更多")
+    }
+  }
+
+  /// 同一张专辑里的其它曲目。没有歌词时下方不再是一片空白，而且这一块本来就是真的有用。
+  private func siblingsSection(_ song: Song) -> some View {
+    let others = store.state.songs
+      .filter { $0.album == song.album && $0.id != song.id }
+      .prefix(6)
+    return Group {
+      if !others.isEmpty, !song.album.isEmpty {
+        instrumentSection("同专辑 · \(song.album)") {
+          VStack(spacing: 0) {
+            ForEach(Array(others)) { other in
+              Button {
+                Task { await playSong(other, store: store, player: player) }
+              } label: {
+                HStack(spacing: 12) {
+                  Text(other.title)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                  Spacer(minLength: 12)
+                  Text(clock(other.duration))
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 9)
+                .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+              if other.id != others.last?.id {
+                Rectangle().fill(Color(hex: store.state.skin.colors.border).opacity(0.6))
+                  .frame(height: 0.5)
+              }
+            }
+          }
+        }
+        .padding(.top, 32)
+      }
+    }
+  }
+
+  private func instrumentSection<Content: View>(
+    _ title: String, @ViewBuilder content: () -> Content
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text(title)
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(.secondary)
+      content()
+    }
+  }
+
+  private func reviewsBody(_ reviews: [MediaReview]) -> some View {
+    VStack(alignment: .leading, spacing: 14) {
+      ForEach(reviews.prefix(3)) { review in
+        VStack(alignment: .leading, spacing: 4) {
+          Text(
+            (review.scope == "release_group"
+              ? "专辑乐评" : review.scope == "recording" ? "单曲乐评" : "导入评论")
+              + " · " + review.author
+          )
+          .font(.system(size: 11, weight: .regular, design: .monospaced))
+          .foregroundStyle(.secondary)
+          Text(review.text).font(.system(size: 14)).lineLimit(7)
+          Text(review.source + " · " + review.license)
+            .font(.system(size: 11))
+            .foregroundStyle(.tertiary)
+          if let url = URL(string: review.url),
+            ["https", "http"].contains(url.scheme ?? "")
+          {
+            Link("查看原文与署名", destination: url).font(.system(size: 12))
+          }
+        }
+      }
+      Button {
+        editingInfo = true
+      } label: {
+        Text("查看全部与来源").font(.system(size: 12))
+      }
+      .accessibilityIdentifier("editPlayingMediaDetail")
+    }
+  }
+
+  private func syncGains() {
+    if let chain = activeChain, chain.gains.count == 31 {
+      gains = chain.gains
+    } else {
+      gains = Array(repeating: Float(0), count: 31)
+    }
+  }
+
+  private func commitGains(_ values: [Float]) {
+    store.setChainGains(values, route: player.route.uid)
   }
 }
 func clock(_ seconds: Double) -> String {

@@ -35,6 +35,7 @@
 		7E206D5ACCAF7A80D855093A /* MediaInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 577909C48018E6F4BB732837 /* MediaInfoView.swift */; };
 		8222DC01CE94B79EB3778DED /* Backup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607A1E2CD64256B88623FB49 /* Backup.swift */; };
 		89BDB891FF29B7B9EF39A999 /* Speech.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09A7E4B3CD23B4B8B1828F48 /* Speech.swift */; };
+		90F947CDA41BDC54B191A7A7 /* PlayerInstrument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78C62F4E4623656837A7005F /* PlayerInstrument.swift */; };
 		921E2B7981CB6F6809D5345D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3589EE509F6BA6E6F9DD71FB /* Assets.xcassets */; };
 		9E9E1D004861520B01D5E86C /* AwakeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4849CB161D29863B9E725A59 /* AwakeUITests.swift */; };
 		B2010DF4B036EE42DE9F020D /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B67216F06EEA6B1C51089A5 /* SettingsViews.swift */; };
@@ -90,6 +91,7 @@
 		663B242F9EA518DA6611AED2 /* AwakeTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AwakeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		67C90F29C21FA66AA05D4D24 /* PlaylistFetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistFetch.swift; sourceTree = "<group>"; };
 		6B8CF48452425D64B33864E1 /* PlaylistImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistImportView.swift; sourceTree = "<group>"; };
+		78C62F4E4623656837A7005F /* PlayerInstrument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerInstrument.swift; sourceTree = "<group>"; };
 		817D79843367BFCA224EA56D /* AwakeUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AwakeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		868E0EA19433684BA307B61D /* FileImportPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileImportPicker.swift; sourceTree = "<group>"; };
 		9099E526F9866ECBED6C6F72 /* BackupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupTests.swift; sourceTree = "<group>"; };
@@ -177,6 +179,7 @@
 				577909C48018E6F4BB732837 /* MediaInfoView.swift */,
 				C39625E967E4D9282FC678BB /* MobilePlayer.swift */,
 				A25772CF3D1E1165C2FC3C88 /* Models.swift */,
+				78C62F4E4623656837A7005F /* PlayerInstrument.swift */,
 				67C90F29C21FA66AA05D4D24 /* PlaylistFetch.swift */,
 				F05A592A950DD8CF372A75D7 /* PlaylistImport.swift */,
 				6B8CF48452425D64B33864E1 /* PlaylistImportView.swift */,
@@ -353,6 +356,7 @@
 				7E206D5ACCAF7A80D855093A /* MediaInfoView.swift in Sources */,
 				63F16572E47029185FA00BF4 /* MobilePlayer.swift in Sources */,
 				4F2225AED07B39B3AFE0A874 /* Models.swift in Sources */,
+				90F947CDA41BDC54B191A7A7 /* PlayerInstrument.swift in Sources */,
 				15C5CCFFCFE0820E1B0F3E70 /* PlaylistFetch.swift in Sources */,
 				2D354382B64F71453AC2C869 /* PlaylistImport.swift in Sources */,
 				01ADAE5AEDE2835F2FAEB285 /* PlaylistImportView.swift in Sources */,
@@ -485,7 +489,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -506,7 +510,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.7;
+				MARKETING_VERSION = 0.9.8;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -608,7 +612,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -623,7 +627,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.7;
+				MARKETING_VERSION = 0.9.8;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
