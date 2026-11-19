@@ -7,7 +7,7 @@
 ## 下载
 
 - **[macOS 0.9.5（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.5)**：解压后拖入「应用程序」，首次打开需在「隐私与安全性」中允许。[发行说明](docs/releases/v0.9.5.md)
-- **[iOS 0.9.5 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.5)**：未签名 IPA，需自行重签安装；同一份 IPA 也在 iCloud Drive 里。[发行说明](docs/releases/ios-v0.9.5.md)
+- **[iOS 0.9.6 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.6)**：未签名 IPA，需自行重签安装；同一份 IPA 也在 iCloud Drive 里。本版修「本地文件选不了/播不出」：选择器不再按 `.audio` 过滤（FLAC/ALAC 在 Files 里不再灰掉）、导入与播放都加了 AVFoundation 回退、设置里新增自检与诊断日志。[发行说明](docs/releases/ios-v0.9.6.md)
 - **[macOS 0.9.3（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.3)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。这一版先出 arm64 包；通用包在构建机空闲后补，Intel Mac 暂时继续用 0.9.2。[发行说明](docs/releases/v0.9.3.md)
 - **[iOS 0.9.3 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.3)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.9.3.md)
 

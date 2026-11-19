@@ -53,6 +53,16 @@ struct SettingsView: View {
           .accessibilityIdentifier("importAudioFiles")
         Button("导入本地 / Telegram 下载文件夹", systemImage: "folder") { picking = .audioFolder }
           .accessibilityIdentifier("importFolder")
+        Button("导入 / 播放自检", systemImage: "stethoscope") {
+          Task { store.message = await Diagnostics.selfTest() }
+        }
+        .accessibilityIdentifier("importSelfTest")
+        Button("分享诊断日志", systemImage: "doc.text.magnifyingglass") {
+          Diagnostics.log("用户导出诊断日志")
+          shareFile = SharedFile(url: Diagnostics.fileURL)
+        }
+        .accessibilityIdentifier("shareDiagnostics")
+        .disabled(!FileManager.default.fileExists(atPath: Diagnostics.fileURL.path))
         ForEach(store.state.sources) { s in
           VStack(alignment: .leading, spacing: 8) {
             Text(s.name).font(.headline)

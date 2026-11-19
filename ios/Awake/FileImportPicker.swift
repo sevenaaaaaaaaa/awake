@@ -20,7 +20,11 @@ enum ImportTarget: String, Identifiable {
 
   var types: [UTType] {
     switch self {
-    case .audioFiles: return [.audio]
+    case .audioFiles:
+      // 不要用 .audio 过滤：iOS 只认系统已声明的音频 UTI，FLAC / ALAC / APE / DSF
+      // 等在「文件」里常被归成 public.data，选它时直接灰掉——用户看到的就是
+      // 「本地文件根本选不了」。这里放行全部普通文件，扩展名由导入逻辑自己判断。
+      return [.data]
     case .audioFolder: return [.folder]
     case .skin: return [.plainText, .json, .text]
     case .backup: return [.awakeBackupFile, .json]

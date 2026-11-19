@@ -45,6 +45,10 @@ struct RouteInfo: Equatable {
   private var queue: [(Song, URL)] = [], index = 0, generation = 0
   private var files: [AVAudioFile] = [], rate: Double = 48000, anchor: Double = 0,
     timelineOrigin: Double = 0, queuedNext = false
+  /// AVAudioFile 打不开的容器（部分 FLAC 变体、APE、DSD…）用 AVPlayer 兜底播放。
+  private var fallback: AVPlayer?
+  private var fallbackTimeObserver: Any?
+  private var fallbackEnd: NSObjectProtocol?
   private var listened: Double = 0, lastPosition: Double = 0, lastProgressReport: Double = -100,
     timer: Timer?
   private var observers: [NSObjectProtocol] = []
@@ -231,13 +235,22 @@ struct RouteInfo: Equatable {
     generation += 1
     node.stop()
     engine.stop()
+    stopFallback()
     queue = songs
     index = at
     files = []
     queuedNext = false
     do {
       configureSession(activate: startPlaying)
-      let file = try AVAudioFile(forReading: songs[at].1)
+      let file: AVAudioFile
+      do {
+        file = try AVAudioFile(forReading: songs[at].1)
+      } catch {
+        // 解码器不认这个容器：不要弹「播放失败」就结束，先用 AVPlayer 把它放出来。
+        Diagnostics.log("AVAudioFile 打不开 \(songs[at].1.lastPathComponent)，转 AVPlayer 回退：\(error.localizedDescription)")
+        startFallback(at: at, from: from, startPlaying: startPlaying)
+        return
+      }
       rate = file.processingFormat.sampleRate
       guard file.processingFormat.channelCount > 0, file.processingFormat.channelCount <= 8 else {
         throw AppFailure("不支持音频声道")
@@ -285,6 +298,91 @@ struct RouteInfo: Equatable {
       self.error = AudioFailure.describe(error, action: "播放")
     }
   }
+  /// 回退播放：AVPlayer 直出，不经过 31 段 EQ。
+  /// 目的只有一个——解码器不认的本地文件也能播放、能进出队列。
+  private func startFallback(at: Int, from: Double, startPlaying: Bool) {
+    let url = queue[at].1
+    let item = AVPlayerItem(url: url)
+    let player = AVPlayer(playerItem: item)
+    player.automaticallyWaitsToMinimizeStalling = false
+    fallback = player
+    index = at
+    files = []
+    queuedNext = false
+    rate = 0
+    anchor = 0
+    timelineOrigin = 0
+    position = max(0, from)
+    lastPosition = position
+    listened = 0
+    lastProgressReport = -100
+    song = queue[at].0
+    duration = queue[at].0.duration
+    let token = generation
+    Task { [weak self] in
+      guard let self else { return }
+      if let value = try? await AVURLAsset(url: url).load(.duration) {
+        let seconds = CMTimeGetSeconds(value)
+        if seconds.isFinite, seconds > 0, token == self.generation {
+          self.duration = seconds
+          self.nowPlaying()
+        }
+      }
+    }
+    fallbackTimeObserver = player.addPeriodicTimeObserver(
+      forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main
+    ) { [weak self] time in
+      let seconds = CMTimeGetSeconds(time)
+      Task { @MainActor in self?.fallbackTick(seconds) }
+    }
+    fallbackEnd = NotificationCenter.default.addObserver(
+      forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in self?.fallbackFinished() }
+    }
+    configureSession(activate: startPlaying)
+    if from > 0 { player.seek(to: CMTime(seconds: from, preferredTimescale: 600)) }
+    playing = startPlaying
+    if startPlaying { player.play() }
+    error = ""
+    refreshRoute()
+    nowPlaying()
+  }
+  private func fallbackTick(_ seconds: Double) {
+    guard fallback != nil, playing, seconds.isFinite else { return }
+    let next = max(0, duration > 0 ? min(duration, seconds) : seconds)
+    let delta = next - lastPosition
+    if delta.isFinite, delta > 0 { listened += delta }
+    lastPosition = next
+    position = next
+    if let song, next - lastProgressReport >= 15 {
+      lastProgressReport = next
+      onProgress?(song, next, duration)
+    }
+    nowPlaying()
+  }
+  private func fallbackFinished() {
+    guard fallback != nil else { return }
+    flushListen()
+    if index + 1 < queue.count {
+      play(queue, at: index + 1)
+    } else {
+      playing = false
+      position = duration
+      stopFallback()
+      nowPlaying()
+    }
+  }
+  private func stopFallback() {
+    if let observer = fallbackTimeObserver, let player = fallback {
+      player.removeTimeObserver(observer)
+    }
+    fallbackTimeObserver = nil
+    if let end = fallbackEnd { NotificationCenter.default.removeObserver(end) }
+    fallbackEnd = nil
+    fallback?.pause()
+    fallback = nil
+  }
   private func scheduleNext() {
     guard queue.indices.contains(index + 1), queue[index].0.segmentStart == nil,
       queue[index + 1].0.segmentStart == nil, files.count < 2,
@@ -329,6 +427,16 @@ struct RouteInfo: Equatable {
   }
   func pause() {
     tick()
+    if let fallback {
+      fallback.pause()
+      let seconds = fallback.currentTime().seconds
+      if seconds.isFinite { position = max(position, seconds) }
+      playing = false
+      if let song { onProgress?(song, position, duration) }
+      flushListen()
+      nowPlaying()
+      return
+    }
     node.pause()
     playing = false
     if let song { onProgress?(song, position, duration) }
@@ -337,6 +445,18 @@ struct RouteInfo: Equatable {
   }
   func resume() {
     guard song != nil else { return }
+    if let fallback {
+      if duration > 0, position >= duration - 0.05 {
+        play(queue, at: index)
+        return
+      }
+      configureSession()
+      fallback.play()
+      playing = true
+      lastPosition = position
+      nowPlaying()
+      return
+    }
     if duration > 0, position >= duration - 1 / rate {
       play(queue, at: index)
       return
@@ -353,6 +473,14 @@ struct RouteInfo: Equatable {
   func toggle() { if playing { pause() } else { resume() } }
   func seek(_ time: Double) {
     guard song != nil else { return }
+    if let fallback {
+      let target = max(0, duration > 0 ? min(duration, time) : time)
+      fallback.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+      position = target
+      lastPosition = target
+      nowPlaying()
+      return
+    }
     let wasPlaying = playing
     play(queue, at: index, from: time, startPlaying: wasPlaying)
   }
@@ -364,6 +492,7 @@ struct RouteInfo: Equatable {
   func stop() {
     pause()
     generation += 1
+    stopFallback()
     node.stop()
     engine.stop()
     song = nil

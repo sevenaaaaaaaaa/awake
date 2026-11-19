@@ -548,6 +548,7 @@ enum Secrets {
     let scan = await Task.detached(priority: .userInitiated) {
       LibraryImport.audioFiles(in: url)
     }.value
+    Diagnostics.log("扫描文件夹 \(url.lastPathComponent)：音频 \(scan.files.count) 个，读不了 \(scan.unreadable) 个，超限 \(scan.exceeded)")
     guard !scan.exceeded else {
       message = "导入失败：文件夹超过两万首，请选择更小的目录"
       return
@@ -604,6 +605,8 @@ enum Secrets {
     {
       message = verdict
     }
+    Diagnostics.log(
+      "文件夹导入结果：新增 \(result.added)，补齐 \(result.healed)，跳过 \(result.skipped)，失败 \(result.failed.prefix(5).joined(separator: "、"))")
   }
   nonisolated static func audioFiles(in url: URL) throws -> [URL] {
     let scan = LibraryImport.audioFiles(in: url)
@@ -683,6 +686,7 @@ enum Secrets {
         }
       } catch {
         result.failed.append(url.lastPathComponent)
+        Diagnostics.log("导入失败 \(url.lastPathComponent)：\(error.localizedDescription)")
       }
     }
     if report || result.added + result.healed > 1,
@@ -708,13 +712,30 @@ enum Secrets {
     if let copyError { throw copyError }
     if let coordinationError { throw coordinationError }
   }
+  /// 音频探测：优先 AVAudioFile（能拿到采样率），失败再退回 AVAsset（只拿时长）。
+  /// 导入这一关不该因为「AVFoundation 的解码器不认这个容器」就整个失败——
+  /// 播放器另有 AVPlayer 回退，导入先让文件进得来、能被看见。
+  nonisolated static func probeAudio(_ url: URL) async -> (duration: Double, rate: Double)? {
+    if let audio = try? AVAudioFile(forReading: url), audio.length > 0 {
+      let rate = audio.processingFormat.sampleRate
+      if rate > 0 {
+        return (Double(audio.length) / rate, rate)
+      }
+    }
+    if let duration = try? await AVURLAsset(url: url).load(.duration) {
+      let seconds = CMTimeGetSeconds(duration)
+      if seconds.isFinite, seconds > 0 { return (seconds, 0) }
+    }
+    return nil
+  }
   static func readSong(_ url: URL, file: String) async throws -> Song {
-    let audio = try AVAudioFile(forReading: url)
-    guard audio.length > 0 else { throw AppFailure("音频为空") }
+    guard let probe = await probeAudio(url) else {
+      throw AppFailure("这个文件无法解码为音频：请确认格式受支持（FLAC / ALAC / MP3 / AAC / WAV / AIFF / M4A）")
+    }
     var song = Song(
       title: url.deletingPathExtension().lastPathComponent,
-      duration: Double(audio.length) / audio.processingFormat.sampleRate,
-      sampleRate: audio.processingFormat.sampleRate, file: file)
+      duration: probe.duration,
+      sampleRate: probe.rate, file: file)
     let asset = AVURLAsset(url: url)
     if let metadata = try? await asset.load(.commonMetadata) {
       for item in metadata {
