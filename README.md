@@ -12,7 +12,7 @@
 - **[macOS 0.9.3（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.3)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。这一版先出 arm64 包；通用包在构建机空闲后补，Intel Mac 暂时继续用 0.9.2。[发行说明](docs/releases/v0.9.3.md)
 - **[iOS 0.9.3 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.3)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.9.3.md)
 
-## 待发版 · Plex 连上了却看不到：补上「连完就看见」
+## iOS 0.9.7 · Plex 连上了却看不到：补上「连完就看见」
 
 **根因不在扫描，在「入库之后没有入口」。** 桌面端连接成功会调 `focusSource()`，把曲库筛到刚连上的来源；iPhone 端连接成功只 `dismiss()`，曲目被 `append` 到 `state.songs` 末尾，而 iOS 曲库是一个**平铺列表，没有来源筛选、没有按来源分组、没有「刚添加」视图**。曲库越满，新加的 Plex 曲目越沉在底部——来源卡片写着「N 首」，人却在曲库里找不到，看起来就是「加了但任何地方都看不到」。
 
