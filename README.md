@@ -7,9 +7,29 @@
 ## 下载
 
 - **[macOS 0.9.5（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.5)**：解压后拖入「应用程序」，首次打开需在「隐私与安全性」中允许。[发行说明](docs/releases/v0.9.5.md)
-- **[iOS 0.9.6 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.6)**：未签名 IPA，需自行重签安装；同一份 IPA 也在 iCloud Drive 里。本版修「本地文件选不了/播不出」：选择器不再按 `.audio` 过滤（FLAC/ALAC 在 Files 里不再灰掉）、导入与播放都加了 AVFoundation 回退、设置里新增自检与诊断日志。[发行说明](docs/releases/ios-v0.9.6.md)
+- **[iOS 0.9.7 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.7)**：未签名 IPA，需自行重签安装；同一份 IPA 也在 iCloud Drive 里。本版修「Plex 连上了却看不到」：曲库新增来源筛选条，连接成功后自动切到曲库并筛到刚连上的来源，连接结果明确提示 N 首。[发行说明](docs/releases/ios-v0.9.7.md)
+- **[iOS 0.9.6 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.6)**：修「本地文件选不了/播不出」：选择器不再按 `.audio` 过滤、导入与播放都加了 AVFoundation 回退、设置里新增自检与诊断日志。[发行说明](docs/releases/ios-v0.9.6.md)
 - **[macOS 0.9.3（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.3)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。这一版先出 arm64 包；通用包在构建机空闲后补，Intel Mac 暂时继续用 0.9.2。[发行说明](docs/releases/v0.9.3.md)
 - **[iOS 0.9.3 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.3)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.9.3.md)
+
+## 待发版 · Plex 连上了却看不到：补上「连完就看见」
+
+**根因不在扫描，在「入库之后没有入口」。** 桌面端连接成功会调 `focusSource()`，把曲库筛到刚连上的来源；iPhone 端连接成功只 `dismiss()`，曲目被 `append` 到 `state.songs` 末尾，而 iOS 曲库是一个**平铺列表，没有来源筛选、没有按来源分组、没有「刚添加」视图**。曲库越满，新加的 Plex 曲目越沉在底部——来源卡片写着「N 首」，人却在曲库里找不到，看起来就是「加了但任何地方都看不到」。
+
+**改了三处（iOS）：**
+
+- 曲库新增来源筛选条：`全部来源 · N 首` / `<来源名> · N 首`，选谁看谁；
+- 连接成功后自动切到「曲库」并把筛选设到刚连上的来源，与桌面端 `focusSource()` 行为对齐；
+- 连接成功给出明确的「「<来源>」已加入 N 首，正在为你显示这个来源」，不再静默关表单。
+
+**补上了这条链的自动化验证。** 以前所有 Plex 修复都只在手写响应片段上验证，「连接 → 扫描 → 入库 → 列表可见」在真机/模拟器上从来没跑过。现在：
+
+- `Tools/fake_plex_server.py`：说 Plex 官方 XML 协议的本地假服务器（`/library/sections`、`type=10` 分页、`Media/Part/@key`、封面），每个请求都留日志；
+- `Tools/e2e_ios_plex_visibility.sh`：起假服务器 → 构建 → 装进模拟器 → 让应用自己走一遍扫描入库 → 读诊断日志与落盘 `library.json` 断言曲目数与来源对得上。
+
+实跑结果见 [验证记录](docs/validation-ios-plex-visibility.log)：3 首全部识别、入库、来源一致，脚本退出码 0。
+
+**仍未闭合：** 真实 Plex 账号端到端仍需你的服务器地址与 Token（假服务器覆盖协议形态，不覆盖你服务器上的分区类型与共享权限）；本机 `xcodebuild test` 起不来模拟器 XCTest runner（UI 与单元测试都停在 24 KB 的 `.xcresult`），所以这条验证走应用内 e2e 通道，`AwakeUITests` 仍需在能起 runner 的机器上补跑。
 
 ## 0.9.5 · 三个基础问题落地：本地导入、Plex 显示、网络插件源
 

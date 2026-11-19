@@ -97,3 +97,49 @@ enum Diagnostics {
     return report
   }
 }
+
+#if DEBUG
+extension Diagnostics {
+  /// 端到端自检通道：启动时按环境变量真实跑一遍远端来源连接，把结果写进诊断日志。
+  ///
+  /// `AWAKE_E2E_SOURCE="plex|http://127.0.0.1:32400|token"`
+  ///
+  /// 存在的理由：Xcode 27 的模拟器测试 runner 在这台机器上起不来，
+  /// 「连接成功但曲库看不到」这条链一直只能靠人点。有了它，扫描/入库可以在模拟器里
+  /// 被脚本复现，结果直接落在 `Documents/Awake/diagnostics.log`。
+  @MainActor static func e2eConnectIfRequested(_ store: MobileStore) {
+    guard let raw = ProcessInfo.processInfo.environment["AWAKE_E2E_SOURCE"],
+      !raw.trimmingCharacters(in: .whitespaces).isEmpty
+    else { return }
+    let parts = raw.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+      .map(String.init)
+    guard parts.count == 3 else {
+      log("E2E 参数无效：期望 kind|url|secret")
+      return
+    }
+    let kind = parts[0]
+    let url = parts[1]
+    let secret = parts[2]
+    Task {
+      let source = MusicSource(name: "E2E " + kind, kind: kind, url: url)
+      log("E2E 开始 kind=\(kind) url=\(url)")
+      do {
+        let songs = try await SourceService.scan(
+          source, secret: secret, artwork: store.artworkDirectory)
+        var next = store.state
+        next.sources.append(source)
+        next.songs.append(contentsOf: songs)
+        store.state = next
+        try store.persist()
+        store.pendingLibrarySource = source.id
+        log("E2E 扫描成功 songs=\(songs.count) 入库后曲目总数=\(next.songs.count)")
+        for song in songs.prefix(5) {
+          log("E2E 曲目 title=\(song.title) artist=\(song.artist) album=\(song.album) sourceID=\(song.sourceID ?? "nil") locator=\(song.locator)")
+        }
+      } catch {
+        log("E2E 扫描失败 error=\(error.localizedDescription)")
+      }
+    }
+  }
+}
+#endif

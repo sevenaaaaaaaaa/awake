@@ -52,10 +52,18 @@ struct RootView: View {
     .overlay(alignment: .top) { EffectActivationOverlay() }
     .sensoryFeedback(.success, trigger: player.effectRevision)
     .onChange(of: player.route.uid) { _, _ in applyChain() }
+    .onChange(of: store.pendingLibrarySource) { _, value in
+      // 来源刚连上：直接把人送到曲库，列表已经筛到那个来源。
+      if value != nil { tab = 1 }
+    }
     .onOpenURL { url in
       Task { await store.importFiles([url]) }
     }
     .task {
+      #if DEBUG
+        // 端到端自检通道（见 Diagnostics.e2eConnectIfRequested）；只有显式传环境变量时才动。
+        Diagnostics.e2eConnectIfRequested(store)
+      #endif
       player.onListen = { song, seconds in
         store.recordListen(song, seconds: seconds)
         store.updateBookProgress(song: song, position: player.position, duration: player.duration)
@@ -483,10 +491,18 @@ struct LibraryView: View {
   @State private var picking: ImportTarget?
   @State private var importingPlaylist = false
   @State private var query = ""
+  /// 只看某一个来源；nil 表示全部来源。
+  @State private var sourceFilter: String?
   var filtered: [Song] {
-    store.state.songs.filter {
-      query.isEmpty || ($0.title + $0.artist + $0.album).localizedCaseInsensitiveContains(query)
+    store.state.songs.filter { song in
+      guard sourceFilter == nil || song.sourceID == sourceFilter else { return false }
+      return query.isEmpty
+        || (song.title + song.artist + song.album).localizedCaseInsensitiveContains(query)
     }
+  }
+  /// 当前筛选来源的曲目数，用来在筛选条上直接回答「我加的那个来源进来了几首」。
+  private func count(in source: MusicSource) -> Int {
+    store.state.songs.filter { $0.sourceID == source.id }.count
   }
   var body: some View {
     List {
@@ -496,10 +512,31 @@ struct LibraryView: View {
           Text("正在导入或缓存音频…")
         }
       }
+      if !store.state.sources.isEmpty {
+        Section {
+          Picker(
+            "来源",
+            selection: Binding(
+              get: { sourceFilter ?? "" },
+              set: { sourceFilter = $0.isEmpty ? nil : $0 }
+            )
+          ) {
+            Text("全部来源 · \(store.state.songs.count) 首").tag("")
+            ForEach(store.state.sources) { source in
+              Text("\(source.name) · \(count(in: source)) 首").tag(source.id)
+            }
+          }
+          .pickerStyle(.menu)
+          .accessibilityIdentifier("librarySourceFilter")
+        }
+      }
       if filtered.isEmpty {
         ContentUnavailableView(
           "把音乐带进来", systemImage: "square.and.arrow.down",
-          description: Text("支持文件 App 中的本地、iCloud Drive 和已连接的网盘文件。"))
+          description: Text(
+            sourceFilter == nil
+              ? "支持文件 App 中的本地、iCloud Drive 和已连接的网盘文件。"
+              : "这个来源里还没有曲目。到设置里刷新来源，或把来源切回「全部来源」。"))
       }
       Section("推荐歌单") {
         Button {
@@ -577,7 +614,18 @@ struct LibraryView: View {
         .accessibilityIdentifier("importMusic")
     }.sheet(isPresented: $importingPlaylist) {
       PlaylistImportView().environmentObject(store).environmentObject(player)
+    }.onAppear {
+      adoptPendingSource()
+    }.onChange(of: store.pendingLibrarySource) { _, _ in
+      adoptPendingSource()
     }
+  }
+
+  /// 刚连上来源时，把列表筛到这个来源 —— 与桌面端 connect → focusSource 的行为对齐。
+  private func adoptPendingSource() {
+    guard let id = store.pendingLibrarySource else { return }
+    sourceFilter = id
+    store.pendingLibrarySource = nil
   }
   private func playPlaylist(_ list: Playlist) async {
     let byID = Dictionary(uniqueKeysWithValues: store.state.songs.map { ($0.id, $0) })

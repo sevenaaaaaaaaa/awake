@@ -532,6 +532,11 @@ struct SourceEditor: View {
       store.state = next
       do { try store.persist() } catch { store.state = previous; throw error }
       secret = ""
+      // 连完必须让用户看见结果：切到曲库、列表筛到这个来源。
+      // 之前只 dismiss()，曲目被追加在列表末尾，来源越多越难找，看起来就是「加了但看不到」。
+      let added = next.songs.filter { $0.sourceID == source.id }.count
+      store.message = "「\(source.name)」已加入 \(added) 首，正在为你显示这个来源。"
+      store.pendingLibrarySource = source.id
       dismiss()
     } catch { self.error = error.localizedDescription }
   }

@@ -1,0 +1,37 @@
+# iOS Plex「连上却看不到」端到端验证（2026-11-19）
+
+环境：Xcode 27.0 (27A5228h) / iPhone 17 Pro 模拟器 (iOS 27.0) / Debug 构建
+通道：Tools/fake_plex_server.py + Tools/e2e_ios_plex_visibility.sh（应用内 AWAKE_E2E_SOURCE 自检入口）
+命令：DD=/tmp/awake-dd bash Tools/e2e_ios_plex_visibility.sh --no-build
+
+```
+== 模拟器 iPhone 17 Pro (AD42BFFC-7FC1-4A7A-8942-C04AC1E678C4)
+== 启动假 Plex 服务器 :32400
+== 假 Plex 就绪
+== 安装并干净启动
+== 等待扫描结果
+[2026-11-19T15:20:12Z] E2E 开始 kind=plex url=http://127.0.0.1:32400
+[2026-11-19T15:20:12Z] E2E 扫描成功 songs=3 入库后曲目总数=3
+[2026-11-19T15:20:12Z] E2E 曲目 title=夜航·测试曲一 artist=Awake Lab album=夜航 sourceID=F8EBB991-C10D-4458-A2B2-34B69305B585 locator=/library/parts/1/1700000001/one.wav
+[2026-11-19T15:20:12Z] E2E 曲目 title=夜航·测试曲二 artist=Awake Lab album=夜航 sourceID=F8EBB991-C10D-4458-A2B2-34B69305B585 locator=/library/parts/2/1700000002/two.wav
+[2026-11-19T15:20:12Z] E2E 曲目 title=电波·测试曲三 artist=Signal Test album=电波 sourceID=F8EBB991-C10D-4458-A2B2-34B69305B585 locator=/library/parts/3/1700000003/three.wav
+== 核对入库结果
+落盘：来源 1 个（plex 1），曲目 3 首，其中该来源 3 首
+  - 夜航·测试曲一 / Awake Lab / locator=/library/parts/1/1700000001/one.wav
+  - 夜航·测试曲二 / Awake Lab / locator=/library/parts/2/1700000002/two.wav
+  - 电波·测试曲三 / Signal Test / locator=/library/parts/3/1700000003/three.wav
+== 核对客户端请求
+PASS: Plex 连接 → 扫描 → 入库 全链路通过（3 首，来源与曲目都对得上）
+     下一步真人验收：在模拟器里点「曲库」，来源筛选应显示「<来源名> · 3 首」，列表里能看到 3 首。
+```
+
+结论：
+
+1. 扫描链在 Plex 官方 XML 形态下可用：`/library/sections` → `/library/sections/1/all?type=10` 分页 → `Media/Part/@key` 取资源路径。假服务器按真实字段名（`grandparentTitle` / `parentTitle` / `duration` 毫秒 / `parentThumb`）返回，3 首全部识别。
+2. 曲目带正确 `sourceID` 入库并落盘 `library.json`，重新读回仍是 3 首。
+3. 修复后 iPhone 端连接完成会切到「曲库」并把来源筛选设到该来源（截图见对话），顶部显示「<来源名> · 3 首」，列表直接列出这 3 首。
+
+仍未闭合：
+
+- **真实 Plex 账号端到端**：需要用户提供服务器地址与 Token；假服务器覆盖的是协议形态，不是用户服务器的实际配置（分区类型、共享权限、超大曲库上限）。
+- **模拟器 XCTest runner**：本机 `xcodebuild test` 停在 24 KB 的 `.xcresult` 不再前进（UI 与单元测试都一样），所以本次验证走应用内 e2e 通道，而不是 XCTest；`AwakeUITests` 里的用例仍需在能起 runner 的机器上补跑。
