@@ -1,4 +1,4 @@
-# Awake 0.9.8
+# Awake 0.9.9
 
 **让好音乐，越来越合拍。** macOS 本地播放器：流式音频、后端连续队列、自有音乐来源、可解释的偏好学习，以及用户主动触发的 AI 策展和创作。
 
@@ -6,6 +6,7 @@
 
 ## 下载
 
+- **[macOS 0.9.9（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.9)**：解压后拖入「应用程序」，首次打开需在「隐私与安全性」中允许。本版加一个演奏式交互：在「正在播放」页按住 **B**，整条 EQ 临时旁路、输出走平直，松手写回原曲线——用来当场 A/B 比那 3 dB 到底帮没帮上忙。[发行说明](docs/releases/v0.9.9.md)
 - **[macOS 0.9.8（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.8)**：解压后拖入「应用程序」，首次打开需在「隐私与安全性」中允许。本版把「正在播放」改成仪器面板，并让 31 段均衡曲线可以直接拖：按住改最近一段、Shift 拖过一段区间一起涂、双击复位、滚轮 0.1 dB 微调。[发行说明](docs/releases/v0.9.8.md)
 - **[macOS 0.9.5（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.5)**：解压后拖入「应用程序」，首次打开需在「隐私与安全性」中允许。[发行说明](docs/releases/v0.9.5.md)
 - **[iOS 0.9.8 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.8)**：未签名 IPA，需自行重签安装；同一份 IPA 也在 iCloud Drive 里。本版重做「正在播放」：链路条写真实数值、31 段曲线可拖动改真实 EQ、没有链路时给入口而不是画空线、右上角的「完成」胶囊换成下拉箭头并改为全屏呈现。[发行说明](docs/releases/ios-v0.9.8.md)
@@ -13,6 +14,17 @@
 - **[iOS 0.9.6 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.6)**：修「本地文件选不了/播不出」：选择器不再按 `.audio` 过滤、导入与播放都加了 AVFoundation 回退、设置里新增自检与诊断日志。[发行说明](docs/releases/ios-v0.9.6.md)
 - **[macOS 0.9.3（Apple Silicon，ad-hoc 签名）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/v0.9.3)**：解压后拖入“应用程序”，首次打开需在“隐私与安全性”中允许。这一版先出 arm64 包；通用包在构建机空闲后补，Intel Mac 暂时继续用 0.9.2。[发行说明](docs/releases/v0.9.3.md)
 - **[iOS 0.9.3 测试版（iOS 17+）](https://github.com/sevenaaaaaaaaa/awake/releases/tag/ios-v0.9.3)**：未签名 IPA，需自行重签安装。[发行说明](docs/releases/ios-v0.9.3.md)
+
+## 桌面 0.9.9 · 按住 B，听一下没有 EQ 的样子
+
+调音的时候人要的不是「关掉 EQ 再打开」，而是**一边听一边比**：低频多出来的那 3 dB 到底帮了忙还是糊了人声，只有切过去的瞬间听得出来。开关要点两次、眼睛离开曲线、耳朵等下一次呼吸；按住是零次点击——手指抬起来，原曲线就回来。
+
+- **按住 B = 旁路。** 按下先把当前 31 段增益快照下来，把全零曲线真写给后端 `set_eq_curve`，输出走平直；松手把快照写回。不是视觉切换。
+- **只在「正在播放」页、且曲线非平直时响应**：平直曲线没有可旁路的东西，按 B 不写后端、界面也不闪。
+- **按住期间界面说实话**：链路条 EQ 段写「旁路」、输出段写「旁路直通」，曲线标题旁一枚「旁路中 · 松手恢复」。
+- **不添乱**：不认 ⌘B / ⌃B / ⌥B；输入框里敲 b 不触发；长按的重复事件不算新的一次按下（否则快照被覆盖，松手回不到原曲线）；两次 IPC 挂在同一条 promise 链上，快按快放也不会停在平直曲线上；窗口失焦或离开页面自动写回原曲线。
+
+逻辑在 [bypassKey.ts](ui/src/bypassKey.ts)（按键、输入控件、平直判定、旁路曲线构造）与 [bypassKey.test.ts](ui/src/bypassKey.test.ts)（6 项）。
 
 ## 播放界面 · 从「封面 + 胶囊」改成仪器面板（iOS）
 

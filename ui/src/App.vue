@@ -16,6 +16,7 @@ import TelegramSource from "./TelegramSource.vue";
 import TelegramSponsored from "./TelegramSponsored.vue";
 import StageInstrument from "./StageInstrument.vue";
 import EqCurveEditor from "./EqCurveEditor.vue";
+import { BYPASS_KEY, flatGains, hasAudibleEq, isBypassKey } from "./bypassKey";
 import Artwork from "./Artwork.vue";
 import TrackList from "./TrackList.vue";
 import SwipeMode from "./SwipeMode.vue";
@@ -912,6 +913,36 @@ const heroAlbum = computed(
 function updateGains(next: number[]) {
   s.gains.splice(0, s.gains.length, ...next);
 }
+/**
+ * 演奏式旁路：按住 B 期间把整条曲线压平（真写后端，不是视觉切换），
+ * 松手把按下前的曲线写回去。平直曲线没有可旁路的东西，就不闪这一下。
+ */
+const bypassed = ref(false);
+let bypassSnapshot: number[] | null = null;
+const bypassable = computed(() => bypassed.value || hasAudibleEq(s.gains));
+// 按下与松手是两个 IPC 调用；不串起来的话，快按快放时后发的"原始曲线"
+// 可能先到，最终停在平直曲线上而没有任何报错。
+let bypassWave: Promise<void> = Promise.resolve();
+function pushEq(next: number[]) {
+  bypassWave = bypassWave.then(() => s.applyEq(next)).catch(() => {});
+  return bypassWave;
+}
+function beginBypass() {
+  if (bypassed.value || view.value !== "stage" || !bypassable.value) return;
+  bypassSnapshot = [...s.gains];
+  bypassed.value = true;
+  void pushEq(flatGains(bypassSnapshot.length));
+}
+function endBypass() {
+  if (!bypassed.value || !bypassSnapshot) return;
+  const restore = bypassSnapshot;
+  bypassSnapshot = null;
+  bypassed.value = false;
+  void pushEq(restore);
+}
+watch(view, (next) => {
+  if (next !== "stage") endBypass();
+});
 const eqPoints = computed(() =>
   s.gains.map((g, i) => `${(i * 600) / 30},${80 - g * 4}`).join(" "),
 );
@@ -1157,6 +1188,9 @@ function trapFocus(e: KeyboardEvent) {
     first?.focus();
   }
 }
+function keyup(e: KeyboardEvent) {
+  if (e.key.toLowerCase() === BYPASS_KEY) endBypass();
+}
 function keydown(e: KeyboardEvent) {
   // 刷音乐 / 歌单导入自己处理方向键与空格，避免一次按键触发两次。
   if (
@@ -1185,6 +1219,11 @@ function keydown(e: KeyboardEvent) {
     target.isContentEditable
   )
     return;
+  if (isBypassKey(e)) {
+    e.preventDefault();
+    beginBypass();
+    return;
+  }
   if (e.code === "Space") {
     e.preventDefault();
     void s.toggle();
@@ -1346,6 +1385,9 @@ async function rescanForImport(): Promise<boolean> {
 
 onMounted(() => {
   window.addEventListener("keydown", keydown);
+  window.addEventListener("keyup", keyup);
+  // 切走应用时 keyup 收不到：不补这一条，旁路会一直挂在开着的状态上。
+  window.addEventListener("blur", endBypass);
   if (desktop) {
     void getCurrentWebview()
       .onDragDropEvent((event) => {
@@ -1376,6 +1418,8 @@ onMounted(() => {
 });
 onUnmounted(() => {
   window.removeEventListener("keydown", keydown);
+  window.removeEventListener("keyup", keyup);
+  window.removeEventListener("blur", endBypass);
   window.removeEventListener("dragover", browserDragOver);
   window.removeEventListener("drop", browserDrop);
   dropCleanup?.();
@@ -2789,6 +2833,8 @@ onUnmounted(() => {
               :track="s.now"
               :gains="s.gains"
               :source-name="stageSourceName"
+              :bypassed="bypassed"
+              :bypassable="bypassable"
             />
             <aside class="stage-side">
               <Artwork

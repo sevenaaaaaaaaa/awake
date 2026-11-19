@@ -20,6 +20,10 @@ const props = defineProps<{
   track: Track | null;
   gains: number[];
   sourceName: string;
+  /** 按住 B 期间为 true：曲线此刻是旁路后的平直输出。 */
+  bypassed?: boolean;
+  /** 当前曲线有可旁路的内容（非平直），或正在旁路中。 */
+  bypassable?: boolean;
 }>();
 
 const geometry = DEFAULT_GEOMETRY;
@@ -51,8 +55,11 @@ const codec = computed(() => {
 
 const steps = computed(() => [
   { label: "音源", value: codec.value },
-  { label: "EQ", value: flat.value ? "平直" : "31 段" },
-  { label: "输出", value: "本机输出" },
+  {
+    label: "EQ",
+    value: props.bypassed ? "旁路" : flat.value ? "平直" : "31 段",
+  },
+  { label: "输出", value: props.bypassed ? "旁路直通" : "本机输出" },
 ]);
 
 const peakLabel = computed(() =>
@@ -74,7 +81,8 @@ const peakLabel = computed(() =>
 
     <div class="curve-head">
       <span>31 段曲线</span>
-      <strong :class="{ flat }">{{ peakLabel }}</strong>
+      <em v-if="bypassed" class="bypass-badge">旁路中 · 松手恢复</em>
+      <strong :class="{ flat }">{{ bypassed ? "平直" : peakLabel }}</strong>
     </div>
 
     <svg class="curve" :viewBox="`0 0 ${W} ${H}`" role="img" aria-label="31 段均衡曲线">
@@ -118,9 +126,11 @@ const peakLabel = computed(() =>
     </svg>
 
     <p class="curve-status">
-      <span v-if="flat">当前输出按平直曲线播放 · 在「声音」里选择耳机与链路后这里会画出实际曲线</span>
+      <span v-if="bypassed">旁路：整条曲线压平后直接送输出，松手写回原曲线</span>
+      <span v-else-if="flat">当前输出按平直曲线播放 · 在「声音」里选择耳机与链路后这里会画出实际曲线</span>
       <span v-else>曲线为当前链路实际生效的 31 段增益</span>
-      <span v-if="sourceName" class="curve-source">{{ sourceName }}</span>
+      <span v-if="bypassable && !bypassed" class="curve-hint">按住 B 旁路，松手恢复</span>
+      <span v-else-if="sourceName" class="curve-source">{{ sourceName }}</span>
     </p>
   </section>
 </template>
@@ -179,6 +189,22 @@ const peakLabel = computed(() =>
 }
 .curve-head strong.flat {
   color: var(--dim);
+}
+.bypass-badge {
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: auto;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+.curve-hint {
+  color: var(--muted);
+  white-space: nowrap;
 }
 .curve {
   width: 100%;
