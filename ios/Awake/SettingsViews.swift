@@ -53,6 +53,10 @@ struct SettingsView: View {
           .accessibilityIdentifier("importAudioFiles")
         Button("导入本地 / Telegram 下载文件夹", systemImage: "folder") { picking = .audioFolder }
           .accessibilityIdentifier("importFolder")
+        Button("导入「文件」里的 Awake 文件夹", systemImage: "tray.and.arrow.down") {
+          Task { await store.importOwnFolder() }
+        }
+        .accessibilityIdentifier("importOwnFolder")
         Button("导入 / 播放自检", systemImage: "stethoscope") {
           Task { store.message = await Diagnostics.selfTest() }
         }

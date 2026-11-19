@@ -18,7 +18,11 @@ iOS 17+。这一版只处理一件事：**本地文件「选不了、导不进�
 
 `AVAudioFile` 不认的文件（部分 FLAC 变体、APE、DSD 等）之前会直接弹「播放失败」。现在自动切到 `AVPlayer` 直出：能播放、能暂停/拖动、能接下一首，只是**没有 31 段 EQ**；能解码的文件仍然走原来的 AVAudioEngine + EQ 链路。切换曲目时会重新尝试主链路。
 
-## 4. 设备端自检与诊断日志（重签包没有 Xcode 日志）
+## 4. 多一条不依赖选择器的导入通道
+
+设置 →「导入『文件』里的 Awake 文件夹」：App 已开启 `UIFileSharingEnabled`，你可以在「文件」App 的「我的 iPhone → Awake」里直接放音频，再点这个按钮入库。选择器在个别重签环境里不可用时，这条路仍然可用。
+
+## 5. 设备端自检与诊断日志（重签包没有 Xcode 日志）
 
 设置 →「自己的音乐来源」下新增：
 
@@ -42,5 +46,5 @@ App 本身不需要额外 entitlement 就能通过系统文件选择器读文件
 
 ## 已发布产物
 
-- GitHub Release：tag `ios-v0.9.6`，资产 `Awake-0.9.6-ios-arm64-unsigned.ipa`（3,156,428 字节，sha256 `9d6dcb398796785d63bddd1fba6005c85cc4dc64d9743e2751935a2aae756e1a`）与同名 `.sha256`。未签名，需自行重签。
+- GitHub Release：tag `ios-v0.9.6`，资产 `Awake-0.9.6-ios-arm64-unsigned.ipa`（3,157,903 字节，sha256 `614d0523e49c9e31662a92b22908f2693d9b432f22ec29b39e99f14a55d91f84`）与同名 `.sha256`。未签名，需自行重签。
 - 同一份 IPA 已复制到 iCloud Drive：`iCloud Drive/Awake-0.9.6-ios-arm64-unsigned.ipa`。

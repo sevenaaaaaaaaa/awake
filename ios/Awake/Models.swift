@@ -608,7 +608,31 @@ enum Secrets {
     Diagnostics.log(
       "文件夹导入结果：新增 \(result.added)，补齐 \(result.healed)，跳过 \(result.skipped)，失败 \(result.failed.prefix(5).joined(separator: "、"))")
   }
+  /// 兜底导入：扫描 App 自己的 Documents/Awake（Files App 里可见），
+  /// 把用户直接拷进来的音频导入曲库。选择器在个别重签环境里不可用时，这是另一条路。
+  func importOwnFolder() async {
+    let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    let root = docs.appendingPathComponent("Awake", isDirectory: true)
+    let musicPrefix = music.path + "/"
+    let scan = await Task.detached(priority: .userInitiated) {
+      LibraryImport.audioFiles(in: root)
+    }.value
+    let candidates = scan.files.filter { !$0.path.hasPrefix(musicPrefix) }
+    guard !candidates.isEmpty else {
+      message =
+        "「文件」App 的 Awake 文件夹里没有待导入的音频。把文件拷进「我的 iPhone → Awake」后，再点一次这个按钮。"
+      Diagnostics.log("Documents 导入：没有候选文件（扫描到 \(scan.files.count) 个，读不了 \(scan.unreadable) 个）")
+      return
+    }
+    let result = await importFiles(candidates, report: true)
+    if let verdict = LibraryImport.statusMessage(
+      added: result.added, healed: result.healed, skipped: result.skipped, failed: result.failed)
+    {
+      message = verdict
+    }
+  }
   nonisolated static func audioFiles(in url: URL) throws -> [URL] {
+
     let scan = LibraryImport.audioFiles(in: url)
     guard !scan.exceeded else { throw AppFailure("文件夹超过两万首，请选择更小的目录") }
     guard !scan.files.isEmpty else {
