@@ -8,20 +8,22 @@
     "Microsoft YaHei",
     sans-serif;
   color: var(--text);
-  background: #151715;
+  background: #08090b;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
-  --bg: #191b19;
-  --surface: #202320;
-  --raised: #272b26;
+  /* 只有黑与白：和 iOS 的「黑色 · Obsidian」同一根中性阶，强调色就是白本身。
+     桌面端此前是暖绿/沙色，两端放在一起像两个产品。 */
+  --bg: #08090b;
+  --surface: #131417;
+  --raised: #1d1f23;
   --line: color-mix(in srgb, var(--text) 7.1%, transparent);
-  --text: #eeeae4;
-  --muted: #a5aaa0;
-  --dim: #7f877c;
-  --accent: #d9ba87;
-  --accent-hover: #ead0a5;
-  --on-accent: #282319;
-  --green: #b1c298;
+  --text: #f7f8fa;
+  --muted: #9aa0a8;
+  --dim: #6f757d;
+  --accent: #f4f5f7;
+  --accent-hover: #ffffff;
+  --on-accent: #0a0b0d;
+  --green: #a8aeb6;
   --sidebar: 224px;
   --player: 96px;
   --mono: "SFMono-Regular", Consolas, monospace;
@@ -229,7 +231,7 @@ kbd {
   background: color-mix(in srgb, var(--text) 2.0%, transparent);
 }
 .nav-item.active {
-  background: #b6c59612;
+  background: rgba(255,255,255,0.045);
   color: var(--text);
 }
 .nav-item.active .icon {
@@ -274,7 +276,7 @@ kbd {
 .small-tag {
   font-family: var(--mono);
   font-size: 8px;
-  border: 1px solid #b5c3a330;
+  border: 1px solid rgba(255,255,255,0.10);
   color: var(--green);
   padding: 2px 4px;
   letter-spacing: 0.8px;
