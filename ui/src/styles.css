@@ -4693,3 +4693,15 @@ body::before {
   -webkit-backdrop-filter: blur(22px) saturate(135%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
+
+/* 插件源列表：默认 ul 的圆点与缩进不适合这里的「一排可选插件」。 */
+.plugin-registry { display: grid; gap: 8px; }
+.registry-list {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}

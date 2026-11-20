@@ -25,7 +25,13 @@ import DataTransfer from "./DataTransfer.vue";
 import BooksView from "./BooksView.vue";
 import WeeklySummary from "./WeeklySummary.vue";
 import PluginSearch from "./PluginSearch.vue";
-import { invalidatePlugin, validatePluginCode } from "./plugins";
+import {
+  invalidatePlugin,
+  parsePluginRegistry,
+  pluginFileNameFromURL,
+  validatePluginCode,
+  type PluginRegistryEntry,
+} from "./plugins";
 import { useAwake } from "./useAwake";
 import { call, desktop } from "./bridge";
 import {
@@ -185,7 +191,12 @@ const sourceKind = ref("local"),
 const pluginCode = ref(""),
   pluginFileName = ref(""),
   pluginPlatform = ref(""),
-  pluginError = ref("");
+  pluginError = ref(""),
+  pluginRegistryURL = ref(
+    "https://fastly.jsdelivr.net/gh/Huibq/keep-alive/Music_Free/myPlugins.json"),
+  pluginRegistry = ref<PluginRegistryEntry[]>([]),
+  registryBusy = ref(false),
+  registryError = ref("");
 /** 正在搜索的插件来源：非空时打开搜索面板。 */
 const pluginSearchSource = ref<Source | null>(null);
 function resetPluginDraft() {
@@ -596,6 +607,46 @@ async function importSourceConfig(event: Event) {
   } catch (e) { sourceConfigError.value = String(e); }
   finally { input.value = ""; }
 }
+/** 载入插件源：一个 JSON 列出若干插件，比让用户逐个找 .js 现实。 */
+async function loadPluginRegistry() {
+  const url = pluginRegistryURL.value.trim();
+  if (!url) return;
+  registryBusy.value = true;
+  registryError.value = "";
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("插件源返回 " + response.status);
+    pluginRegistry.value = parsePluginRegistry(await response.json());
+  } catch (e) {
+    pluginRegistry.value = [];
+    registryError.value = String(e).replace(/^Error: /, "");
+  } finally {
+    registryBusy.value = false;
+  }
+}
+
+/** 选中一条：下载它的 .js，交给现有校验流程，只是替用户省掉「找文件」这一步。 */
+async function pickRegistryPlugin(item: PluginRegistryEntry) {
+  registryBusy.value = true;
+  registryError.value = "";
+  pluginError.value = "";
+  try {
+    const response = await fetch(item.url);
+    if (!response.ok) throw new Error("插件下载失败：" + response.status);
+    const code = await response.text();
+    if (code.length > 512 * 1024) throw new Error("插件文件超过 512 KB，请确认这是音乐插件");
+    const info = validatePluginCode(code);
+    pluginCode.value = code;
+    pluginFileName.value = pluginFileNameFromURL(item.url);
+    pluginPlatform.value = info.platform || item.name;
+    if (!sourceName.value.trim()) sourceName.value = item.name;
+  } catch (e) {
+    pluginError.value = String(e).replace(/^Error: /, "");
+  } finally {
+    registryBusy.value = false;
+  }
+}
+
 async function connectSource() {
   if (sourceKind.value === "telegram" && !telegramReady.value) { s.fault = "请先选择 Telegram 频道或收藏夹"; return; }
   if (sourceKind.value === "plugin") {
@@ -3188,6 +3239,34 @@ onUnmounted(() => {
             也可以直接把文件夹或音频文件拖进窗口。文件会原地读取，不复制、不移动。
           </p>
           <div v-if="sourceKind === 'plugin'" class="plugin-pick">
+            <div class="plugin-registry">
+              <label
+                >插件源地址<input
+                  v-model="pluginRegistryURL"
+                  :disabled="s.busy || registryBusy"
+                  placeholder="…/myPlugins.json"
+              /></label>
+              <button
+                class="button"
+                :disabled="s.busy || registryBusy"
+                @click="loadPluginRegistry"
+              >
+                {{ registryBusy ? "载入中…" : "载入插件源" }}
+              </button>
+              <p v-if="registryError" class="job-error" role="alert">{{ registryError }}</p>
+              <ul v-if="pluginRegistry.length" class="registry-list">
+                <li v-for="item in pluginRegistry" :key="item.url">
+                  <button
+                    class="text-button"
+                    :disabled="registryBusy"
+                    @click="pickRegistryPlugin(item)"
+                  >
+                    {{ item.name
+                    }}<span v-if="item.version" class="muted"> · {{ item.version }}</span>
+                  </button>
+                </li>
+              </ul>
+            </div>
             <label
               >插件文件（.js，MusicFree 兼容）<input
                 type="file"
