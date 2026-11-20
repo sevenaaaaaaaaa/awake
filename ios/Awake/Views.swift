@@ -24,9 +24,9 @@ struct RootView: View {
         Label("设置", systemImage: "gearshape")
       }.tag(4)
     }
-    // mini player 挂在 TabView 上：每个 tab 各挂一份会让同一块玻璃出现五次，
-    // 而且它会被 iOS 26 的浮动 tab bar 压住。这里只有一份。
-    .safeAreaInset(edge: .bottom, spacing: 0) { MiniPlayer() }
+    // mini player 用 iOS 26 的 tabViewBottomAccessory：它由系统排在 tab 托盘之上，
+    // 不再是「压在托盘上的浮层」。safeAreaInset 那条路会让两者互相遮盖。
+    .modifier(MiniPlayerAccessory())
     .tint(Color(hex: store.state.skin.colors.accent))
     .preferredColorScheme(store.state.skin.mode == "light" ? .light : .dark)
     // 播放页只能有一个宿主。0.9.8 把 fullScreenCover 挂在 MiniPlayer 上，而 MiniPlayer
@@ -1446,6 +1446,17 @@ struct HandoffSheet: View {
       status = reply.text
       // 配对码只在一次请求里用，成功后立刻清空。
       if reply.succeeded { code = "" }
+    }
+  }
+}
+
+/// mini player 的位置：iOS 26 交给系统排在 tab 托盘上方；更早的系统退回 safeAreaInset。
+struct MiniPlayerAccessory: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(iOS 26.0, *) {
+      content.tabViewBottomAccessory { MiniPlayer() }
+    } else {
+      content.safeAreaInset(edge: .bottom, spacing: 0) { MiniPlayer() }
     }
   }
 }
