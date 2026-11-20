@@ -12,6 +12,7 @@
 		15C5CCFFCFE0820E1B0F3E70 /* PlaylistFetch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67C90F29C21FA66AA05D4D24 /* PlaylistFetch.swift */; };
 		1C22C644E6179B10BFA4FB5C /* HandoffReceiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3D7FD72286BF1872867B250 /* HandoffReceiveTests.swift */; };
 		1C4BB82C69D83C82833211ED /* AwakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7700F7B34C8ED756CD34503 /* AwakeTests.swift */; };
+		232957CD8C6D7122EF315F51 /* PluginRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D46453423DD3AE1496E25E97 /* PluginRegistry.swift */; };
 		2543ED26990FCB6149816193 /* HandoffReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1833ADE45B358BE7D885F231 /* HandoffReceiver.swift */; };
 		2564CA1CFEB8D307C8CAE7A1 /* AudioMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4DBA378C7D6D05CD323C399 /* AudioMath.swift */; };
 		2CC306AC027657AF44C1B679 /* HandoffReceiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60BC7EC39C288BF72662FCD /* HandoffReceiveView.swift */; };
@@ -110,6 +111,7 @@
 		C1F7175870746206A87BB270 /* AwakeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AwakeApp.swift; sourceTree = "<group>"; };
 		C39625E967E4D9282FC678BB /* MobilePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobilePlayer.swift; sourceTree = "<group>"; };
 		C832FBDCFEDDD2FF8CC8DDAE /* Books.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Books.swift; sourceTree = "<group>"; };
+		D46453423DD3AE1496E25E97 /* PluginRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginRegistry.swift; sourceTree = "<group>"; };
 		D4DBA378C7D6D05CD323C399 /* AudioMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMath.swift; sourceTree = "<group>"; };
 		D60BC7EC39C288BF72662FCD /* HandoffReceiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffReceiveView.swift; sourceTree = "<group>"; };
 		E0F2E4C7352FA47E7CE2E7AC /* SwipePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipePlayer.swift; sourceTree = "<group>"; };
@@ -192,6 +194,7 @@
 				F05A592A950DD8CF372A75D7 /* PlaylistImport.swift */,
 				6B8CF48452425D64B33864E1 /* PlaylistImportView.swift */,
 				046C135D8C11B5D31D674698 /* PlexAuth.swift */,
+				D46453423DD3AE1496E25E97 /* PluginRegistry.swift */,
 				891D5286386ECEB61547D15A /* PluginStore.swift */,
 				E40E9A956315BB1CF4C1AC0C /* Services.swift */,
 				5B67216F06EEA6B1C51089A5 /* SettingsViews.swift */,
@@ -372,6 +375,7 @@
 				2D354382B64F71453AC2C869 /* PlaylistImport.swift in Sources */,
 				01ADAE5AEDE2835F2FAEB285 /* PlaylistImportView.swift in Sources */,
 				3C2D20B4E55CC99F689E2D3E /* PlexAuth.swift in Sources */,
+				232957CD8C6D7122EF315F51 /* PluginRegistry.swift in Sources */,
 				ACD23958C48763E9DFC8A433 /* PluginStore.swift in Sources */,
 				3EEE4B57BC5DDD7C667C8C79 /* Services.swift in Sources */,
 				B2010DF4B036EE42DE9F020D /* SettingsViews.swift in Sources */,
@@ -501,7 +505,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -522,7 +526,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.15;
+				MARKETING_VERSION = 0.9.16;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -624,7 +628,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -639,7 +643,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.15;
+				MARKETING_VERSION = 0.9.16;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

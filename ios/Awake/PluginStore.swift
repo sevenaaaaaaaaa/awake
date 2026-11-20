@@ -128,6 +128,12 @@ struct PluginsView: View {
   @ObservedObject private var library = PluginLibrary.shared
   @State private var importing = false
   @State private var note = ""
+  @State private var registryURL = ""
+  @State private var registryEntries: [RegistryEntry] = []
+  @State private var registryBusy = false
+  @State private var registryStatus = ""
+  @State private var registryError = ""
+  @State private var installing: String?
 
   private var jsTypes: [UTType] {
     [UTType(filenameExtension: "js") ?? .plainText, .javaScript, .plainText]
@@ -153,6 +159,40 @@ struct PluginsView: View {
           }
         }
       }
+      Section("插件源（myPlugins.json）") {
+        TextField("…/myPlugins.json 或 http 地址", text: $registryURL)
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled()
+          .accessibilityIdentifier("pluginRegistryURL")
+        HStack {
+          Button("载入插件源") { Task { await loadRegistry() } }
+            .disabled(registryBusy || registryURL.trimmingCharacters(in: .whitespaces).isEmpty)
+          if ConfigFolder.hasFolder {
+            Button("从配置文件夹读") { Task { await loadFromFolder() } }
+              .disabled(registryBusy)
+          }
+        }
+        if registryBusy { ProgressView() }
+        if !registryStatus.isEmpty {
+          Text(registryStatus).font(.caption).foregroundStyle(.secondary)
+        }
+        if !registryError.isEmpty {
+          Text(registryError).font(.caption).foregroundStyle(.red)
+        }
+        ForEach(registryEntries) { entry in
+          HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(entry.name).font(.subheadline)
+              Text(entry.url).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+            }
+            Spacer()
+            Button(installing == entry.id ? "安装中…" : "安装") { Task { await install(entry) } }
+              .disabled(installing != nil)
+          }
+        }
+        Text("地址可以是 https 的注册表，也可以是局域网 http。也可以把 myPlugins.json 放进「来源配置文件夹」，点「从配置文件夹读」。")
+          .font(.caption).foregroundStyle(.secondary)
+      }
       Section {
         Button("导入插件 .js", systemImage: "square.and.arrow.down") { importing = true }
           .accessibilityIdentifier("importPlugin")
@@ -177,6 +217,81 @@ struct PluginsView: View {
       case .failure(let error):
         if (error as NSError).code != NSUserCancelledError { note = error.localizedDescription }
       }
+    }
+  }
+
+  // MARK: - 插件源
+
+  @MainActor
+  private func loadRegistry() async {
+    registryBusy = true
+    registryStatus = ""
+    registryError = ""
+    defer { registryBusy = false }
+    do {
+      let entries = try await PluginRegistry.fetch(
+        registryURL.trimmingCharacters(in: .whitespacesAndNewlines))
+      registryEntries = entries
+      registryStatus = "载入 \(entries.count) 个插件"
+    } catch {
+      registryEntries = []
+      registryError = "载入失败：" + error.localizedDescription
+    }
+  }
+
+  @MainActor
+  private func loadFromFolder() async {
+    registryBusy = true
+    registryStatus = ""
+    registryError = ""
+    defer { registryBusy = false }
+    do {
+      let folder = try ConfigFolder.resolve()
+      let access = folder.startAccessingSecurityScopedResource()
+      defer { if access { folder.stopAccessingSecurityScopedResource() } }
+      let urls = try FileManager.default.contentsOfDirectory(
+        at: folder, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles])
+      var merged: [RegistryEntry] = []
+      var problems: [String] = []
+      for url in urls where url.pathExtension.lowercased() == "json" {
+        do {
+          let data = try Data(contentsOf: url)
+          for entry in try PluginRegistry.parse(data)
+          where !merged.contains(where: { $0.url == entry.url }) {
+            merged.append(entry)
+          }
+        } catch {
+          // 来源配置也是 json，解析不出插件列表很正常，记下来只是备用提示。
+          problems.append("\(url.lastPathComponent)：\(error.localizedDescription)")
+        }
+      }
+      registryEntries = merged
+      if merged.isEmpty {
+        registryError = problems.first ?? "文件夹里没找到可用的 myPlugins.json"
+      } else {
+        registryStatus = "从文件夹读到 \(merged.count) 个插件"
+      }
+    } catch {
+      registryError = "读文件夹失败：" + error.localizedDescription
+    }
+  }
+
+  @MainActor
+  private func install(_ entry: RegistryEntry) async {
+    installing = entry.id
+    registryStatus = ""
+    registryError = ""
+    defer { installing = nil }
+    do {
+      let data = try await PluginRegistry.download(entry)
+      let saved = try library.store(
+        data: data,
+        fileName: PluginRegistry.fileName(from: entry.url),
+        sourceURL: entry.url,
+        version: entry.version)
+      registryStatus = "已安装 \(saved.name)（\(saved.bytes) 字节）"
+    } catch {
+      registryError = "安装失败：" + error.localizedDescription
     }
   }
 }
