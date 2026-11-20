@@ -51,6 +51,16 @@ struct SettingsView: View {
         Text("NAS 与网盘也可通过文件 App 连接并导入。远程曲目首次播放先下载到本机，随后进入统一 EQ 播放链路；当前 iOS 版不宣称远程即点即流或跨采样率无缝。")
           .font(.caption).foregroundStyle(.secondary)
       }
+      Section("来源配置文件夹") {
+        NavigationLink {
+          ConfigFolderView()
+        } label: {
+          Label("记住文件夹 · 刷新导入", systemImage: "folder.badge.gearshape")
+        }
+        .accessibilityIdentifier("configFolder")
+        Text("选一个文件夹（iCloud Drive 也行），把来源配置文件丢进去，进这个页面点「刷新扫描」列出来，点一条就填进添加来源的表单。")
+          .font(.caption).foregroundStyle(.secondary)
+      }
       Section("外观") {
         Picker(
           "主题",
@@ -248,6 +258,8 @@ struct ShareView: UIViewControllerRepresentable {
 struct SourceEditor: View {
   @EnvironmentObject var store: MobileStore
   @Environment(\.dismiss) var dismiss
+  /// 从「配置文件夹」带进来的配置；只填类型 / 名称 / 地址 / 用户名，凭据永远由用户当场输入。
+  var prefill: SourceConfiguration? = nil
   @State private var name = ""
   @State private var kind = "webdav"
   @State private var url = ""
@@ -270,6 +282,18 @@ struct SourceEditor: View {
   @Environment(\.openURL) private var openURL
   var telegramReady: Bool {
     url.range(of: "/v1/libraries/[a-f0-9]{24}/?$", options: .regularExpression) != nil
+  }
+  /// 把文件夹里扫到的配置填进表单。凭据字段刻意留空：配置文件里没有、也不该有密码。
+  func applyPrefill() {
+    guard let config = prefill else { return }
+    kind = config.kind
+    name = config.name
+    url = config.url
+    username = config.username ?? ""
+    secret = ""
+    error = ""
+    catalog = nil
+    selected = []
   }
   var body: some View {
     NavigationStack {
@@ -374,6 +398,7 @@ struct SourceEditor: View {
             .accessibilityIdentifier("connectSource")
         }
       }.appSurface().navigationTitle("添加音乐来源").toolbar { Button("完成") { dismiss() }.disabled(busy) }
+      .onAppear { applyPrefill() }
       .onChange(of: kind) { _, _ in plexNote = ""; catalog = nil; selected = [] }
       .onChange(of: url) { _, _ in catalog = nil; selected = [] }
       .onChange(of: secret) { _, _ in catalog = nil; selected = [] }
