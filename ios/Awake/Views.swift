@@ -741,11 +741,17 @@ struct RoutePicker: UIViewRepresentable {
       _ = try await TelegramService.sponsored(source, secret: Secrets.get("source." + source.id))
     }
     if store.localURL(song) == nil {
-      guard let source = store.state.sources.first(where: { $0.id == song.sourceID }) else {
-        throw AppFailure("找不到文件，请重新导入或刷新来源")
+      if song.origin == "plugin", let pluginID = song.sourceID,
+        let code = PluginLibrary.shared.code(for: pluginID)
+      {
+        current = try await PluginPlayback.cache(song, code: code, directory: store.music)
+      } else {
+        guard let source = store.state.sources.first(where: { $0.id == song.sourceID }) else {
+          throw AppFailure("找不到文件，请重新导入或刷新来源")
+        }
+        current = try await SourceService.cache(
+          song, source: source, secret: Secrets.get("source." + source.id), directory: store.music)
       }
-      current = try await SourceService.cache(
-        song, source: source, secret: Secrets.get("source." + source.id), directory: store.music)
       if let i = store.state.songs.firstIndex(where: { $0.id == song.id }) {
         store.state.songs[i] = current
         store.save()

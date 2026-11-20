@@ -90,6 +90,17 @@ final class PluginSandbox: NSObject {
               };
             })
           };
+        },
+        resolve: async function (code, itemJSON) {
+          var exports = AwakeSandbox.instantiatePlugin(code);
+          if (typeof exports.getMediaSource !== "function") {
+            throw new Error("这个插件没有实现 getMediaSource，无法播放");
+          }
+          var item = JSON.parse(itemJSON);
+          var raw = await exports.getMediaSource(item, "standard");
+          var norm = AwakeSandbox.normalizeMediaSource(raw);
+          if (!norm) { throw new Error("插件没有给出可播放的地址"); }
+          return { url: norm.url, headers: norm.headers };
         }
       };
     })();
@@ -163,6 +174,19 @@ final class PluginSandbox: NSObject {
         itemID: item["itemID"] as? String ?? "",
         rawJSON: json)
     }
+  }
+
+  /// 让插件把一条 musicItem 解析成可播放地址 + 请求头（S3）。
+  func resolve(code: String, itemJSON: String) async throws -> (url: String, headers: [[String]]) {
+    let view = try await ensureReady()
+    let value = try await view.callAsyncJavaScript(
+      "return await window.__awake.resolve(code, itemJSON);",
+      arguments: ["code": code, "itemJSON": itemJSON], in: nil, contentWorld: .page)
+    guard let dict = value as? [String: Any], let url = dict["url"] as? String, !url.isEmpty else {
+      throw AppFailure("插件没有给出可播放的地址")
+    }
+    let headers = dict["headers"] as? [[String]] ?? []
+    return (url, headers)
   }
 }
 
