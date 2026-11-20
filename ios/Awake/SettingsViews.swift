@@ -16,7 +16,42 @@ struct SettingsView: View {
   @State private var restoredBackup: BackupPreview?
   var body: some View {
     Form {
-      Section("外观与皮肤") {
+      Section("音乐来源") {
+        Button("添加音乐来源", systemImage: "plus") { sourceSheet = true }
+          .accessibilityIdentifier("addSource")
+        Button("导入音频文件", systemImage: "doc.badge.plus") { picking = .audioFiles }
+          .accessibilityIdentifier("importAudioFiles")
+        Button("导入本地 / Telegram 下载文件夹", systemImage: "folder") { picking = .audioFolder }
+          .accessibilityIdentifier("importFolder")
+        Button("导入「文件」里的 Awake 文件夹", systemImage: "tray.and.arrow.down") {
+          Task { await store.importOwnFolder() }
+        }
+        .accessibilityIdentifier("importOwnFolder")
+        ForEach(store.state.sources) { s in
+          VStack(alignment: .leading, spacing: 8) {
+            Text(s.name).font(.headline)
+            Text("\(s.kind.uppercased()) · \(store.state.songs.filter{$0.sourceID==s.id}.count) 首")
+              .font(.caption).foregroundStyle(.secondary)
+            if s.kind == "telegram" { TelegramSponsoredView(source: s) }
+            HStack {
+              Button("刷新来源") { Task { await refresh(s) } }.disabled(store.busy)
+              Spacer()
+              Button("移除来源", systemImage: "trash", role: .destructive) { sourceToRemove = s }
+                .disabled(store.busy)
+                .accessibilityIdentifier("removeSource_\(s.id)")
+            }
+          }
+        }
+        if store.busy {
+          HStack(spacing: 8) {
+            ProgressView()
+            Text("正在导入本机音频…").font(.caption)
+          }
+        }
+        Text("NAS 与网盘也可通过文件 App 连接并导入。远程曲目首次播放先下载到本机，随后进入统一 EQ 播放链路；当前 iOS 版不宣称远程即点即流或跨采样率无缝。")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+      Section("外观") {
         Picker(
           "主题",
           selection: Binding(
@@ -46,76 +81,19 @@ struct SettingsView: View {
           } catch { store.message = error.localizedDescription }
         }
       }
-      Section("自己的音乐来源") {
-        Button("添加 WebDAV / Plex / Telegram", systemImage: "plus") { sourceSheet = true }
-          .accessibilityIdentifier("addSource")
-        Button("导入音频文件", systemImage: "doc.badge.plus") { picking = .audioFiles }
-          .accessibilityIdentifier("importAudioFiles")
-        Button("导入本地 / Telegram 下载文件夹", systemImage: "folder") { picking = .audioFolder }
-          .accessibilityIdentifier("importFolder")
-        Button("导入「文件」里的 Awake 文件夹", systemImage: "tray.and.arrow.down") {
-          Task { await store.importOwnFolder() }
+      Section("服务") {
+        NavigationLink {
+          AISettingsView().environmentObject(store)
+        } label: {
+          Label("AI 策展与音乐创作", systemImage: "sparkles")
         }
-        .accessibilityIdentifier("importOwnFolder")
-        Button("导入 / 播放自检", systemImage: "stethoscope") {
-          Task { store.message = await Diagnostics.selfTest() }
-        }
-        .accessibilityIdentifier("importSelfTest")
-        Button("分享诊断日志", systemImage: "doc.text.magnifyingglass") {
-          Diagnostics.log("用户导出诊断日志")
-          shareFile = SharedFile(url: Diagnostics.fileURL)
-        }
-        .accessibilityIdentifier("shareDiagnostics")
-        .disabled(!FileManager.default.fileExists(atPath: Diagnostics.fileURL.path))
-        ForEach(store.state.sources) { s in
-          VStack(alignment: .leading, spacing: 8) {
-            Text(s.name).font(.headline)
-            Text("\(s.kind.uppercased()) · \(store.state.songs.filter{$0.sourceID==s.id}.count) 首")
-              .font(.caption).foregroundStyle(.secondary)
-            if s.kind == "telegram" { TelegramSponsoredView(source: s) }
-            HStack {
-              Button("刷新来源") { Task { await refresh(s) } }.disabled(store.busy)
-              Spacer()
-              Button("移除来源", systemImage: "trash", role: .destructive) { sourceToRemove = s }
-                .disabled(store.busy)
-                .accessibilityIdentifier("removeSource_\(s.id)")
-            }
-          }
-        }
-        if store.busy {
-          HStack(spacing: 8) {
-            ProgressView()
-            Text("正在导入本机音频…").font(.caption)
-          }
-        }
-        Text("NAS 与网盘也可通过文件 App 连接并导入。远程曲目首次播放先下载到本机，随后进入统一 EQ 播放链路；当前 iOS 版不宣称远程即点即流或跨采样率无缝。")
-          .font(.caption).foregroundStyle(.secondary)
       }
-      Section("AI 策展与反馈分析") {
-        TextField("Base URL", text: $store.state.curatorURL).textInputAutocapitalization(.never)
-          .autocorrectionDisabled()
-        TextField("模型 ID", text: $store.state.curatorModel).textInputAutocapitalization(.never)
-        SecureField("API 密钥（只保存在钥匙串）", text: $curatorKey)
-        Button("保存 AI 配置") { saveService("curator") }
-      }
-      Section("AI 音乐创作 · ElevenLabs") {
-        TextField("Music 服务地址", text: $store.state.musicURL).textInputAutocapitalization(.never)
-          .autocorrectionDisabled()
-        Picker("模型", selection: $store.state.musicModel) {
-          ForEach(["music_v1", "music_v2", "music_v2_5"], id: \.self) { Text($0) }
+      Section("诊断与数据") {
+        NavigationLink {
+          DiagnosticsSettingsView().environmentObject(store)
+        } label: {
+          Label("自检、诊断日志与测试报告", systemImage: "stethoscope")
         }
-        SecureField("Music API 密钥", text: $musicKey)
-        Button("保存音乐服务") { saveService("music") }
-        Text("保存配置不产生生成请求。只有用户主动提交时才调用服务。").font(.caption).foregroundStyle(.secondary)
-      }
-      Section("数据与反馈") {
-        Button("导出评分与软件测试报告") {
-          do { shareFile = SharedFile(url: try store.reportURL()) } catch {
-            store.message = error.localizedDescription
-          }
-        }
-        Text("报告包含主观评分、反馈文字和软件测试，不包含源密码、API 密钥或设备 UID。仅保存在本机，分享由你发起。").font(.caption)
-          .foregroundStyle(.secondary)
       }
       Section("备份与恢复") {
         Button {
@@ -797,5 +775,100 @@ struct BackupRestoreSheet: View {
     } catch {
       self.error = error.localizedDescription
     }
+  }
+}
+
+
+/// AI 服务收进二级页：这一页一年打开两次，放在设置首屏只会把「加个来源」挤走。
+struct AISettingsView: View {
+  @EnvironmentObject var store: MobileStore
+  @State private var curatorKey = ""
+  @State private var musicKey = ""
+
+  var body: some View {
+    Form {
+      Section("AI 策展与反馈分析") {
+        TextField("Base URL", text: $store.state.curatorURL).textInputAutocapitalization(.never)
+          .autocorrectionDisabled()
+        TextField("模型 ID", text: $store.state.curatorModel).textInputAutocapitalization(.never)
+        SecureField("API 密钥（只保存在钥匙串）", text: $curatorKey)
+        Button("保存 AI 配置") { saveService("curator") }
+      }
+      Section("AI 音乐创作 · ElevenLabs") {
+        TextField("Music 服务地址", text: $store.state.musicURL).textInputAutocapitalization(.never)
+          .autocorrectionDisabled()
+        Picker("模型", selection: $store.state.musicModel) {
+          ForEach(["music_v1", "music_v2", "music_v2_5"], id: \.self) { Text($0) }
+        }
+        SecureField("Music API 密钥", text: $musicKey)
+        Button("保存音乐服务") { saveService("music") }
+        Text("保存配置不产生生成请求。只有用户主动提交时才调用服务。").font(.caption).foregroundStyle(.secondary)
+      }
+    }
+    .navigationTitle("AI 服务")
+    .appSurface()
+  }
+
+  private func saveService(_ type: String) {
+    do {
+      let url = type == "music" ? store.state.musicURL : store.state.curatorURL
+      _ = try Network.endpoint(url)
+      let key = type == "music" ? musicKey : curatorKey
+      let owner =
+        type == "music"
+        ? store.state.musicCredentialEndpoint : store.state.curatorCredentialEndpoint
+      let oldAccount =
+        type == "music" ? store.state.musicCredentialAccount : store.state.curatorCredentialAccount
+      guard !key.isEmpty || (owner == url && !oldAccount.isEmpty) else {
+        throw AppFailure("首次配置或更换服务地址时，请填写密钥")
+      }
+      let account = key.isEmpty ? oldAccount : type + "." + UUID().uuidString
+      if !key.isEmpty { try Secrets.set(key, account: account) }
+      if type == "music" {
+        store.state.musicCredentialEndpoint = url
+        store.state.musicCredentialAccount = account
+      } else {
+        store.state.curatorCredentialEndpoint = url
+        store.state.curatorCredentialAccount = account
+      }
+      store.save()
+      curatorKey = ""
+      musicKey = ""
+    } catch { store.message = error.localizedDescription }
+  }
+}
+
+/// 诊断与数据：自检、日志、报告。平时不占首屏，出问题时找得到。
+struct DiagnosticsSettingsView: View {
+  @EnvironmentObject var store: MobileStore
+  @State private var shareFile: SharedFile?
+
+  var body: some View {
+    Form {
+      Section("自检与日志") {
+        Button("导入 / 播放自检", systemImage: "stethoscope") {
+          Task { store.message = await Diagnostics.selfTest() }
+        }
+        .accessibilityIdentifier("importSelfTest")
+        Button("分享诊断日志", systemImage: "doc.text.magnifyingglass") {
+          Diagnostics.log("用户导出诊断日志")
+          shareFile = SharedFile(url: Diagnostics.fileURL)
+        }
+        .accessibilityIdentifier("shareDiagnostics")
+        .disabled(!FileManager.default.fileExists(atPath: Diagnostics.fileURL.path))
+      }
+      Section("反馈报告") {
+        Button("导出评分与软件测试报告") {
+          do { shareFile = SharedFile(url: try store.reportURL()) } catch {
+            store.message = error.localizedDescription
+          }
+        }
+        Text("报告包含主观评分、反馈文字和软件测试，不包含源密码、API 密钥或设备 UID。仅保存在本机，分享由你发起。").font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .navigationTitle("诊断与数据")
+    .appSurface()
+    .sheet(item: $shareFile) { file in ShareView(url: file.url) }
   }
 }
