@@ -832,3 +832,59 @@ function jsonSafe(value: Record<string, unknown>): Record<string, unknown> {
     throw new Error("插件返回的曲目数据无法序列化（可能包含循环引用）");
   }
 }
+
+// ---------------------------------------------------------------- 插件源（registry）
+//
+// MusicFree / 枪弹分离 的插件市场是一个 JSON：{ "plugins": [ { name, url, version } ] }。
+// 直接让用户一个个下载 .js 太原始；这里把它规整成稳定的形状，UI 只负责展示与点击。
+//
+// 兼容三种常见外层：{ plugins: [...] }、{ data: [...] }、裸数组。
+// 只接受 http(s) 的绝对地址；重名不算重（不同源的插件可能同名），按 url 去重。
+
+export interface PluginRegistryEntry {
+  name: string;
+  url: string;
+  version?: string;
+}
+
+export const REGISTRY_LIMIT = 200;
+
+export function parsePluginRegistry(input: unknown): PluginRegistryEntry[] {
+  const raw = Array.isArray(input)
+    ? input
+    : input && typeof input === "object"
+      ? ((input as Record<string, unknown>).plugins ??
+         (input as Record<string, unknown>).data ??
+         (input as Record<string, unknown>).list)
+      : null;
+  if (!Array.isArray(raw)) throw new Error("这不是插件源：找不到插件列表");
+  const out: PluginRegistryEntry[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const name = typeof rec.name === "string" ? rec.name.trim() : "";
+    const url = typeof rec.url === "string" ? rec.url.trim() : "";
+    if (!name || !url) continue;
+    if (!/^https?:\/\//i.test(url)) continue;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    const version = typeof rec.version === "string" ? rec.version.trim() : undefined;
+    out.push(version ? { name, url, version } : { name, url });
+    if (out.length >= REGISTRY_LIMIT) break;
+  }
+  if (!out.length) throw new Error("插件源里没有可用的插件");
+  return out;
+}
+
+/** 从插件地址推出一个文件名，写进来源时用；推不出就叫 plugin.js。 */
+export function pluginFileNameFromURL(url: string): string {
+  try {
+    const path = new URL(url).pathname;
+    const last = path.split("/").filter(Boolean).pop() ?? "";
+    return /^[\w.-]+\.js$/i.test(last) ? last : "plugin.js";
+  } catch {
+    return "plugin.js";
+  }
+}
+
