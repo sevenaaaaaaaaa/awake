@@ -149,6 +149,7 @@ struct Skin: Codable, Equatable {
   struct Colors: Codable, Equatable {
     var bg, surface, raised, text, muted, accent, onAccent, border: String
   }
+  static let currentVersion = 2
   var version = 1
   var id: String
   var name: String
@@ -158,21 +159,35 @@ struct Skin: Codable, Equatable {
   var density = "comfortable"
   var font = "system"
   var blur: Double = 0
+  // 只有黑与白。三个皮肤是同一根中性阶上的三段，不是三种颜色主张：
+  // 强调色本身就是黑/白，按钮是「白底黑字」或「黑底白字」——没有第二个色相。
   static let dark = Skin(
-    id: "dark", name: "黑色 · Obsidian", mode: "dark",
+    version: 2, id: "dark", name: "黑色 · Obsidian", mode: "dark",
     colors: .init(
-      bg: "#0c0d10", surface: "#14161b", raised: "#20232b", text: "#f5f6fa", muted: "#a5adbe",
-      accent: "#a9bcff", onAccent: "#11182f", border: "#303540"))
+      bg: "#08090b", surface: "#131417", raised: "#1d1f23", text: "#f7f8fa", muted: "#9aa0a8",
+      accent: "#f4f5f7", onAccent: "#0a0b0d", border: "#2b2e34"))
   static let light = Skin(
-    id: "light", name: "白色 · Paper", mode: "light",
+    version: 2, id: "light", name: "白色 · Paper", mode: "light",
     colors: .init(
-      bg: "#f6f7fb", surface: "#ffffff", raised: "#ebedf4", text: "#171a24", muted: "#596177",
-      accent: "#3455d9", onAccent: "#ffffff", border: "#d7dce8"))
+      bg: "#f4f4f5", surface: "#ffffff", raised: "#ececee", text: "#0b0c0e", muted: "#5c6066",
+      accent: "#111214", onAccent: "#ffffff", border: "#d8d9dd"))
   static let glass = Skin(
-    id: "glass", name: "玻璃 · Aurora", mode: "glass",
+    version: 2, id: "glass", name: "玻璃 · Haze", mode: "glass",
     colors: .init(
-      bg: "#0b1125", surface: "#18213b", raised: "#27324e", text: "#f6f8ff", muted: "#b6c2dd",
-      accent: "#a7e8df", onAccent: "#0b2827", border: "#435575"), radius: 20, blur: 24)
+      bg: "#0a0b0d", surface: "#1a1c20", raised: "#26282d", text: "#f7f8fa", muted: "#a9afb7",
+      accent: "#ffffff", onAccent: "#0a0b0d", border: "#3a3d43"), radius: 22, blur: 24)
+  /// 内置皮肤的调色板换过（0.9.9 起只有黑与白）。老档案里存的是旧色板，
+  /// 直接读出来会把新配色挡在门外——用户看到的还是上一版的蓝。
+  /// 换的只是调色板：用户选的仍是同一个皮肤；自定义皮肤一个字不动。
+  static func migrated(_ skin: Skin) -> Skin {
+    guard skin.version < 2 else { return skin }
+    switch skin.id {
+    case Skin.dark.id: return .dark
+    case Skin.light.id: return .light
+    case Skin.glass.id: return .glass
+    default: return skin
+    }
+  }
   static func parse(_ text: String) throws -> Skin {
     guard text.utf8.count <= 65536 else { throw AppFailure("设计文件超过 64 KB") }
     var content = text
@@ -192,7 +207,9 @@ struct Skin: Codable, Equatable {
       colors.bg, colors.surface, colors.raised, colors.text, colors.muted, colors.accent,
       colors.onAccent, colors.border,
     ]
-    guard version == 1, !name.isEmpty, name.count <= 60, ["dark", "light", "glass"].contains(mode),
+    // 1 和 2 都合法：老档案里存的是 1，读出来会迁移成当前调色板再写回 2。
+    // 只认 1 的话，迁移后的档案第二次启动就会被判成损坏。
+    guard (1...Skin.currentVersion).contains(version), !name.isEmpty, name.count <= 60, ["dark", "light", "glass"].contains(mode),
       radius.isFinite, (0...28).contains(radius), blur.isFinite, (0...40).contains(blur),
       ["comfortable", "compact"].contains(density), ["system", "serif"].contains(font),
       values.allSatisfy({ $0.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil })
@@ -350,6 +367,7 @@ enum Secrets {
           let decoded = try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: path))
           try decoded.skin.validate()
           state = decoded
+          state.skin = Skin.migrated(state.skin)
           state.creations = state.creations?.map { job in
             var restored = job
             if restored.state == "running" || restored.state == "queued" {

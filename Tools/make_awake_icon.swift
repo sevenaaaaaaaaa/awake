@@ -1,227 +1,137 @@
 #!/usr/bin/env swift
-// make_awake_icon.swift — 用 AppKit 绘制 Awake 的 1024x1024 图标，并生成 .icns
+// make_awake_icon.swift — 用 AppKit 绘制 Awake 的 1024x1024 图标，并生成 .icns 与 iOS AppIcon。
 //
 // 用法（在仓库根目录）: swift Tools/make_awake_icon.swift
-// 产物: Resources/Awake-1024.png, Resources/Awake.icns
+// 产物: Resources/Awake-1024.png, Resources/Awake.icns,
+//       ios/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 //
-// 设计：深夜蓝紫渐变底，中央“日出 + 声波”符号；
-// 内容距画布边缘 80px，圆角按 macOS 图标比例（半径 190）。
+// 设计（黑白两色，唯一图形是「听觉系统」的抽象）：
+//   一条从外向内收拢的螺旋线（耳蜗），旋到中心后不再闭合，而是向右上挑开成一段
+//   张开的弧——「被唤醒的那一下」。中心一枚实心点，是声音落点。
+//   没有渐变、没有光斑、没有文字；两个元素：一条线、一个点。
+//
+// 几何全部按 1024 画布与 80 安全边距推导，图形中心偏左 26px，给挑开的弧留出呼吸。
 
 import AppKit
 import Foundation
 
 let canvas: CGFloat = 1024
-let margin: CGFloat = 80
 let root = FileManager.default.currentDirectoryPath
 let resources = root + "/Resources"
-let pngPath = resources + "/Awake-1024.png"
-let icnsPath = resources + "/Awake.icns"
 let iconsetDir = root + "/.build/Awake.iconset"
+let fm = FileManager.default
+try? fm.createDirectory(atPath: iconsetDir, withIntermediateDirectories: true)
 
 func srgb(_ hex: UInt32, _ alpha: CGFloat = 1) -> NSColor {
-    return NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255.0,
-                   green: CGFloat((hex >> 8) & 0xFF) / 255.0,
-                   blue: CGFloat(hex & 0xFF) / 255.0,
-                   alpha: alpha)
+    NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255.0,
+            green: CGFloat((hex >> 8) & 0xFF) / 255.0,
+            blue: CGFloat(hex & 0xFF) / 255.0,
+            alpha: alpha)
 }
 
-func linear(_ ctx: CGContext, _ stops: [(UInt32, CGFloat)], _ locations: [CGFloat],
-            from: CGPoint, to: CGPoint) {
-    let colors = stops.map { srgb($0.0, $0.1).cgColor } as CFArray
-    guard let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                             colors: colors, locations: locations) else { return }
-    ctx.drawLinearGradient(g, start: from, end: to, options: [])
-}
+/// 画一张 1024 的图。squircle 为 true 时给 macOS 的圆角底板留白。
+func render(squircle: Bool) -> NSBitmapImageRep {
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(canvas), pixelsHigh: Int(canvas),
+                               bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                               colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    let g = NSGraphicsContext(bitmapImageRep: rep)!
+    NSGraphicsContext.current = g
+    let ctx = g.cgContext
 
-func radial(_ ctx: CGContext, center: CGPoint, radius: CGFloat,
-            _ inner: (UInt32, CGFloat), _ outer: (UInt32, CGFloat)) {
-    let colors = [srgb(inner.0, inner.1).cgColor, srgb(outer.0, outer.1).cgColor] as CFArray
-    guard let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                             colors: colors, locations: [0, 1]) else { return }
-    ctx.drawRadialGradient(g, startCenter: center, startRadius: 0,
-                           endCenter: center, endRadius: radius,
-                           options: [.drawsAfterEndLocation])
-}
-
-func roundedRect(_ rect: CGRect, _ radius: CGFloat) -> CGPath {
-    return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
-}
-
-// ---- 画布 -------------------------------------------------------------------
-guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
-                                 pixelsWide: Int(canvas), pixelsHigh: Int(canvas),
-                                 bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                                 isPlanar: false, colorSpaceName: .deviceRGB,
-                                 bytesPerRow: 0, bitsPerPixel: 0) else {
-    FileHandle.standardError.write("无法创建位图缓冲区\n".data(using: .utf8)!)
-    exit(1)
-}
-rep.size = NSSize(width: canvas, height: canvas)
-
-NSGraphicsContext.saveGraphicsState()
-guard let gctx = NSGraphicsContext(bitmapImageRep: rep) else { exit(1) }
-NSGraphicsContext.current = gctx
-guard let ctx = NSGraphicsContext.current?.cgContext else { exit(1) }
-ctx.setShouldAntialias(true)
-
-let content = CGRect(x: margin, y: margin,
-                     width: canvas - margin * 2, height: canvas - margin * 2)
-let shape = roundedRect(content, 190)
-
-ctx.saveGState()
-ctx.addPath(shape)
-ctx.clip()
-
-// 底色：深夜蓝紫
-linear(ctx, [(0x05060F, 1), (0x12092E, 1), (0x221457, 1)], [0, 0.55, 1],
-       from: CGPoint(x: 200, y: 80), to: CGPoint(x: 800, y: 944))
-
-// 极光光晕
-radial(ctx, center: CGPoint(x: 300, y: 760), radius: 560, (0x2F5BFF, 0.50), (0x2F5BFF, 0))
-radial(ctx, center: CGPoint(x: 790, y: 640), radius: 520, (0x9B4DFF, 0.42), (0x9B4DFF, 0))
-radial(ctx, center: CGPoint(x: 512, y: 120), radius: 420, (0xFF7A50, 0.10), (0xFF7A50, 0))
-
-// 日落区域的暖光
-let horizon: CGFloat = 430
-radial(ctx, center: CGPoint(x: 512, y: horizon), radius: 420, (0xFF9A5E, 0.34), (0xFF9A5E, 0))
-
-// 日出圆盘（只保留地平线以上）
-ctx.saveGState()
-ctx.clip(to: CGRect(x: 0, y: horizon, width: canvas, height: canvas - horizon))
-let sunRect = CGRect(x: 512 - 200, y: horizon - 200, width: 400, height: 400)
-ctx.addPath(CGPath(ellipseIn: sunRect, transform: nil))
-ctx.clip()
-linear(ctx, [(0xFF7A4D, 0.98), (0xFFB173, 0.98), (0xFFE3B8, 0.98)], [0, 0.55, 1],
-       from: CGPoint(x: 512, y: horizon - 200), to: CGPoint(x: 512, y: horizon + 200))
-ctx.restoreGState()
-
-// 日出上方的细弧线
-ctx.saveGState()
-ctx.clip(to: CGRect(x: 0, y: horizon, width: canvas, height: canvas - horizon))
-for (i, r) in [250.0, 292.0, 334.0].enumerated() {
-    ctx.setStrokeColor(srgb(0xFFFFFF, 0.10 - CGFloat(i) * 0.02).cgColor)
-    ctx.setLineWidth(1.5)
-    ctx.strokeEllipse(in: CGRect(x: 512 - r, y: horizon - r, width: r * 2, height: r * 2))
-}
-ctx.restoreGState()
-
-// 地平线
-ctx.setFillColor(srgb(0xFFFFFF, 0.16).cgColor)
-ctx.fill(CGRect(x: 176, y: horizon - 1.25, width: 672, height: 2.5))
-ctx.setFillColor(srgb(0xFFC79A, 0.55).cgColor)
-ctx.fill(CGRect(x: 332, y: horizon - 1.25, width: 360, height: 2.5))
-
-// 声波：七根圆角竖条，从地平线升起（中间最高）
-let heights: [CGFloat] = [92, 152, 222, 286, 222, 152, 92]
-let barWidth: CGFloat = 30
-let gap: CGFloat = 18
-let totalWidth = CGFloat(heights.count) * barWidth + CGFloat(heights.count - 1) * gap
-var barX = 512 - totalWidth / 2
-
-for h in heights {
-    let bar = CGRect(x: barX, y: horizon, width: barWidth, height: h)
-    let path = roundedRect(bar, barWidth / 2)
-
-    // 地平线下的倒影：贴边渐隐，模拟水面
-    ctx.saveGState()
-    let mirror = CGRect(x: barX, y: horizon + 1.5, width: barWidth, height: h * 0.30)
-    ctx.addPath(roundedRect(mirror, barWidth / 2))
-    ctx.clip()
-    linear(ctx, [(0xFFFFFF, 0.20), (0xFFFFFF, 0.0)], [0, 1],
-           from: CGPoint(x: barX, y: horizon), to: CGPoint(x: barX, y: horizon + h * 0.30))
-    ctx.restoreGState()
-
-    ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: 26, color: srgb(0xFFD9B0, 0.35).cgColor)
+    // 底板：近黑，纵向极轻的层次，让纯黑不死板。
+    let plate = CGRect(x: 0, y: 0, width: canvas, height: canvas)
+    let radius: CGFloat = squircle ? 190 : 0
+    let path = CGPath(roundedRect: plate.insetBy(dx: squircle ? 24 : 0, dy: squircle ? 24 : 0),
+                      cornerWidth: radius, cornerHeight: radius, transform: nil)
     ctx.addPath(path)
     ctx.clip()
-    linear(ctx, [(0xFFFFFF, 0.98), (0xE9F0FF, 0.94)], [0, 1],
-           from: CGPoint(x: barX, y: horizon), to: CGPoint(x: barX, y: horizon + h))
-    ctx.restoreGState()
-
-    barX += barWidth + gap
-}
-
-// 顶部柔光
-radial(ctx, center: CGPoint(x: 360, y: 900), radius: 520, (0xFFFFFF, 0.10), (0xFFFFFF, 0))
-
-// 暗角
-radial(ctx, center: CGPoint(x: 512, y: 540), radius: 720, (0x000000, 0.0), (0x000000, 0.38))
-
-// 内描边
-ctx.addPath(shape)
-ctx.setStrokeColor(srgb(0xFFFFFF, 0.20).cgColor)
-ctx.setLineWidth(2.5)
-ctx.strokePath()
-
-ctx.restoreGState()
-
-NSGraphicsContext.restoreGraphicsState()
-
-guard let png = rep.representation(using: .png, properties: [:]) else {
-    FileHandle.standardError.write("PNG 编码失败\n".data(using: .utf8)!)
-    exit(1)
-}
-try FileManager.default.createDirectory(atPath: resources, withIntermediateDirectories: true)
-do {
-    try png.write(to: URL(fileURLWithPath: pngPath))
-} catch {
-    FileHandle.standardError.write("写入 PNG 失败: \(error)\n".data(using: .utf8)!)
-    exit(1)
-}
-
-// ---- 生成 .icns -------------------------------------------------------------
-@discardableResult
-func run(_ tool: String, _ args: [String]) -> Int32 {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: tool)
-    p.arguments = args
-    let pipe = Pipe()
-    p.standardOutput = pipe
-    p.standardError = pipe
-    do { try p.run() } catch {
-        FileHandle.standardError.write("无法执行 \(tool): \(error)\n".data(using: .utf8)!)
-        return -1
+    let colors = [srgb(0x0b0c0e).cgColor, srgb(0x15171a).cgColor] as CFArray
+    if let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
+        ctx.drawLinearGradient(grad, start: CGPoint(x: 0, y: canvas), end: CGPoint(x: 0, y: 0), options: [])
     }
-    p.waitUntilExit()
-    if p.terminationStatus != 0 {
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        FileHandle.standardError.write(data)
+
+    // 螺旋：耳蜗。等宽线（11pt），1.9 圈，开口朝右上。
+    let center = CGPoint(x: canvas * 0.475, y: canvas * 0.485)
+    let rOuter: CGFloat = 258
+    let rInner: CGFloat = 30
+    let turns: Double = 1.9
+    let steps = 480
+    // 开口方向：右上 28 度（Canvas 坐标 y 向上）。
+    let mouth = Double.pi * 0.155
+
+    func point(_ t: Double) -> CGPoint {
+        let k = t / Double(steps)
+        let angle = mouth + (1 - k) * turns * 2 * Double.pi
+        let r = rInner + (rOuter - rInner) * CGFloat(k)
+        return CGPoint(x: center.x + r * CGFloat(cos(angle)), y: center.y + r * CGFloat(sin(angle)))
     }
-    return p.terminationStatus
-}
 
-try? FileManager.default.removeItem(atPath: iconsetDir)
-try FileManager.default.createDirectory(atPath: iconsetDir, withIntermediateDirectories: true)
+    ctx.setLineCap(.round)
+    ctx.setLineJoin(.round)
+    ctx.setStrokeColor(srgb(0xf7f8fa).cgColor)
+    ctx.setLineWidth(11)
+    ctx.move(to: point(0))
+    for i in 1...steps { ctx.addLine(to: point(Double(i))) }
+    ctx.strokePath()
 
-let sizes = [16, 32, 128, 256, 512]
-for s in sizes {
-    let one = iconsetDir + "/icon_\(s)x\(s).png"
-    let two = iconsetDir + "/icon_\(s)x\(s)@2x.png"
-    guard run("/usr/bin/sips", ["-z", "\(s)", "\(s)", pngPath, "--out", one]) == 0,
-          run("/usr/bin/sips", ["-z", "\(s * 2)", "\(s * 2)", pngPath, "--out", two]) == 0 else {
-        FileHandle.standardError.write("sips 生成 \(s)px 图标失败\n".data(using: .utf8)!)
-        exit(1)
+    // 醒来：从开口起、三段同角度、逐级外扩的弧——声音离开耳朵的形状。
+    // 角度固定（不跟着螺旋转），所以看起来是"向外散开"，不是继续盘旋。
+    let ripples: [(CGFloat, Double, Double)] = [(46, 0.98, 0.62), (86, 0.82, 0.42), (126, 0.66, 0.26)]
+    for (offset, span, alpha) in ripples {
+        let radius = rOuter + offset
+        ctx.setStrokeColor(srgb(0xf7f8fa, alpha + 0.5).cgColor)
+        ctx.setLineWidth(10)
+        ctx.addArc(center: center, radius: radius,
+                   startAngle: CGFloat(mouth - span / 2), endAngle: CGFloat(mouth + span / 2),
+                   clockwise: false)
+        ctx.strokePath()
     }
+
+    // 中心落点：声音到达的地方。
+    let dot = NSBezierPath(ovalIn: CGRect(x: center.x - 13, y: center.y - 13, width: 26, height: 26))
+    srgb(0xf7f8fa).setFill()
+    dot.fill()
+
+    NSGraphicsContext.restoreGraphicsState()
+    return rep
 }
 
-guard run("/usr/bin/iconutil", ["-c", "icns", iconsetDir, "-o", icnsPath]) == 0 else {
-    FileHandle.standardError.write("iconutil 生成 icns 失败\n".data(using: .utf8)!)
-    exit(1)
+func writePNG(_ rep: NSBitmapImageRep, _ path: String) throws {
+    guard let data = rep.representation(using: .png, properties: [:]) else { return }
+    try data.write(to: URL(fileURLWithPath: path))
 }
 
-// ---- 汇报 -------------------------------------------------------------------
-func sizeBytes(_ path: String) -> Int {
-    let attrs = try? FileManager.default.attributesOfItem(atPath: path)
-    return (attrs?[.size] as? NSNumber)?.intValue ?? 0
+let master = render(squircle: true)
+try writePNG(master, resources + "/Awake-1024.png")
+
+// .icns：从 1024 逐级缩放，iconutil 需要这些尺寸。
+let sizes: [(Int, String)] = [
+    (16, "icon_16x16"), (32, "icon_16x16@2x"), (32, "icon_32x32"), (64, "icon_32x32@2x"),
+    (128, "icon_128x128"), (256, "icon_128x128@2x"), (256, "icon_256x256"), (512, "icon_256x256@2x"),
+    (512, "icon_512x512"), (1024, "icon_512x512@2x"),
+]
+let source = NSImage(size: NSSize(width: canvas, height: canvas))
+source.addRepresentation(master)
+for (size, name) in sizes {
+    let target = NSImage(size: NSSize(width: size, height: size))
+    target.lockFocus()
+    NSGraphicsContext.current?.imageInterpolation = .high
+    source.draw(in: NSRect(x: 0, y: 0, width: size, height: size))
+    target.unlockFocus()
+    guard let tiff = target.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+          let png = rep.representation(using: .png, properties: [:]) else { continue }
+    try png.write(to: URL(fileURLWithPath: iconsetDir + "/" + name + ".png"))
 }
 
-let pngBytes = sizeBytes(pngPath)
-let icnsBytes = sizeBytes(icnsPath)
-guard pngBytes > 0, icnsBytes > 0 else {
-    FileHandle.standardError.write("产物为空\n".data(using: .utf8)!)
-    exit(1)
-}
+let task = Process()
+task.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
+task.arguments = ["-c", "icns", iconsetDir, "-o", resources + "/Awake.icns"]
+try task.run()
+task.waitUntilExit()
 
-print("==> icon written: Resources/Awake-1024.png (\(pngBytes) bytes, 1024x1024)")
-print("==> icns written: Resources/Awake.icns (\(icnsBytes) bytes)")
+// iOS：单张 1024，圆角由系统裁；不能带透明边。
+let iosRep = render(squircle: false)
+try writePNG(iosRep, root + "/ios/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
+
+print("icon ok: Resources/Awake-1024.png, Resources/Awake.icns, iOS AppIcon.png")

@@ -9,21 +9,24 @@ struct RootView: View {
   @State private var tab = 0
   var body: some View {
     TabView(selection: $tab) {
-      NavigationStack { HomeView().playerInset() }.tabItem { Label("为你", systemImage: "waveform") }
+      NavigationStack { HomeView() }.tabItem { Label("为你", systemImage: "waveform") }
         .tag(0)
-      NavigationStack { LibraryView().playerInset() }.tabItem {
+      NavigationStack { LibraryView() }.tabItem {
         Label("曲库", systemImage: "square.stack")
       }.tag(1)
-      NavigationStack { SoundView().playerInset() }.tabItem {
+      NavigationStack { SoundView() }.tabItem {
         Label("声音", systemImage: "slider.horizontal.3")
       }.tag(2)
-      NavigationStack { LabView().playerInset() }.tabItem {
+      NavigationStack { LabView() }.tabItem {
         Label("评测", systemImage: "waveform.path.ecg")
       }.tag(3)
-      NavigationStack { SettingsView().playerInset() }.tabItem {
+      NavigationStack { SettingsView() }.tabItem {
         Label("设置", systemImage: "gearshape")
       }.tag(4)
     }
+    // mini player 挂在 TabView 上：每个 tab 各挂一份会让同一块玻璃出现五次，
+    // 而且它会被 iOS 26 的浮动 tab bar 压住。这里只有一份。
+    .safeAreaInset(edge: .bottom, spacing: 0) { MiniPlayer() }
     .tint(Color(hex: store.state.skin.colors.accent))
     .preferredColorScheme(store.state.skin.mode == "light" ? .light : .dark)
     // 播放页只能有一个宿主。0.9.8 把 fullScreenCover 挂在 MiniPlayer 上，而 MiniPlayer
@@ -102,7 +105,6 @@ struct RootView: View {
   }
 }
 extension View {
-  func playerInset() -> some View { self.safeAreaInset(edge: .bottom, spacing: 0) { MiniPlayer() } }
   func appSurface() -> some View { self.modifier(AppSurface()) }
 }
 struct AppSurface: ViewModifier {
@@ -126,16 +128,23 @@ struct Panel<Content: View>: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) { content }.frame(
       maxWidth: .infinity, alignment: .leading
-    ).padding(20).background {
-      if store.state.skin.mode == "glass" {
-        RoundedRectangle(cornerRadius: store.state.skin.radius).fill(.ultraThinMaterial)
-      } else {
-        RoundedRectangle(cornerRadius: store.state.skin.radius).fill(
-          Color(hex: store.state.skin.colors.surface))
+    ).padding(20)
+      // 玻璃皮肤下卡片是玻璃：内容浮在背景上，不是画在一张实色纸上。
+      .glassSurface(
+        RoundedRectangle(cornerRadius: store.state.skin.radius, style: .continuous),
+        enabled: store.state.skin.mode == "glass")
+      .background {
+        if store.state.skin.mode != "glass" {
+          RoundedRectangle(cornerRadius: store.state.skin.radius, style: .continuous).fill(
+            Color(hex: store.state.skin.colors.surface))
+        }
       }
-    }.overlay(
-      RoundedRectangle(cornerRadius: store.state.skin.radius).stroke(
-        Color(hex: store.state.skin.colors.border), lineWidth: 0.6))
+      .overlay(
+        RoundedRectangle(cornerRadius: store.state.skin.radius, style: .continuous).stroke(
+          store.state.skin.mode == "glass"
+            ? Color.white.opacity(0.10)
+            : Color(hex: store.state.skin.colors.border),
+          lineWidth: 0.6))
   }
 }
 struct Cover: View {
@@ -210,7 +219,12 @@ struct MiniPlayer: View {
         } label: {
           Image(systemName: "forward.end.fill").frame(width: 32, height: 44)
         }.accessibilityLabel("下一首")
-      }.padding(.horizontal, 16).padding(.vertical, 8).background(.regularMaterial)
+      }.padding(.horizontal, 16).padding(.vertical, 8)
+        // 常驻的 mini player 是全局唯一一直可见的浮层：它就是那块玻璃。
+        .glassSurface(
+          RoundedRectangle(cornerRadius: 26, style: .continuous),
+          enabled: store.state.skin.mode == "glass" || store.state.skin.mode == "dark",
+          interactive: true)
     }
   }
 }
@@ -298,6 +312,9 @@ struct NowPlayingView: View {
       .safeAreaInset(edge: .top, spacing: 0) { playerHeader }
     }
     .presentationBackground(Color(hex: store.state.skin.colors.bg))
+    // cover 不继承 TabView 上的 tint：不补这一行，播放/上一首/下一首会退回系统的蓝，
+    // 黑白两色的规则当场破掉。
+    .tint(Color(hex: store.state.skin.colors.accent))
     .onAppear { syncGains() }
     .onChange(of: player.route.uid) { _, _ in syncGains() }
     .sheet(isPresented: $editingInfo) { if let song = player.song { MediaInfoView(song: song) } }

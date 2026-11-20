@@ -25,6 +25,7 @@
 		4B2B9E96F4274C216D84C376 /* SoundViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BFF41650CE622F89415946F /* SoundViews.swift */; };
 		4F2225AED07B39B3AFE0A874 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25772CF3D1E1165C2FC3C88 /* Models.swift */; };
 		56DBE0E63E118AB957312755 /* Handoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9275739D9FAAB1E4A6121F61 /* Handoff.swift */; };
+		5B4D348962767E99471F7CBA /* Glass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 883990F9FD85E4E8EC8D4D4C /* Glass.swift */; };
 		6306A72730FFAE3DD46129A9 /* Books.swift in Sources */ = {isa = PBXBuildFile; fileRef = C832FBDCFEDDD2FF8CC8DDAE /* Books.swift */; };
 		63F16572E47029185FA00BF4 /* MobilePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C39625E967E4D9282FC678BB /* MobilePlayer.swift */; };
 		687718F766BFE7B5430BBA50 /* HandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EC8B7DA8A5DBD9C7E5DD51A /* HandoffTests.swift */; };
@@ -94,6 +95,7 @@
 		78C62F4E4623656837A7005F /* PlayerInstrument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerInstrument.swift; sourceTree = "<group>"; };
 		817D79843367BFCA224EA56D /* AwakeUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AwakeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		868E0EA19433684BA307B61D /* FileImportPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileImportPicker.swift; sourceTree = "<group>"; };
+		883990F9FD85E4E8EC8D4D4C /* Glass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Glass.swift; sourceTree = "<group>"; };
 		9099E526F9866ECBED6C6F72 /* BackupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupTests.swift; sourceTree = "<group>"; };
 		9275739D9FAAB1E4A6121F61 /* Handoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Handoff.swift; sourceTree = "<group>"; };
 		A0073BC27DA1A09A393D4F89 /* LibraryImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryImport.swift; sourceTree = "<group>"; };
@@ -170,6 +172,7 @@
 				4D022D5C4EE49F4F242D715A /* Equipment.swift */,
 				24EE460B200DCEB777CB6E57 /* EquipmentViews.swift */,
 				868E0EA19433684BA307B61D /* FileImportPicker.swift */,
+				883990F9FD85E4E8EC8D4D4C /* Glass.swift */,
 				9275739D9FAAB1E4A6121F61 /* Handoff.swift */,
 				1833ADE45B358BE7D885F231 /* HandoffReceiver.swift */,
 				D60BC7EC39C288BF72662FCD /* HandoffReceiveView.swift */,
@@ -347,6 +350,7 @@
 				6CA381D36D7CA1B3CDDEFFD4 /* Equipment.swift in Sources */,
 				FAA89E83D7EC787B26770001 /* EquipmentViews.swift in Sources */,
 				E07C6AA4F56D824AC1524EAF /* FileImportPicker.swift in Sources */,
+				5B4D348962767E99471F7CBA /* Glass.swift in Sources */,
 				56DBE0E63E118AB957312755 /* Handoff.swift in Sources */,
 				2CC306AC027657AF44C1B679 /* HandoffReceiveView.swift in Sources */,
 				2543ED26990FCB6149816193 /* HandoffReceiver.swift in Sources */,
