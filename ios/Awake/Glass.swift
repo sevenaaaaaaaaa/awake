@@ -33,3 +33,25 @@ extension View {
     modifier(GlassSurface(enabled: enabled, shape: shape, interactive: interactive))
   }
 }
+
+/// 列表/表单的行背景。系统行默认不透明，玻璃皮肤下要逐行换掉——
+/// glassEffect 作用不到「一个分区的所有行」，只能用 listRowBackground 一层层铺。
+struct GlassRow: ViewModifier {
+  @EnvironmentObject var store: MobileStore
+  func body(content: Content) -> some View {
+    if store.state.skin.mode == "glass" {
+      content.listRowBackground(
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+          .fill(.ultraThinMaterial)
+          .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+              .stroke(Color.white.opacity(0.08), lineWidth: 0.5))
+          .padding(.vertical, 1))
+    } else {
+      content
+    }
+  }
+}
+extension View {
+  func glassRows() -> some View { modifier(GlassRow()) }
+}

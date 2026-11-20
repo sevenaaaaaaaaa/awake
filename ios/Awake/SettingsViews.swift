@@ -140,6 +140,7 @@ struct SettingsView: View {
     } onFail: { error, _ in
       if (error as NSError).code != NSUserCancelledError { store.message = error.localizedDescription }
     }
+    .glassRows()
     .navigationTitle("设置")
     .sheet(isPresented: $sourceSheet) { SourceEditor() }
     .alert("移除来源？", isPresented: Binding(get: { sourceToRemove != nil }, set: { if !$0 { sourceToRemove = nil } })) {

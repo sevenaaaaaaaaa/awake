@@ -60,6 +60,14 @@ struct SoundView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 22) {
         starts
+        NavigationLink {
+          MeasurementView(model: chain?.headphone ?? player.route.name)
+        } label: {
+          Panel {
+            Label("按耳机型号套用", systemImage: "hifispeaker.and.homepod").font(.headline)
+            Text("按型号查询 AutoEq 与已收录的公开拟合，保留来源和适用条件。").font(.subheadline).foregroundStyle(.secondary)
+          }
+        }.buttonStyle(.plain)
         Panel {
           HStack {
             Image(systemName: "headphones").font(.title)
@@ -139,14 +147,6 @@ struct SoundView: View {
             DisclosureGroup("设备资料与匹配建议") { EquipmentSummary(chain: c) }
           }
         }
-        NavigationLink {
-          MeasurementView(model: chain?.headphone ?? player.route.name)
-        } label: {
-          Panel {
-            Label("按耳机型号套用", systemImage: "hifispeaker.and.homepod").font(.headline)
-            Text("按型号查询 AutoEq 与已收录的公开拟合，保留来源和适用条件。").font(.subheadline).foregroundStyle(.secondary)
-          }
-        }.buttonStyle(.plain)
         NavigationLink {
           ManualEQView()
         } label: {
