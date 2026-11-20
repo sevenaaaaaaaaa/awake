@@ -746,71 +746,13 @@ struct RoutePicker: UIViewRepresentable {
 struct HomeView: View {
   @EnvironmentObject var store: MobileStore
   @EnvironmentObject var player: MobilePlayer
+
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 24) {
-        Text("YOUR LISTENING SPACE").font(.caption.monospaced()).tracking(2).foregroundStyle(
-          .secondary)
-        Text("好音乐，\n刚好懂你。").font(.system(size: 36, weight: .bold)).tracking(-1)
-        Panel {
-          HStack {
-            VStack(alignment: .leading, spacing: 12) {
-              Text("此刻，为你而鸣").font(.title2.bold())
-              Text("从 \(store.state.songs.count) 首音乐与真实聆听记录中，找回自己的节奏。").font(.subheadline)
-                .foregroundStyle(.secondary)
-              Button("开始我的电台", systemImage: "play.fill") {
-                if let s = store.recommendations().first {
-                  Task { await playSong(s, store: store, player: player) }
-                }
-              }.buttonStyle(AwakeButtonStyle()).disabled(store.state.songs.isEmpty || store.busy)
-            }
-            Spacer()
-            Image(systemName: "waveform.circle").font(.system(size: 70, weight: .ultraLight))
-              .foregroundStyle(Color(hex: store.state.skin.colors.accent))
-          }
-        }
-        HStack {
-          NavigationLink {
-            AgentView()
-          } label: {
-            Label("听歌搭子", systemImage: "sparkles").frame(maxWidth: .infinity).padding(.vertical, 12)
-          }.buttonStyle(.bordered)
-          NavigationLink {
-            LabView()
-          } label: {
-            Label("听感反馈", systemImage: "heart.text.clipboard").frame(maxWidth: .infinity).padding(
-              .vertical, 12)
-          }.buttonStyle(.bordered)
-        }
-        HStack {
-          NavigationLink {
-            BooksHubView()
-          } label: {
-            Label("听书与播报", systemImage: "book.closed").frame(maxWidth: .infinity).padding(.vertical, 12)
-          }.buttonStyle(.bordered)
-          NavigationLink {
-            WeeklySummaryView()
-          } label: {
-            Label("本周总结", systemImage: "chart.bar").frame(maxWidth: .infinity).padding(.vertical, 12)
-          }.buttonStyle(.bordered)
-        }
-        Panel {
-          HStack {
-            VStack(alignment: .leading, spacing: 6) {
-              Text("为你生成").font(.headline)
-              Text("每天按最近聆听、完整播放与收藏重新排序。").font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button {
-              if let first = store.recommendations().first {
-                Task { await playSong(first, store: store, player: player) }
-              }
-            } label: {
-              Label("播放", systemImage: "play.fill")
-            }.buttonStyle(.bordered).disabled(store.state.songs.isEmpty)
-          }
-        }
-        Text("下一次心动").font(.title3.bold())
+      VStack(alignment: .leading, spacing: 20) {
+        hero
+        entries
+        Text("下一次心动").font(.headline).padding(.top, 4)
         if store.state.songs.isEmpty {
           ContentUnavailableView(
             "从你的音乐开始", systemImage: "music.note",
@@ -828,7 +770,126 @@ struct HomeView: View {
       }.padding(20)
     }.appSurface().navigationTitle("awake.").toolbar { if store.busy { ProgressView() } }
   }
+
+  /// 首屏只回答一个问题：现在按一下会发生什么。
+  /// 有在听的歌就是「接着听」，没有就是「开始电台」——不是两句并列的口号。
+  @ViewBuilder private var hero: some View {
+    if let song = player.song {
+      Button {
+        store.playerSheetOpen = true
+      } label: {
+        HStack(spacing: 16) {
+          Cover(
+            title: song.title, artwork: song.artwork,
+            style: song.mediaInfo?.cover_style ?? "auto", size: 64)
+          VStack(alignment: .leading, spacing: 3) {
+            Text(player.playing ? "正在听" : "接着听")
+              .font(.caption).foregroundStyle(.secondary)
+            Text(song.title).font(.system(size: 19, weight: .semibold)).lineLimit(1)
+            Text(song.artist).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+          }
+          Spacer(minLength: 8)
+          Image(systemName: player.playing ? "waveform" : "play.fill")
+            .font(.system(size: 19, weight: .medium))
+            .foregroundStyle(Color(hex: store.state.skin.colors.accent))
+            .frame(width: 48, height: 48)
+            .background(Circle().fill(Color(hex: store.state.skin.colors.raised)))
+            .accessibilityHidden(true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassSurface(
+          RoundedRectangle(cornerRadius: store.state.skin.radius, style: .continuous),
+          enabled: store.state.skin.mode == "glass")
+        .background {
+          if store.state.skin.mode != "glass" {
+            RoundedRectangle(cornerRadius: store.state.skin.radius, style: .continuous).fill(
+              Color(hex: store.state.skin.colors.surface))
+          }
+        }
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("打开正在播放：\(song.title)")
+    } else {
+      Panel {
+        VStack(alignment: .leading, spacing: 12) {
+          Text("此刻，为你而鸣").font(.title3.bold())
+          Text("从 \(store.state.songs.count) 首音乐与真实聆听记录中，找回自己的节奏。")
+            .font(.subheadline).foregroundStyle(.secondary)
+          Button("开始我的电台", systemImage: "play.fill") {
+            if let first = store.recommendations().first {
+              Task { await playSong(first, store: store, player: player) }
+            }
+          }.buttonStyle(AwakeButtonStyle()).disabled(store.state.songs.isEmpty || store.busy)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+    }
+  }
+
+  /// 四个入口收进一张面板、四行，每行一个去向。
+  /// 原来四个胶囊权重完全一样，选哪个只能靠读字；现在一眼是列表，副标题告诉你进去以后做什么。
+  private var entries: some View {
+    VStack(spacing: 0) {
+      entry(
+        icon: "sparkles", title: "听歌搭子", detail: "让它接着排接下来的歌",
+        destination: AnyView(AgentView()))
+      hairline
+      entry(
+        icon: "heart.text.clipboard", title: "听感反馈", detail: "这条链路听起来哪里不对",
+        destination: AnyView(LabView()))
+      hairline
+      entry(
+        icon: "book.closed", title: "听书与播报", detail: "把文字读成声音",
+        destination: AnyView(BooksHubView()))
+      hairline
+      entry(
+        icon: "chart.bar", title: "本周总结", detail: "这周都听了什么",
+        destination: AnyView(WeeklySummaryView()))
+    }
+    .glassSurface(
+      RoundedRectangle(cornerRadius: store.state.skin.radius, style: .continuous),
+      enabled: store.state.skin.mode == "glass")
+    .background {
+      if store.state.skin.mode != "glass" {
+        RoundedRectangle(cornerRadius: store.state.skin.radius, style: .continuous).fill(
+          Color(hex: store.state.skin.colors.surface))
+      }
+    }
+  }
+
+  private var hairline: some View {
+    Rectangle().fill(Color(hex: store.state.skin.colors.border).opacity(0.6))
+      .frame(height: 0.5).padding(.leading, 56)
+  }
+
+  private func entry(
+    icon: String, title: String, detail: String, destination: AnyView
+  ) -> some View {
+    NavigationLink {
+      destination
+    } label: {
+      HStack(spacing: 14) {
+        Image(systemName: icon)
+          .font(.system(size: 17, weight: .regular))
+          .foregroundStyle(Color(hex: store.state.skin.colors.text))
+          .frame(width: 26)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title).font(.system(size: 15, weight: .medium))
+          Text(detail).font(.caption).foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 8)
+        Image(systemName: "chevron.right")
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+      }
+      .padding(.horizontal, 16).padding(.vertical, 13)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+  }
 }
+
 struct SongRow: View {
   let song: Song
   @EnvironmentObject var store: MobileStore
