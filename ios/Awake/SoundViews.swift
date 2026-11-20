@@ -140,10 +140,10 @@ struct SoundView: View {
           }
         }
         NavigationLink {
-          MeasurementView()
+          MeasurementView(model: chain?.headphone ?? player.route.name)
         } label: {
           Panel {
-            Label("查找社区测量 EQ", systemImage: "magnifyingglass").font(.headline)
+            Label("按耳机型号套用", systemImage: "hifispeaker.and.homepod").font(.headline)
             Text("按型号查询 AutoEq 与已收录的公开拟合，保留来源和适用条件。").font(.subheadline).foregroundStyle(.secondary)
           }
         }.buttonStyle(.plain)
@@ -358,7 +358,11 @@ struct ChainEditor: View {
 struct MeasurementView: View {
   @EnvironmentObject var store: MobileStore
   @EnvironmentObject var player: MobilePlayer
-  @State private var query = ""
+  @State private var query: String
+  /// 从「声音」页带型号进来：省掉一次手动输入，这也是这一页最主要的入口。
+  init(model: String = "") {
+    _query = State(initialValue: model)
+  }
   @State private var candidates: [EQCandidate] = []
   @State private var busy = false
   @State private var parameters = ""
