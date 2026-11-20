@@ -81,6 +81,13 @@ struct RootView: View {
         // 端到端自检通道（见 Diagnostics）；只有显式传环境变量时才动。
         Diagnostics.e2eConnectIfRequested(store)
         Diagnostics.e2ePlayIfRequested(store: store, player: player)
+        // 截图用：AWAKE_E2E_SKIN=glass|light|dark 切换到指定皮肤。
+        if let skinID = ProcessInfo.processInfo.environment["AWAKE_E2E_SKIN"],
+          let skin = ([Skin.dark, .light, .glass]).first(where: { $0.id == skinID }),
+          store.state.skin.id != skin.id {
+          store.state.skin = skin
+          store.save()
+        }
         // 截图用：AWAKE_E2E_TAB=1 直接落到某个底部标签（空曲库这类状态没有入口可点）。
         if let raw = ProcessInfo.processInfo.environment["AWAKE_E2E_TAB"], let index = Int(raw) {
           tab = index
@@ -116,10 +123,18 @@ struct AppSurface: ViewModifier {
   func body(content: Content) -> some View {
     content.scrollContentBackground(.hidden).background {
       if store.state.skin.mode == "glass" {
-        LinearGradient(
-          colors: [
-            Color(hex: store.state.skin.colors.bg), Color(hex: store.state.skin.colors.raised),
-          ], startPoint: .topLeading, endPoint: .bottomTrailing)
+        // 玻璃要有东西可折射。背景是一层极轻的中性层次 + 顶部一块更亮的区域，
+        // 不是为了好看——平涂背景上的玻璃和实色卡没有区别。
+        ZStack {
+          LinearGradient(
+            colors: [
+              Color(hex: store.state.skin.colors.raised),
+              Color(hex: store.state.skin.colors.bg),
+            ], startPoint: .top, endPoint: .bottom)
+          RadialGradient(
+            colors: [Color.white.opacity(0.06), .clear],
+            center: .topLeading, startRadius: 20, endRadius: 520)
+        }
       } else {
         Color(hex: store.state.skin.colors.bg)
       }
