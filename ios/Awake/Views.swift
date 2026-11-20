@@ -786,7 +786,7 @@ struct HomeView: View {
           }
         }
       }.padding(20)
-    }.appSurface().navigationTitle("awake.").toolbar { if store.busy { ProgressView() } }
+    }.appSurface().navigationTitle("").toolbar { if store.busy { ProgressView() } }
   }
 
   /// 首屏只回答一个问题：现在按一下会发生什么。
