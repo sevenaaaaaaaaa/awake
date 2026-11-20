@@ -26,6 +26,15 @@ struct RootView: View {
     }
     .tint(Color(hex: store.state.skin.colors.accent))
     .preferredColorScheme(store.state.skin.mode == "light" ? .light : .dark)
+    // 播放页只能有一个宿主。0.9.8 把 fullScreenCover 挂在 MiniPlayer 上，而 MiniPlayer
+    // 由 .playerInset() 装进五个 tab，同一个 @Published 翻成 true 时五份呈现同时发生：
+    // 你看到的可能是其中一份，点到的却是另一份的宿主，于是整页没有反应、也退不出去。
+    // 挂到 TabView 这一层：一份状态对应一次呈现。
+    .fullScreenCover(isPresented: $store.playerSheetOpen) {
+      NowPlayingView()
+        .environmentObject(store)
+        .environmentObject(player)
+    }
     .alert(
       "Awake",
       isPresented: Binding(
@@ -201,10 +210,7 @@ struct MiniPlayer: View {
         } label: {
           Image(systemName: "forward.end.fill").frame(width: 32, height: 44)
         }.accessibilityLabel("下一首")
-      }.padding(.horizontal, 16).padding(.vertical, 8).background(.regularMaterial).fullScreenCover(
-        isPresented: Binding(
-          get: { store.playerSheetOpen }, set: { store.playerSheetOpen = $0 })
-      ) { NowPlayingView() }
+      }.padding(.horizontal, 16).padding(.vertical, 8).background(.regularMaterial)
     }
   }
 }
@@ -228,10 +234,9 @@ struct NowPlayingView: View {
     }
   }
   private var nowPlaying: some View {
-    NavigationStack {
-      ZStack(alignment: .top) {
-        Color(hex: store.state.skin.colors.bg).ignoresSafeArea()
-        ScrollView {
+    ZStack(alignment: .top) {
+      Color(hex: store.state.skin.colors.bg).ignoresSafeArea()
+      ScrollView {
         VStack(alignment: .leading, spacing: 0) {
           if let song = player.song {
             ChainStrip(steps: chainSteps(song))
@@ -290,13 +295,11 @@ struct NowPlayingView: View {
         .padding(.top, 12)
         .padding(.bottom, 32)
       }
-        .safeAreaInset(edge: .top, spacing: 0) { playerHeader }
-      }
-      .toolbar(.hidden, for: .navigationBar)
-      .presentationBackground(Color(hex: store.state.skin.colors.bg))
-      .onAppear { syncGains() }
-      .onChange(of: player.route.uid) { _, _ in syncGains() }
+      .safeAreaInset(edge: .top, spacing: 0) { playerHeader }
     }
+    .presentationBackground(Color(hex: store.state.skin.colors.bg))
+    .onAppear { syncGains() }
+    .onChange(of: player.route.uid) { _, _ in syncGains() }
     .sheet(isPresented: $editingInfo) { if let song = player.song { MediaInfoView(song: song) } }
     .sheet(isPresented: $handingOff) { HandoffSheet() }
     .sheet(isPresented: $receiving) {
@@ -313,6 +316,10 @@ struct NowPlayingView: View {
   private var playerHeader: some View {
     HStack(spacing: 0) {
       Button {
+        // 状态是唯一真相：先写状态（cover 的 isPresented 绑的就是它），再调 dismiss 收动画。
+        // 只调 dismiss 的话，万一呈现宿主和这个环境不是一个（0.9.8 就是这样），按钮看起来
+        // 有反馈、页面却留在原地。
+        store.playerSheetOpen = false
         dismiss()
       } label: {
         Image(systemName: "chevron.down")

@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import UIKit
 
 /// 设备端诊断：用第三方工具重签安装的包拿不到 Xcode 日志，
 /// 所以把关键结论写进 `Documents/Awake/diagnostics.log`（Files App 里可见、可分享），
@@ -163,7 +164,59 @@ extension Diagnostics {
       await playSong(song, store: store, player: player)
       store.playerSheetOpen = true
       log("E2E 播放：\(song.title)")
+      // 呈现层探针：cover 该只有一层。多个 tab 的 MiniPlayer 各挂一份 fullScreenCover 时，
+      // 这里会读出多层叠加——那时页面看着正常，点哪儿都没有反应。
+      try? await Task.sleep(for: .milliseconds(1200))
+      logPresentation(tag: "打开后")
+      probeHit(
+        tag: "打开后",
+        points: [("箭头", CGPoint(x: 21, y: 62)), ("中部", CGPoint(x: 201, y: 437)), ("播放键", CGPoint(x: 201, y: 690))])
+      if let raw = ProcessInfo.processInfo.environment["AWAKE_E2E_CLOSE_MS"],
+        let delay = Double(raw) {
+        try? await Task.sleep(for: .milliseconds(delay))
+        store.playerSheetOpen = false
+        try? await Task.sleep(for: .milliseconds(700))
+        logPresentation(tag: "关闭后")
+        log("E2E 关闭：playerSheetOpen=\(store.playerSheetOpen)")
+      }
     }
+  }
+
+  /// 命中测试探针：在这个点按下，系统会把事件交给谁。
+  /// 页面看着正常却"点哪儿都没反应"，通常是这里返回了别的东西（或干脆 nil）。
+  @MainActor static func probeHit(tag: String, points: [(String, CGPoint)]) {
+    let windows = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap(\.windows)
+    guard let key = windows.first(where: \.isKeyWindow) ?? windows.first else {
+      log("命中[\(tag)] 没有窗口")
+      return
+    }
+    for (name, point) in points {
+      var view = key.hitTest(point, with: nil)
+      var chain: [String] = []
+      while let current = view, chain.count < 5 {
+        chain.append(String(describing: type(of: current)))
+        view = current.superview
+      }
+      let text = chain.isEmpty ? "nil" : chain.joined(separator: " < ")
+      log("命中[\(tag)] \(name)(\(Int(point.x)),\(Int(point.y))) = \(text)")
+    }
+  }
+
+  /// 每个窗口被 cover 叠了几层：0 就是没开，1 是正常一层。
+  @MainActor static func logPresentation(tag: String) {
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    let rows = scenes.flatMap(\.windows).map { window -> String in
+      var depth = 0
+      var controller = window.rootViewController
+      while let presented = controller?.presentedViewController {
+        depth += 1
+        controller = presented
+      }
+      return "\(window.isKeyWindow ? "key" : "other"):\(depth)"
+    }
+    log("呈现层[\(tag)] \(rows.joined(separator: " "))")
   }
 
   /// 造一条演示用的听感链路，用来在模拟器里看到「有曲线时」的播放页。
