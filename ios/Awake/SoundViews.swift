@@ -1,6 +1,49 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// 起点：三种「味道」+ 平直。
+/// 31 段曲线对初级用户是一张空白考卷；先给几个能听懂的说法，从那里开始改比从零开始容易。
+enum SoundPreset: String, CaseIterable, Identifiable {
+  case flat, warm, clear, lean
+  var id: String { rawValue }
+  var title: String {
+    switch self {
+    case .flat: "平直"
+    case .warm: "温暖"
+    case .clear: "清晰"
+    case .lean: "收一点低频"
+    }
+  }
+  var detail: String {
+    switch self {
+    case .flat: "什么都不动"
+    case .warm: "60–200 Hz 抬一点"
+    case .clear: "2–6 kHz 抬一点"
+    case .lean: "低频收一点，人声出来"
+    }
+  }
+  /// 31 段，按 log 频率给一条平滑曲线；不是随手拍的数字，改起来也能看出形状。
+  func gains() -> [Float] {
+    EQMath.frequencies.map { freq in
+      let x = log10(Double(freq) / 1000)  // 1k = 0，100 Hz = -1，10k = +1
+      switch self {
+      case .flat:
+        return 0
+      case .warm:
+        let low = max(0, min(1, (-x - 0.15) / 0.85))
+        return Float(3.5 * low * low)
+      case .clear:
+        let mid = exp(-pow((x - 0.35) / 0.42, 2))
+        return Float(2.6 * mid)
+      case .lean:
+        let low = max(0, min(1, (-x - 0.05) / 0.8))
+        let mid = exp(-pow((x - 0.3) / 0.38, 2))
+        return Float(-2.6 * low * low + 1.1 * mid)
+      }
+    }
+  }
+}
+
 struct SoundView: View {
   @EnvironmentObject var store: MobileStore
   @EnvironmentObject var player: MobilePlayer
@@ -16,6 +59,7 @@ struct SoundView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 22) {
+        starts
         Panel {
           HStack {
             Image(systemName: "headphones").font(.title)
@@ -103,31 +147,15 @@ struct SoundView: View {
             Text("按型号查询 AutoEq 与已收录的公开拟合，保留来源和适用条件。").font(.subheadline).foregroundStyle(.secondary)
           }
         }.buttonStyle(.plain)
-        Panel {
-          Text("导入参数校正").font(.title3.bold())
-          TextField("测量者、目标与出处链接", text: $source).textInputAutocapitalization(.never)
-          TextEditor(text: $text).frame(minHeight: 120).font(.caption.monospaced()).overlay(
-            RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.2)))
-          HStack {
-            Button("读取参数文件") { importing = true }
-            Spacer()
-            Button("校验并应用") {
-              do {
-                _ = try EQMath.parse(text)
-                guard chain != nil, !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                else { throw AppFailure("先保存链路并填写测量来源") }
-                update {
-                  $0.apo = text
-                  $0.measurementSource = source
-                  $0.eqOrigin = .imported
-                }
-              } catch { store.message = error.localizedDescription }
-            }.buttonStyle(AwakeButtonStyle())
+        NavigationLink {
+          ManualEQView()
+        } label: {
+          Panel {
+            Label("导入参数校正", systemImage: "square.and.arrow.down").font(.headline)
+            Text("从测量文件或 AutoEq 参数粘贴，自动换算成这 31 段。").font(.subheadline)
+              .foregroundStyle(.secondary)
           }
-          if let c = chain, !c.measurementSource.isEmpty {
-            Text(c.measurementSource).font(.caption).foregroundStyle(.secondary)
-          }
-        }
+        }.buttonStyle(.plain)
       }.padding(20)
     }.appSurface().navigationTitle("声音实验室")
       .task(id: sliderRevision) {
@@ -150,6 +178,48 @@ struct SoundView: View {
         } catch { store.message = error.localizedDescription }
       }
   }
+  /// 起点卡片：2×2，每张一张小曲线 + 一句人话。
+  private var starts: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("从一种感觉开始").font(.headline)
+      LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+        ForEach(SoundPreset.allCases) { preset in
+          Button {
+            applyPreset(preset)
+          } label: {
+            VStack(alignment: .leading, spacing: 6) {
+              EQChart(gains: preset.gains(), range: 5).frame(height: 44)
+              Text(preset.title).font(.system(size: 14, weight: .medium))
+              Text(preset.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+              RoundedRectangle(cornerRadius: 14, style: .continuous).fill(
+                Color(hex: store.state.skin.colors.surface)))
+            .overlay(
+              RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(
+                Color(hex: store.state.skin.colors.border).opacity(0.6), lineWidth: 0.5))
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("\(preset.title)：\(preset.detail)")
+        }
+      }
+    }
+  }
+
+  private func applyPreset(_ preset: SoundPreset) {
+    var next = chain ?? ListeningChain(
+      routeUID: player.route.uid, name: "起点 · " + preset.title,
+      headphone: player.route.name, connection: player.route.transport)
+    next.gains = preset.gains()
+    next.apo = ""
+    next.measurementSource = ""
+    next.eqOrigin = .manual
+    store.saveChain(next)
+    player.useChain(store.activeChain(route: player.route.uid))
+  }
+
   func commitSlider(announce: Bool = true) {
     guard needsCommit else { return }
     needsCommit = false
@@ -171,6 +241,8 @@ struct SoundView: View {
 }
 struct EQChart: View {
   let gains: [Float]
+  /// 满量程的一半。默认 ±14 dB；起点卡片用 ±5，否则 3.5 dB 的曲线看起来还是一条直线。
+  var range: Float = 14
   var body: some View {
     Canvas { ctx, size in
       var grid = Path()
@@ -182,7 +254,8 @@ struct EQChart: View {
       var line = Path()
       for i in gains.indices {
         let p = CGPoint(
-          x: Double(i) / 30 * size.width, y: (0.5 - Double(gains[i]) / 28) * size.height)
+          x: Double(i) / 30 * size.width,
+          y: (0.5 - Double(gains[i]) / Double(2 * max(range, 1))) * size.height)
         if i == 0 { line.move(to: p) } else { line.addLine(to: p) }
       }
       ctx.stroke(
@@ -386,3 +459,67 @@ struct MeasurementView: View {
     }
   }
 }
+
+/// 参数校正：把测量文件/APO 参数换算成这 31 段。
+/// 一年用一两次，所以它不再占「声音」首屏，而是二级页——但状态仍在，进来就能继续改。
+struct ManualEQView: View {
+  @EnvironmentObject var store: MobileStore
+  @EnvironmentObject var player: MobilePlayer
+  @State private var source = ""
+  @State private var text = ""
+  @State private var importing = false
+
+  private var chain: ListeningChain? { store.activeChain(route: player.route.uid) }
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        Panel {
+          Text("测量者、目标与出处链接").font(.subheadline).foregroundStyle(.secondary)
+          TextField("例如 AutoEq · HD600 · harman_over-ear_2018", text: $source)
+            .textInputAutocapitalization(.never).autocorrectionDisabled()
+          TextEditor(text: $text)
+            .frame(minHeight: 180)
+            .font(.caption.monospaced())
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.2)))
+          HStack {
+            Button("读取参数文件") { importing = true }
+            Spacer()
+            Button("校验并应用") { applyEq() }.buttonStyle(AwakeButtonStyle())
+          }
+          if let c = chain, !c.measurementSource.isEmpty {
+            Text("当前来源：\(c.measurementSource)").font(.caption).foregroundStyle(.secondary)
+          }
+        }
+      }.padding(20)
+    }
+    .appSurface()
+    .navigationTitle("参数校正")
+    .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText, .text]) { result in
+      do {
+        let url = try result.get()
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        guard (try url.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0 <= 65536 else {
+          throw AppFailure("参数文件不能超过 64KB")
+        }
+        text = try String(contentsOf: url, encoding: .utf8)
+      } catch { store.message = error.localizedDescription }
+    }
+  }
+
+  private func applyEq() {
+    do {
+      _ = try EQMath.parse(text)
+      guard var c = chain,
+        !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      else { throw AppFailure("先在「声音」里保存一条链路，并填写测量来源") }
+      c.apo = text
+      c.measurementSource = source
+      c.eqOrigin = .imported
+      store.saveChain(c)
+      player.useChain(store.activeChain(route: player.route.uid))
+    } catch { store.message = error.localizedDescription }
+  }
+}
+
