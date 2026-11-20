@@ -128,12 +128,11 @@ struct AppSurface: ViewModifier {
         ZStack {
           LinearGradient(
             colors: [
-              Color(hex: store.state.skin.colors.raised),
-              Color(hex: store.state.skin.colors.bg),
+              Color(hex: "#33373d"), Color(hex: store.state.skin.colors.bg),
             ], startPoint: .top, endPoint: .bottom)
           RadialGradient(
-            colors: [Color.white.opacity(0.06), .clear],
-            center: .topLeading, startRadius: 20, endRadius: 520)
+            colors: [Color.white.opacity(0.10), .clear],
+            center: .topLeading, startRadius: 30, endRadius: 700)
         }
       } else {
         Color(hex: store.state.skin.colors.bg)
