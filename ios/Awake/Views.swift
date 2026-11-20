@@ -81,6 +81,10 @@ struct RootView: View {
         // 端到端自检通道（见 Diagnostics）；只有显式传环境变量时才动。
         Diagnostics.e2eConnectIfRequested(store)
         Diagnostics.e2ePlayIfRequested(store: store, player: player)
+        // 截图用：AWAKE_E2E_TAB=1 直接落到某个底部标签（空曲库这类状态没有入口可点）。
+        if let raw = ProcessInfo.processInfo.environment["AWAKE_E2E_TAB"], let index = Int(raw) {
+          tab = index
+        }
       #endif
       player.onListen = { song, seconds in
         store.recordListen(song, seconds: seconds)
@@ -978,12 +982,7 @@ struct LibraryView: View {
         }
       }
       if filtered.isEmpty {
-        ContentUnavailableView(
-          "把音乐带进来", systemImage: "square.and.arrow.down",
-          description: Text(
-            sourceFilter == nil
-              ? "支持文件 App 中的本地、iCloud Drive 和已连接的网盘文件。"
-              : "这个来源里还没有曲目。到设置里刷新来源，或把来源切回「全部来源」。"))
+        emptyLibrary
       }
       Section("推荐歌单") {
         Button {
@@ -1066,6 +1065,62 @@ struct LibraryView: View {
     }.onChange(of: store.pendingLibrarySource) { _, _ in
       adoptPendingSource()
     }
+  }
+
+  /// 空曲库不是一句说明，是两条路。
+  /// iOS 26 把工具栏多出来的按钮收进了「…」：空库时用户第一眼看不见任何入口，
+  /// 所以入口必须出现在空状态里，而且顺序就是他想做事的两条路——先能听，再连来源。
+  private var emptyLibrary: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text(sourceFilter == nil ? "把音乐带进来" : "这个来源里还没有曲目")
+        .font(.system(size: 19, weight: .semibold))
+      Text(
+        sourceFilter == nil
+          ? "文件 App 里的本地、iCloud Drive 与网盘文件都能导入；也可以连自己的 NAS、WebDAV 或 Plex。"
+          : "到「设置 → 音乐来源」刷新这个来源，或者把筛选切回全部来源。"
+      )
+      .font(.subheadline).foregroundStyle(.secondary)
+
+      if sourceFilter == nil {
+        Button {
+          picking = .audioFiles
+        } label: {
+          Label("从文件导入", systemImage: "square.and.arrow.down")
+        }
+        .buttonStyle(AwakeButtonStyle())
+        .accessibilityIdentifier("libraryEmptyImportFiles")
+
+        Button {
+          picking = .audioFolder
+        } label: {
+          Label("导入一个文件夹", systemImage: "folder.badge.plus")
+        }
+        .buttonStyle(.bordered)
+
+        Button {
+          store.requestedTab = 4
+        } label: {
+          Label("连接 NAS / WebDAV / Plex", systemImage: "externaldrive.connected.to.line.below")
+        }
+        .buttonStyle(.bordered)
+      } else {
+        Button {
+          sourceFilter = nil
+        } label: {
+          Label("看全部来源", systemImage: "line.3.horizontal.decrease")
+        }
+        .buttonStyle(AwakeButtonStyle())
+
+        Button {
+          store.requestedTab = 4
+        } label: {
+          Label("到设置刷新来源", systemImage: "arrow.clockwise")
+        }
+        .buttonStyle(.bordered)
+      }
+    }
+    .padding(.vertical, 8)
+    .listRowBackground(Color.clear)
   }
 
   /// 刚连上来源时，把列表筛到这个来源 —— 与桌面端 connect → focusSource 的行为对齐。
