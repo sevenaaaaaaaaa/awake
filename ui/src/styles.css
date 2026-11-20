@@ -14,8 +14,8 @@
   /* 只有黑与白：和 iOS 的「黑色 · Obsidian」同一根中性阶，强调色就是白本身。
      桌面端此前是暖绿/沙色，两端放在一起像两个产品。 */
   --bg: #08090b;
-  --surface: #131417;
-  --raised: #1d1f23;
+  --surface: color-mix(in srgb, #131417 68%, transparent);
+  --raised: color-mix(in srgb, #1d1f23 72%, transparent);
   --line: color-mix(in srgb, var(--text) 7.1%, transparent);
   --text: #f7f8fa;
   --muted: #9aa0a8;
@@ -4642,4 +4642,54 @@ kbd {
 }
 .eq-sliders-toggle[open] summary {
   color: var(--text);
+}
+
+
+/* ── 玻璃层（web 没有 glassEffect，只能用 backdrop-filter 模拟） ──
+   1. 底图：顶部一道冷白高光 + 纵向渐变，模糊才有内容可折射
+   2. 卡片：半透明面 + 背景模糊 + 内侧 1px 高光边，模拟玻璃的折光边
+   没有底图时 backdrop-filter 与实色卡完全等价，所以底图是前提。 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 12% -10%, rgba(255, 255, 255, 0.10), transparent 60%),
+    linear-gradient(180deg, #2b2f35 0%, #08090b 62%);
+}
+
+:where(
+.search-launch:hover,
+.device-icon,
+.avatar,
+.mood-card,
+.mood-card:hover,
+.source-card,
+.signal-path,
+.eq-card,
+.queue-panel,
+.toast,
+.error-toast,
+.error-toast,
+.modal,
+.connection-form input,
+.connection-form textarea,
+.connection-form select,
+.field-label select,
+.generation-options select,
+.swipe-ghost,
+.swipe-ghost-empty,
+.import-field input[type="file"]::file-selector-button,
+.manual-picker,
+.data-field input[type="file"]::file-selector-button,
+.week-stat,
+.book-card,
+.speech-job,
+.speech-meta select
+) {
+  backdrop-filter: blur(22px) saturate(135%);
+  -webkit-backdrop-filter: blur(22px) saturate(135%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
