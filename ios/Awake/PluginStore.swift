@@ -146,12 +146,16 @@ struct PluginsView: View {
           Text("还没有插件。").font(.caption).foregroundStyle(.secondary)
         }
         ForEach(library.plugins) { plugin in
-          VStack(alignment: .leading, spacing: 4) {
-            Text(plugin.name).font(.headline)
-            Text("\(plugin.fileName) · \(plugin.bytes) 字节")
-              .font(.caption).foregroundStyle(.secondary)
-            if let source = plugin.sourceURL {
-              Text(source).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+          NavigationLink {
+            PluginSearchView(plugin: plugin)
+          } label: {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(plugin.name).font(.headline)
+              Text("\(plugin.fileName) · \(plugin.bytes) 字节")
+                .font(.caption).foregroundStyle(.secondary)
+              if let source = plugin.sourceURL {
+                Text(source).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+              }
             }
           }
           .swipeActions(edge: .trailing, allowsFullSwipe: true) {

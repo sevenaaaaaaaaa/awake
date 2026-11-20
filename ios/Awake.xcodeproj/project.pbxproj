@@ -21,6 +21,7 @@
 		3EEE4B57BC5DDD7C667C8C79 /* Services.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E9A956315BB1CF4C1AC0C /* Services.swift */; };
 		3F8161AA90CF78F84770D5CF /* LibraryImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0073BC27DA1A09A393D4F89 /* LibraryImport.swift */; };
 		43F5D7F071B4E2C84A216C9B /* headphones-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = 5FDBF46097E81A062E813ACF /* headphones-v1.json */; };
+		4647671FF39BC7D6E956BEB9 /* pluginSandbox.js in Resources */ = {isa = PBXBuildFile; fileRef = 1AF17534D0B84474A7075D22 /* pluginSandbox.js */; };
 		47C542D8C2026F53FE215AB8 /* EffectViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14CA279FE9B8282B5072B66 /* EffectViews.swift */; };
 		497D52CB533B00A0D227D048 /* BooksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC5AF23378B5703359849E3D /* BooksTests.swift */; };
 		4B2B9E96F4274C216D84C376 /* SoundViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BFF41650CE622F89415946F /* SoundViews.swift */; };
@@ -37,6 +38,7 @@
 		775D05480848FEABEF09AEEC /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBC4D62DEC457DBE5281F0A /* Views.swift */; };
 		7E206D5ACCAF7A80D855093A /* MediaInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 577909C48018E6F4BB732837 /* MediaInfoView.swift */; };
 		8222DC01CE94B79EB3778DED /* Backup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607A1E2CD64256B88623FB49 /* Backup.swift */; };
+		83A55E9DEDEA13021EF427DE /* PluginSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3423EAA4B5B16ACED490A92 /* PluginSearchView.swift */; };
 		89BDB891FF29B7B9EF39A999 /* Speech.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09A7E4B3CD23B4B8B1828F48 /* Speech.swift */; };
 		90F947CDA41BDC54B191A7A7 /* PlayerInstrument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78C62F4E4623656837A7005F /* PlayerInstrument.swift */; };
 		921E2B7981CB6F6809D5345D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3589EE509F6BA6E6F9DD71FB /* Assets.xcassets */; };
@@ -52,6 +54,7 @@
 		CEDC5817D69D48E43722192E /* EffectState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05148C82B7EE499186BB6DDB /* EffectState.swift */; };
 		E07C6AA4F56D824AC1524EAF /* FileImportPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 868E0EA19433684BA307B61D /* FileImportPicker.swift */; };
 		E8C36A404A06FB987038951B /* SwipePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F2E4C7352FA47E7CE2E7AC /* SwipePlayer.swift */; };
+		F4BBB7751142267912993920 /* PluginSandbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E4387C5F8DFE0E0A4BBB239 /* PluginSandbox.swift */; };
 		FAA89E83D7EC787B26770001 /* EquipmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24EE460B200DCEB777CB6E57 /* EquipmentViews.swift */; };
 /* End PBXBuildFile section */
 
@@ -80,7 +83,9 @@
 		0DBC4D62DEC457DBE5281F0A /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		0EC8B7DA8A5DBD9C7E5DD51A /* HandoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffTests.swift; sourceTree = "<group>"; };
 		1833ADE45B358BE7D885F231 /* HandoffReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffReceiver.swift; sourceTree = "<group>"; };
+		1AF17534D0B84474A7075D22 /* pluginSandbox.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = pluginSandbox.js; sourceTree = "<group>"; };
 		24EE460B200DCEB777CB6E57 /* EquipmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentViews.swift; sourceTree = "<group>"; };
+		2E4387C5F8DFE0E0A4BBB239 /* PluginSandbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginSandbox.swift; sourceTree = "<group>"; };
 		3095522AAA152DD5D2E290AB /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		3589EE509F6BA6E6F9DD71FB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4849CB161D29863B9E725A59 /* AwakeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AwakeUITests.swift; sourceTree = "<group>"; };
@@ -117,6 +122,7 @@
 		E0F2E4C7352FA47E7CE2E7AC /* SwipePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipePlayer.swift; sourceTree = "<group>"; };
 		E14CA279FE9B8282B5072B66 /* EffectViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectViews.swift; sourceTree = "<group>"; };
 		E2A6E6BA7288E46474438EEC /* SpeechRender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRender.swift; sourceTree = "<group>"; };
+		E3423EAA4B5B16ACED490A92 /* PluginSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginSearchView.swift; sourceTree = "<group>"; };
 		E3D7FD72286BF1872867B250 /* HandoffReceiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffReceiveTests.swift; sourceTree = "<group>"; };
 		E40E9A956315BB1CF4C1AC0C /* Services.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services.swift; sourceTree = "<group>"; };
 		F05A592A950DD8CF372A75D7 /* PlaylistImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistImport.swift; sourceTree = "<group>"; };
@@ -159,6 +165,7 @@
 			children = (
 				3589EE509F6BA6E6F9DD71FB /* Assets.xcassets */,
 				5FDBF46097E81A062E813ACF /* headphones-v1.json */,
+				1AF17534D0B84474A7075D22 /* pluginSandbox.js */,
 				3095522AAA152DD5D2E290AB /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
@@ -195,6 +202,8 @@
 				6B8CF48452425D64B33864E1 /* PlaylistImportView.swift */,
 				046C135D8C11B5D31D674698 /* PlexAuth.swift */,
 				D46453423DD3AE1496E25E97 /* PluginRegistry.swift */,
+				2E4387C5F8DFE0E0A4BBB239 /* PluginSandbox.swift */,
+				E3423EAA4B5B16ACED490A92 /* PluginSearchView.swift */,
 				891D5286386ECEB61547D15A /* PluginStore.swift */,
 				E40E9A956315BB1CF4C1AC0C /* Services.swift */,
 				5B67216F06EEA6B1C51089A5 /* SettingsViews.swift */,
@@ -330,6 +339,7 @@
 				921E2B7981CB6F6809D5345D /* Assets.xcassets in Resources */,
 				C86AEBD33F2A92402DE978B6 /* PrivacyInfo.xcprivacy in Resources */,
 				43F5D7F071B4E2C84A216C9B /* headphones-v1.json in Resources */,
+				4647671FF39BC7D6E956BEB9 /* pluginSandbox.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -376,6 +386,8 @@
 				01ADAE5AEDE2835F2FAEB285 /* PlaylistImportView.swift in Sources */,
 				3C2D20B4E55CC99F689E2D3E /* PlexAuth.swift in Sources */,
 				232957CD8C6D7122EF315F51 /* PluginRegistry.swift in Sources */,
+				F4BBB7751142267912993920 /* PluginSandbox.swift in Sources */,
+				83A55E9DEDEA13021EF427DE /* PluginSearchView.swift in Sources */,
 				ACD23958C48763E9DFC8A433 /* PluginStore.swift in Sources */,
 				3EEE4B57BC5DDD7C667C8C79 /* Services.swift in Sources */,
 				B2010DF4B036EE42DE9F020D /* SettingsViews.swift in Sources */,
@@ -505,7 +517,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -526,7 +538,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.16;
+				MARKETING_VERSION = 0.9.17;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -628,7 +640,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -643,7 +655,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.16;
+				MARKETING_VERSION = 0.9.17;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
