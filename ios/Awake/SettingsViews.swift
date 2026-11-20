@@ -14,6 +14,7 @@ struct SettingsView: View {
   @State private var backupCreate = false
   @State private var backupCandidate: BackupCandidate?
   @State private var restoredBackup: BackupPreview?
+  @ObservedObject private var pluginLibrary = PluginLibrary.shared
   var body: some View {
     Form {
       Section("音乐来源") {
@@ -59,6 +60,16 @@ struct SettingsView: View {
         }
         .accessibilityIdentifier("configFolder")
         Text("选一个文件夹（iCloud Drive 也行），把来源配置文件丢进去，进这个页面点「刷新扫描」列出来，点一条就填进添加来源的表单。")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+      Section("网络音乐插件") {
+        NavigationLink {
+          PluginsView()
+        } label: {
+          Label("插件库（\(pluginLibrary.plugins.count)）", systemImage: "puzzlepiece.extension")
+        }
+        .accessibilityIdentifier("pluginLibrary")
+        Text("导入 MusicFree 兼容的 .js 插件。这一版只做导入与保存，搜索与播放要等沙箱接上。")
           .font(.caption).foregroundStyle(.secondary)
       }
       Section("外观") {
