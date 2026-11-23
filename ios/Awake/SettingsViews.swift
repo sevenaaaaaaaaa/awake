@@ -15,6 +15,9 @@ struct SettingsView: View {
   @State private var backupCandidate: BackupCandidate?
   @State private var restoredBackup: BackupPreview?
   @ObservedObject private var pluginLibrary = PluginLibrary.shared
+  @State private var builtinNote = ""
+  @State private var confirmRemoveBuiltin = false
+  @State private var confirmClearLocal = false
   var body: some View {
     Form {
       Section("音乐来源") {
@@ -70,6 +73,30 @@ struct SettingsView: View {
         }
         .accessibilityIdentifier("pluginLibrary")
         Text("导入 MusicFree 兼容的 .js 插件。这一版只做导入与保存，搜索与播放要等沙箱接上。")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+      Section("本地内置版") {
+        LabeledContent("内置示例", value: "\(store.builtinSongs.count) 首")
+        Text(
+          BuiltinMusic.available().isEmpty
+            ? "包内没有找到示例音频（builtin-*.flac），这一版可能不是内置版"
+            : "示例音频随包分发，不联网、不依赖来源配置。"
+        ).font(.caption).foregroundStyle(.secondary)
+        Button("重新导入内置示例") {
+          Task {
+            let added = await store.installBuiltinMusic(force: true)
+            builtinNote = added > 0 ? "已补进 \(added) 首" : "曲库里已经齐了"
+          }
+        }
+        .accessibilityIdentifier("installBuiltin")
+        Button("移除内置示例", role: .destructive) { confirmRemoveBuiltin = true }
+          .accessibilityIdentifier("removeBuiltin")
+        Button("清空本地添加的记录", role: .destructive) { confirmClearLocal = true }
+          .accessibilityIdentifier("clearLocalRecords")
+        if !builtinNote.isEmpty {
+          Text(builtinNote).font(.caption).foregroundStyle(.secondary)
+        }
+        Text("移除后标记会清掉，下次启动会重新放一次；想反复验证首启就「移除 → 杀掉 App → 重开」。")
           .font(.caption).foregroundStyle(.secondary)
       }
       Section("外观") {
@@ -177,6 +204,24 @@ struct SettingsView: View {
       }
     } message: {
       if let source = sourceToRemove { Text("将移除 \(source.name)、关联曲目和 Awake 缓存音频；手动导入的曲目会保留。") }
+    }
+    .alert("移除内置示例？", isPresented: $confirmRemoveBuiltin) {
+      Button("取消", role: .cancel) {}
+      Button("移除", role: .destructive) {
+        let removed = store.removeBuiltinMusic()
+        builtinNote = "已移除 \(removed) 首；播种标记已清，下次启动会再放一次"
+      }
+    } message: {
+      Text("删掉内置示例的曲目和本机音频文件，并清掉播种标记。想反复验证首启：移除 → 杀掉 App → 重开。")
+    }
+    .alert("清空本地添加的记录？", isPresented: $confirmClearLocal) {
+      Button("取消", role: .cancel) {}
+      Button("清空", role: .destructive) {
+        let result = store.clearLocalRecords()
+        builtinNote = "已清空：曲目 \(result.songs) 首、文件夹记录 \(result.folders) 条"
+      }
+    } message: {
+      Text("删除不属于任何远程来源的曲目（本地导入、内置示例、插件曲目）及其本机文件，并清掉导入文件夹记录；来源配置、外观与播放设置保留。")
     }
     .sheet(item: $shareFile) { file in ShareView(url: file.url) }
     .sheet(isPresented: $backupCreate) { BackupCreateSheet() }
