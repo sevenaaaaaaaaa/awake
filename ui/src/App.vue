@@ -134,6 +134,22 @@ async function installBuiltinDemo() {
     await refreshBuiltinStatus();
   }
 }
+async function removeBuiltinDemo() {
+  if (!desktop || builtinBusy.value) return;
+  if (!confirm("只移除包内示例那一批曲目？其余本地导入会保留。")) return;
+  builtinBusy.value = true;
+  builtinNote.value = "";
+  try {
+    const removed = await call<number>("builtin_demo_remove");
+    builtinNote.value = `已移除 ${removed} 首内置示例`;
+    await s.refresh();
+  } catch (error) {
+    builtinNote.value = String(error);
+  } finally {
+    builtinBusy.value = false;
+    await refreshBuiltinStatus();
+  }
+}
 async function clearLocalRecords() {
   if (!desktop || builtinBusy.value) return;
   if (!confirm("删除本机导入的曲目（含内置示例）？远程来源与设置会保留。")) return;
@@ -2376,6 +2392,13 @@ onUnmounted(() => {
                   @click="installBuiltinDemo"
                 >
                   重新导入
+                </button>
+                <button
+                  class="button"
+                  :disabled="builtinBusy || !desktop"
+                  @click="removeBuiltinDemo"
+                >
+                  移除内置示例
                 </button>
                 <button
                   class="button"

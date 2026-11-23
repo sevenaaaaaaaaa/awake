@@ -393,6 +393,47 @@ async fn builtin_demo_install(
     Ok(result.tracks.len())
 }
 
+/// 只移除包内示例那一批曲目（按 locator 前缀匹配 DemoMusic 目录），其余本地导入保留。
+#[tauri::command]
+fn builtin_demo_remove(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    let resource = app.path().resource_dir().map_err(|e| e.to_string())?;
+    let dir = resource.join("DemoMusic");
+    let prefix = dir.canonicalize().unwrap_or(dir).to_string_lossy().to_string();
+    let mut lib = state.library.lock();
+    let before = lib.snapshot.tracks.len();
+    lib.snapshot
+        .tracks
+        .retain(|track| !track.locator.starts_with(&prefix));
+    let removed = before - lib.snapshot.tracks.len();
+    let remaining_local = lib
+        .snapshot
+        .tracks
+        .iter()
+        .filter(|track| track.source_id == "local-files")
+        .count();
+    if let Some(source) = lib
+        .snapshot
+        .sources
+        .iter_mut()
+        .find(|source| source.id == "local-files")
+    {
+        source.files.retain(|file| !file.starts_with(&prefix));
+        source.track_count = remaining_local;
+    }
+    if remaining_local == 0 {
+        lib.snapshot
+            .sources
+            .retain(|source| source.id != "local-files");
+    }
+    lib.save().map_err(|e| e.to_string())?;
+    drop(lib);
+    let _ = std::fs::remove_file(state.data_dir.join(".builtin-demo-imported"));
+    Ok(removed)
+}
+
 /// 清空本地添加的记录：删掉本机导入来源（含内置示例）及其曲目，保留远程来源与设置。
 #[tauri::command]
 fn local_records_clear(state: State<'_, AppState>) -> Result<usize, String> {
@@ -1147,6 +1188,7 @@ pub fn run() {
             scan_library,
             builtin_demo_status,
             builtin_demo_install,
+            builtin_demo_remove,
             local_records_clear,
             media_info::inspect_media,
             media_info::search_media_info,
