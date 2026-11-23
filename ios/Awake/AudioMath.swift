@@ -52,6 +52,40 @@ enum EQMath {
     guard !filters.isEmpty else { throw AppFailure("文件没有可用参数滤波器") }
     return (preamp, filters)
   }
+  /// 整条曲线在 20 Hz–Nyquist 上的复合峰值（dB）。
+  ///
+  /// 每段按 RBJ 峰值滤波器算幅频响应，再在网格频率上各段相加（串联即 dB 相加）。
+  /// 只用于前级余量计算，所以网格取 1/12 倍频程左右，够密也够快。
+  static func peakGainDB(_ filters: [EQFilter], rate: Double) -> Float {
+    guard !filters.isEmpty else { return 0 }
+    let nyquist = rate / 2
+    let top = min(20000, nyquist * 0.98)
+    var peak = 0.0
+    var frequency = 20.0
+    while frequency < top {
+      var total = 0.0
+      for filter in filters where abs(filter.gain) >= 0.01 {
+        let fc = min(filter.frequency, nyquist * 0.98)
+        let a = pow(10, filter.gain / 40)
+        let w0 = 2 * Double.pi * fc / rate
+        let w = 2 * Double.pi * frequency / rate
+        let alpha = sin(w0) / (2 * filter.q)
+        let b0 = 1 + alpha * a, b1 = -2 * cos(w0), b2 = 1 - alpha * a
+        let a0 = 1 + alpha / a, a1 = -2 * cos(w0), a2 = 1 - alpha / a
+        let numRe = b0 + b1 * cos(-w) + b2 * cos(-2 * w)
+        let numIm = b1 * sin(-w) + b2 * sin(-2 * w)
+        let denRe = a0 + a1 * cos(-w) + a2 * cos(-2 * w)
+        let denIm = a1 * sin(-w) + a2 * sin(-2 * w)
+        let magnitude = (numRe * numRe + numIm * numIm).squareRoot()
+          / max((denRe * denRe + denIm * denIm).squareRoot(), 1e-12)
+        total += 20 * log10(max(magnitude, 1e-6))
+      }
+      peak = max(peak, total)
+      frequency *= 1.06
+    }
+    return Float(peak)
+  }
+
   static func bandwidth(q: Double) -> Float {
     Float(min(5, max(0.05, 2 * asinh(1 / (2 * q)) / log(2))))
   }
@@ -69,10 +103,14 @@ enum EQMath {
       EQFilter(kind: "PK", frequency: Double($0), gain: Double($1), q: 4.318)
     }
     filters.append(contentsOf: parsed.1)
-    // Conservative control-space headroom. Actual AU rendering is checked by the offline benchmark.
+    // 余量按「复合频响的真实峰值」算，而不是把每段的正增益相加：
+    // 31 段峰值滤波器中心频率各不相同，同一频率上几乎不会同时抬满；
+    // 相加会得到一个虚高的前级衰减，用户每调一次 EQ 就掉一次音量（0.9.32 修的就是这个）。
     let positive = filters.map { max(0, $0.gain) }.reduce(0, +)
     guard positive <= 90 else { throw AppFailure("叠加增益过大，请减少提升频段") }
-    let preamp = min(parsed.0, Float(-positive - (positive > 0 ? 3 : 0)))
+    let peak = peakGainDB(filters, rate: rate)
+    // 峰值再加 1 dB 安全余量；最多压到 −24 dB，避免一段误设把音量压没。
+    let preamp = max(-24, min(parsed.0, Float(-max(0, peak + 1))))
     if bypassed {
       for b in eq.bands + correction.bands { b.bypass = true }
       eq.globalGain = 0
