@@ -292,6 +292,9 @@ struct NowPlayingView: View {
           Text("已记住这首歌的曲线 · \(curve.updatedAt.formatted(date: .abbreviated, time: .shortened))")
             .font(.caption2)
             .foregroundStyle(.secondary)
+          if let basis = curve.basis, !basis.isEmpty {
+            Text("依据：\(basis)").font(.caption2).foregroundStyle(.tertiary)
+          }
         }
         HStack(spacing: 10) {
           Toggle(
@@ -316,11 +319,19 @@ struct NowPlayingView: View {
           .buttonStyle(.borderless)
           Button("记住这首歌") {
             store.rememberCurve(
-              player.currentSnapshot, for: song.id, label: "手动保存")
+              player.currentSnapshot, for: song.id, label: "手动保存",
+              basis: "耳机：\(player.route.name) · 手动保存")
           }
           .font(.caption2)
           .buttonStyle(.borderless)
         }
+        Text(
+          store.state.autoSongCurve ?? true
+            ? "关闭自动后，切歌回到当前链路曲线；锁定时完全不自动改动。"
+            : "已关闭自动：切歌一律回到当前链路曲线。"
+        )
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
       }
       if player.isComparing {
         Text("对比中：现在是没有适配的原声，松手回来")

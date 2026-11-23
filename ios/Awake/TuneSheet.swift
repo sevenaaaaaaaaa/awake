@@ -108,7 +108,8 @@ struct TuneSheet: View {
       previousCurve = store.songCurve(song.id)
       store.rememberCurve(
         player.currentSnapshot, for: song.id,
-        label: proposal.source == "AI" ? "一句话调音" : "本地规则")
+        label: proposal.source == "AI" ? "一句话调音" : "本地规则",
+        basis: "耳机：\(player.route.name) · \(proposal.source) · \(text)")
       note = "已应用并记到这首歌，切歌回来还在。"
     } else {
       note = "已应用，松手听一下差别。"

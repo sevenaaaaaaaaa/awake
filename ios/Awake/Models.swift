@@ -290,6 +290,9 @@ struct SongCurve: Codable, Equatable {
   var origin: EQOrigin = .manual
   var source: String = ""
   var updatedAt: Date = .distantPast
+  /// 依据记录：这条曲线在什么前提下成立（耳机 / 链路 / 用什么方法调的）。
+  /// 可选，0.9.27–0.9.30 写下的记录没有这个字段也能读。
+  var basis: String?
 }
 struct AppFailure: LocalizedError {
   var message: String
@@ -566,12 +569,15 @@ enum Secrets {
     return curve
   }
 
-  /// 把当前快照记到一首歌上（调音或手动保存时调用）。
-  func rememberCurve(_ snapshot: EQSnapshot, for songID: String, label: String) {
+  /// 把当前快照记到一首歌上（调音或手动保存时调用）。basis 记录这次适配的前提。
+  func rememberCurve(
+    _ snapshot: EQSnapshot, for songID: String, label: String, basis: String = ""
+  ) {
     var map = state.songCurves ?? [:]
     map[songID] = SongCurve(
       gains: snapshot.gains, apo: snapshot.apo, origin: snapshot.origin,
-      source: snapshot.source.isEmpty ? label : snapshot.source, updatedAt: Date())
+      source: snapshot.source.isEmpty ? label : snapshot.source, updatedAt: Date(),
+      basis: basis.isEmpty ? map[songID]?.basis : basis)
     state.songCurves = map
     save()
   }
@@ -581,13 +587,26 @@ enum Secrets {
     save()
   }
 
-  /// 切歌时套用这首歌的曲线；锁定或关闭自动时不动。
+  /// 切歌时的曲线策略。
+  ///
+  /// - 锁定：什么都不动（用户正在手调）。
+  /// - 自动开且有这首歌的记忆：套用记忆。
+  /// - 其余情况（关闭自动 / 这首歌没有记忆）：**回落到当前链路的曲线**，
+  ///   而不是把上一首的曲线留在那儿 —— 那会让用户以为这首歌也被调过。
   func applySongCurve(_ songID: String?, player: MobilePlayer) {
-    guard !curveLocked, state.autoSongCurve ?? true, let songID, let curve = songCurve(songID)
-    else { return }
-    _ = player.setEQ(
-      curve.gains, apo: curve.apo, origin: curve.origin, profile: nil,
-      source: curve.source, announce: false)
+    guard let songID else { return }
+    if curveLocked { return }
+    if state.autoSongCurve ?? true, let curve = songCurve(songID) {
+      _ = player.setEQ(
+        curve.gains, apo: curve.apo, origin: curve.origin, profile: nil,
+        source: curve.source, announce: false)
+      return
+    }
+    if let chain = activeChain(route: player.route.uid) {
+      _ = player.setEQ(
+        chain.gains, apo: chain.apo, origin: chain.eqOrigin ?? .manual,
+        profile: chain.headphone, source: chain.measurementSource, announce: false)
+    }
   }
 
   func mergeScannedSongs(_ rows: [Song], previous: [Song]) -> [Song] {

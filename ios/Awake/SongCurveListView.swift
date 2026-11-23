@@ -53,6 +53,9 @@ struct SongCurveListView: View {
               Text(row.title).font(.headline)
               Text(row.artist).font(.caption).foregroundStyle(.secondary)
               Text(row.summary).font(.caption2).foregroundStyle(.secondary)
+              if let basis = row.curve.basis, !basis.isEmpty {
+                Text("依据：" + basis).font(.caption2).foregroundStyle(.tertiary)
+              }
               Text("\(row.curve.source.isEmpty ? "未标注来源" : row.curve.source) · \(row.curve.updatedAt.formatted(date: .abbreviated, time: .shortened))")
                 .font(.caption2).foregroundStyle(.tertiary)
               HStack(spacing: 14) {
