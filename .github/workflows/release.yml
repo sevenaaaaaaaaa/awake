@@ -86,12 +86,21 @@ jobs:
 
   ios:
     needs: version
-    runs-on: macos-15
+    # 项目用到 iOS 26 的 glassEffect / tabViewBottomAccessory（Glass.swift、Views.swift），
+    # macos-15 上的 Xcode 16.4 编不过，必须用带 Xcode 26 的镜像。
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show Xcode
-        run: xcodebuild -version
+      - name: Check Xcode
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          MAJOR=$(xcodebuild -version | head -1 | awk '{print $2}' | cut -d. -f1)
+          if [ "$MAJOR" -lt 26 ]; then
+            echo "::error::这台 runner 的 Xcode 主版本是 $MAJOR，项目用到 iOS 26 API，至少需要 26。请换 runner 镜像或回到本地打包。"
+            exit 1
+          fi
 
       - name: Install xcodegen
         run: brew install xcodegen
