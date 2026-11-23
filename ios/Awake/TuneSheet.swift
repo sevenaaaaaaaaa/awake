@@ -112,7 +112,7 @@ struct TuneSheet: View {
         basis: "耳机：\(player.route.name) · \(proposal.source) · \(text)",
         detail: CurveBasis.make(
           headphone: player.route.name, song: song,
-          trigger: "\(proposal.source)：\(text)"))
+          trigger: "\(proposal.source)：\(text)", prior: store.priorDescription))
       note = "已应用并记到这首歌，切歌回来还在。"
     } else {
       note = "已应用，松手听一下差别。"

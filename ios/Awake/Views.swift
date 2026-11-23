@@ -308,6 +308,20 @@ struct NowPlayingView: View {
             Text("依据：\(basis)").font(.caption2).foregroundStyle(.tertiary)
           }
         }
+        if let prior = store.state.earPrior {
+          Toggle(
+            "叠加听感先验（\(prior.summary)）",
+            isOn: Binding(
+              get: { store.state.applyEarPrior ?? true },
+              set: { value in
+                store.state.applyEarPrior = value
+                store.save()
+              })
+          )
+          .font(.caption2)
+          .toggleStyle(.switch)
+          .controlSize(.mini)
+        }
         HStack(spacing: 10) {
           Toggle(
             "切歌自动套用",
@@ -334,7 +348,8 @@ struct NowPlayingView: View {
               player.currentSnapshot, for: song.id, label: "手动保存",
               basis: "耳机：\(player.route.name) · 手动保存",
               detail: CurveBasis.make(
-                headphone: player.route.name, song: song, trigger: "手动保存"))
+                headphone: player.route.name, song: song, trigger: "手动保存",
+                prior: store.priorDescription))
           }
           .font(.caption2)
           .buttonStyle(.borderless)

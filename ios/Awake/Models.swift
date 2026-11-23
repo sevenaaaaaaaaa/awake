@@ -281,6 +281,23 @@ struct LibraryState: Codable {
   var songCurves: [String: SongCurve]?
   /// 切歌时是否自动套用这首歌的曲线；nil 视为开。
   var autoSongCurve: Bool?
+  /// R2：耳朵校准得到的个人听感先验；nil 表示没校准过。
+  var earPrior: EarPrior?
+  /// 是否把先验叠加到播放曲线上；nil 视为开。
+  var applyEarPrior: Bool?
+}
+
+/// 一轮 A/B 校准的产物：31 段先验 + 版本号 + 每个问题的选择，可审计。
+struct EarPrior: Codable, Equatable {
+  var version: Int = 1
+  var gains: [Float] = Array(repeating: 0, count: 31)
+  var updatedAt: Date = .distantPast
+  /// 问题 id → 选择（"a" / "b" / "skip"）。用来解释这条先验怎么来的。
+  var choices: [String: String] = [:]
+  var summary: String {
+    let answered = choices.values.filter { $0 != "skip" }.count
+    return "校准 v\(version) · 回答 \(answered)/\(choices.count) 题"
+  }
 }
 
 /// 一首歌对应的曲线。存的是完整快照而不是差分：差分一旦基线变了就会算错。
@@ -307,7 +324,9 @@ struct CurveBasis: Codable, Equatable {
   var prior: String
 
   /// 组装三段依据：耳机取当前路由名，曲目取可核对的指纹 + 这次调音的由头。
-  static func make(headphone: String, song: Song, trigger: String) -> CurveBasis {
+  static func make(
+    headphone: String, song: Song, trigger: String, prior: String = "暂无校准"
+  ) -> CurveBasis {
     let minutes = Int(song.duration) / 60
     let seconds = Int(song.duration) % 60
     var fingerprint: [String] = []
@@ -315,7 +334,7 @@ struct CurveBasis: Codable, Equatable {
     if song.sampleRate > 0 { fingerprint.append("\(Int(song.sampleRate / 1000)) kHz") }
     if !song.album.isEmpty { fingerprint.append(song.album) }
     let track = fingerprint.isEmpty ? trigger : fingerprint.joined(separator: " · ") + " · " + trigger
-    return CurveBasis(headphone: headphone, track: track, prior: "暂无校准")
+    return CurveBasis(headphone: headphone, track: track, prior: prior)
   }
 }
 struct AppFailure: LocalizedError {
@@ -624,24 +643,49 @@ enum Secrets {
     save()
   }
 
+  /// 把个人先验叠加到一条曲线上（逐段相加，限幅 ±12）；没校准或关闭叠加时原样返回。
+  func applyingPrior(_ gains: [Float]) -> [Float] {
+    guard state.applyEarPrior ?? true, let prior = state.earPrior,
+      prior.gains.count == 31, gains.count == 31
+    else { return gains }
+    return zip(gains, prior.gains).map { max(-12, min(12, $0 + $1)) }
+  }
+
+  /// 依据里「先验」那一段的写法。
+  var priorDescription: String {
+    guard let prior = state.earPrior else { return "暂无校准" }
+    return "校准 v\(prior.version)"
+  }
+
+  /// 保存一轮校准结果：版本号递增，旧的曲线依据因此会显示「先验已更新」。
+  func saveEarPrior(gains: [Float], choices: [String: String]) {
+    let next = (state.earPrior?.version ?? 0) + 1
+    state.earPrior = EarPrior(
+      version: next,
+      gains: gains.map { max(-6, min(6, $0)) },
+      updatedAt: Date(),
+      choices: choices)
+    save()
+  }
+
   /// 切歌时的曲线策略。
   ///
   /// - 锁定：什么都不动（用户正在手调）。
-  /// - 自动开且有这首歌的记忆：套用记忆。
-  /// - 其余情况（关闭自动 / 这首歌没有记忆）：**回落到当前链路的曲线**，
+  /// - 自动开且有这首歌的记忆：套用记忆（叠加先验）。
+  /// - 其余情况（关闭自动 / 这首歌没有记忆）：**回落到当前链路的曲线**（同样叠加先验），
   ///   而不是把上一首的曲线留在那儿 —— 那会让用户以为这首歌也被调过。
   func applySongCurve(_ songID: String?, player: MobilePlayer) {
     guard let songID else { return }
     if curveLocked { return }
     if state.autoSongCurve ?? true, let curve = songCurve(songID) {
       _ = player.setEQ(
-        curve.gains, apo: curve.apo, origin: curve.origin, profile: nil,
+        applyingPrior(curve.gains), apo: curve.apo, origin: curve.origin, profile: nil,
         source: curve.source, announce: false)
       return
     }
     if let chain = activeChain(route: player.route.uid) {
       _ = player.setEQ(
-        chain.gains, apo: chain.apo, origin: chain.eqOrigin ?? .manual,
+        applyingPrior(chain.gains), apo: chain.apo, origin: chain.eqOrigin ?? .manual,
         profile: chain.headphone, source: chain.measurementSource, announce: false)
     }
   }

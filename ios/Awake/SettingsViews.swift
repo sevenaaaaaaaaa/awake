@@ -65,6 +65,14 @@ struct SettingsView: View {
           Label("批量补全资料（歌词 / 封面 / 资料）", systemImage: "square.and.arrow.down.on.square")
         }
         .accessibilityIdentifier("batchScrape")
+        NavigationLink {
+          CalibrationView()
+        } label: {
+          Label(
+            store.state.earPrior.map { "听觉校准（校准 v\($0.version)）" } ?? "听觉校准（未校准）",
+            systemImage: "ear")
+        }
+        .accessibilityIdentifier("earCalibration")
       }
       Section("本地内置版") {
         LabeledContent("内置示例", value: "\(store.builtinSongs.count) 首")
