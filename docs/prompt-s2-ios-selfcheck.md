@@ -234,11 +234,11 @@ struct PureLogicCheckView: View {
 
 ### SettingsViews.swift（两处小改）
 
-1. `SettingsView` 的「诊断与数据」Section 里，在现有 `NavigationLink { DiagnosticsSettingsView() }` 之前插入：
+1. `SettingsView` 第 150 行 `Section("诊断与数据")` 里，在现有 `NavigationLink { DiagnosticsSettingsView().environmentObject(store) }` 之前插入：
 
 ```swift
         NavigationLink {
-          PureLogicCheckView()
+          PureLogicCheckView().environmentObject(store)
         } label: {
           Label("纯逻辑自检", systemImage: "checkmark.seal")
         }
@@ -248,7 +248,7 @@ struct PureLogicCheckView: View {
 
 ```swift
         NavigationLink {
-          PureLogicCheckView()
+          PureLogicCheckView().environmentObject(store)
         } label: {
           Label("纯逻辑自检（先验 / 依据 / 档案）", systemImage: "checkmark.seal")
         }
@@ -294,5 +294,6 @@ cd /Users/sevenaaaaaaa/Awake && xcodebuild -project ios/Awake.xcodeproj -scheme 
 1. 更新 `docs/todo-backlog.md` 的「v2 批次 · S2 两端自检」：
    把「还没做」里的 iOS 三条删掉，补一段「iOS 已落地」写明 8 条清单与改坏常量的实际输出。
 2. 写 **启发 24**：自检的条数应该由「这个平台真正拥有的纯逻辑」决定，不是两端对齐出来的数字。
-3. 版本：`ios/project.yml` 的 `MARKETING_VERSION` 还是 `0.9.38`，桌面已 `0.9.39`。
-   S2 两端都完成后，再决定是否一起打 `0.9.40`；**不要单边改**，两端版本号是同一批的标记。
+3. 版本：两端已经都是 `0.9.39`（`ios/project.yml` `MARKETING_VERSION: 0.9.39` /
+   `CURRENT_PROJECT_VERSION: 51`，桌面 `tauri.conf.json` 同为 0.9.39）。
+   S2 两端都完成后，再一起打 `0.9.40`；**不要单边改**，两端版本号是同一批的标记。
