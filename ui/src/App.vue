@@ -242,6 +242,21 @@ const jobLabel = (state: string) =>
     cancelled: "已停止",
     interrupted: "任务中断",
   })[state] || state;
+/** 添加来源分两步：先选类型，再只填这一类需要的字段。 */
+const sourceStep = ref<"type" | "fields">("type");
+const sourceTypes = [
+  { kind: "local", icon: "folder", label: "本地文件夹", hint: "原地读取，不复制、不移动" },
+  { kind: "smb", icon: "database", label: "NAS / 已挂载网盘", hint: "挂载点直接扫描" },
+  { kind: "webdav", icon: "wave", label: "WebDAV", hint: "自己的网盘或 NAS" },
+  { kind: "plex", icon: "play", label: "Plex", hint: "用 Plex 账号授权" },
+  { kind: "telegram", icon: "mic", label: "Telegram 个人媒体库", hint: "自托管连接器" },
+  { kind: "plugin", icon: "spark", label: "网络音乐插件", hint: "MusicFree 兼容 .js" },
+  { kind: "rss", icon: "list", label: "RSS / Atom 元数据匹配", hint: "只匹配元数据，不下载音频" },
+];
+function chooseSourceType(kind: string) {
+  sourceKind.value = kind;
+  sourceStep.value = "fields";
+}
 const sourceKind = ref("local"),
   sourceName = ref(""),
   sourceUsername = ref(""),
@@ -1193,8 +1208,10 @@ async function importChange(e: Event) {
   (e.target as HTMLInputElement).value = "";
 }
 function addMusic() {
-  if (desktop) sourceOpen.value = true;
-  else fileInput.value?.click();
+  if (desktop) {
+    sourceStep.value = "type";
+    sourceOpen.value = true;
+  } else fileInput.value?.click();
 }
 async function pickFolder() {
   await s.run(async () => {
@@ -3278,6 +3295,23 @@ onUnmounted(() => {
           class="connection-form"
           @submit.prevent="connectSource"
         >
+          <template v-if="sourceStep === 'type'">
+            <p class="muted">要加什么？先选一类，下一步只填这一类需要的字段。</p>
+            <button
+              v-for="option in sourceTypes"
+              :key="option.kind"
+              type="button"
+              class="button"
+              @click="chooseSourceType(option.kind)"
+            >
+              <Icon :name="option.icon" />{{ option.label }}
+              <small class="muted">{{ option.hint }}</small>
+            </button>
+            <button type="button" class="text-button" @click="sourceOpen = false">
+              取消
+            </button>
+          </template>
+          <template v-else>
           <label
             >来源类型<select v-model="sourceKind">
               <option value="local">本地文件夹</option>
@@ -3531,6 +3565,15 @@ onUnmounted(() => {
           >
             {{ s.busy ? "正在连接曲库…" : sourceKind === 'plugin' ? "添加插件来源" : "连接曲库" }}
           </button>
+          <button
+            type="button"
+            class="text-button"
+            :disabled="s.busy"
+            @click="sourceStep = 'type'"
+          >
+            换类型
+          </button>
+          </template>
         </form>
         <form v-else-if="saveOpen" @submit.prevent="saveList">
           <label for="playlist-name">歌单名字</label
