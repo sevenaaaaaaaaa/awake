@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// V3：说一句话，让 agent（或本地规则）在当前曲线上做可听、可撤销的小改动。
+/// V3 + R3：说一句话，拿到 2–3 条候选曲线，挑一条应用；每次应用都进审计记录，可回滚。
 struct TuneSheet: View {
   @EnvironmentObject var store: MobileStore
   @EnvironmentObject var player: MobilePlayer
@@ -8,14 +8,18 @@ struct TuneSheet: View {
   @State private var text = ""
   @State private var busy = false
   @State private var note = ""
-  @State private var proposal: TuningProposal?
+  @State private var proposals: [TuningProposal] = []
+  @State private var selected = 0
   @State private var previous: EQSnapshot?
-  /// 撤销时连「这首歌的曲线」一起还原，否则音频回去了、记忆还留着。
   @State private var previousCurve: SongCurve?
   @State private var curveSongID: String?
+  @State private var historyOpen = false
 
   private var aiReady: Bool {
     !store.state.curatorModel.isEmpty && store.state.curatorURL == store.state.curatorCredentialEndpoint
+  }
+  private var current: TuningProposal? {
+    proposals.indices.contains(selected) ? proposals[selected] : nil
   }
 
   var body: some View {
@@ -33,20 +37,29 @@ struct TuneSheet: View {
           }
           TextField("例如：人声再靠前一点，低频别那么糊", text: $text, axis: .vertical)
             .lineLimit(1...3)
-          Button(aiReady ? "让 agent 调" : "用本地规则调") { Task { await tune() } }
+          Button(aiReady ? "让 agent 给候选" : "用本地规则调") { Task { await tune() } }
             .disabled(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
           if busy { ProgressView() }
           if !note.isEmpty { Text(note).font(.caption).foregroundStyle(.secondary) }
         }
-        if let proposal {
-          Section("\(proposal.source) 的改动") {
-            ForEach(proposal.lines, id: \.self) { line in
-              Text(line).font(.system(size: 13, design: .monospaced))
+        if !proposals.isEmpty {
+          Section("候选（\(proposals.count) 条）") {
+            Picker("选一条", selection: $selected) {
+              ForEach(proposals.indices, id: \.self) { index in
+                Text("候选 \(index + 1)").tag(index)
+              }
             }
-            if !proposal.why.isEmpty {
-              Text(proposal.why).font(.caption).foregroundStyle(.secondary)
+            .pickerStyle(.segmented)
+            if let proposal = current {
+              ForEach(proposal.lines, id: \.self) { line in
+                Text(line).font(.system(size: 13, design: .monospaced))
+              }
+              if !proposal.why.isEmpty {
+                Text(proposal.why).font(.caption).foregroundStyle(.secondary)
+              }
+              Text("来源：\(proposal.source)").font(.caption2).foregroundStyle(.tertiary)
+              Button("应用这条") { apply(proposal) }
             }
-            Button("应用到当前曲线") { apply(proposal) }
             if previous != nil {
               Button("撤销这次改动", role: .destructive) { undo() }
             }
@@ -54,14 +67,21 @@ struct TuneSheet: View {
         }
         Section {
           Text(aiReady
-            ? "改动只作用于当前曲线，每段不超过 6 dB、最多 6 段；随时可撤销。"
-            : "还没配置 AI 模型：这里用固定短语的本地规则，不冒充 agent。配置后同一句话会交给模型。")
+            ? "候选之间是取舍，不是对错；每段不超过 6 dB、最多 6 段，随时可撤销，改过的都进历史。"
+            : "还没配置 AI 模型：这里用固定短语的本地规则，不冒充 agent。配置后会一次给 2–3 条候选。")
             .font(.caption).foregroundStyle(.secondary)
         }
       }
       .appSurface()
       .navigationTitle("一句话调音")
-      .toolbar { Button("完成") { dismiss() } }
+      .toolbar {
+        Button("历史") { historyOpen = true }
+        Button("完成") { dismiss() }
+      }
+      .sheet(isPresented: $historyOpen) {
+        TuningHistoryView(songID: player.song?.id)
+          .environmentObject(store).environmentObject(player)
+      }
     }
   }
 
@@ -69,20 +89,22 @@ struct TuneSheet: View {
   private func tune() async {
     busy = true
     note = ""
-    proposal = nil
+    proposals = []
+    selected = 0
     defer { busy = false }
     let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    let current = player.currentSnapshot.gains
+    let currentGains = player.currentSnapshot.gains
     if aiReady {
       do {
-        proposal = try await SoundTuning.agent(request, from: current, store: store)
+        proposals = try await SoundTuning.agentCandidates(request, from: currentGains, store: store)
+        note = "拿到 \(proposals.count) 条候选，挑一条再应用。"
         return
       } catch {
         note = "agent 没成功（\(error.localizedDescription)），先按本地规则给一版。"
       }
     }
-    if let local = SoundTuning.local(request, from: current) {
-      proposal = local
+    if let local = SoundTuning.local(request, from: currentGains) {
+      proposals = [local]
     } else if note.isEmpty {
       note = "这句话没听懂。试试短语：人声太靠后 / 低频糊 / 想更亮 / 太吵。"
     }
@@ -102,7 +124,6 @@ struct TuneSheet: View {
       note = "应用失败，曲线保持原样。"
       return
     }
-    // V4：把这版曲线记到当前这首歌上，切歌回来还在。
     if let song = player.song {
       curveSongID = song.id
       previousCurve = store.songCurve(song.id)
@@ -113,7 +134,11 @@ struct TuneSheet: View {
         detail: CurveBasis.make(
           headphone: player.route.name, song: song,
           trigger: "\(proposal.source)：\(text)", prior: store.priorDescription))
-      note = "已应用并记到这首歌，切歌回来还在。"
+      // R3：进审计记录，之后能回滚。
+      store.logTuning(
+        song: song, request: text, source: proposal.source, lines: proposal.lines,
+        before: snapshot.gains, after: proposal.gains)
+      note = "已应用并记到这首歌，历史里可回滚。"
     } else {
       note = "已应用，松手听一下差别。"
     }
@@ -138,7 +163,7 @@ struct TuneSheet: View {
     previous = nil
     previousCurve = nil
     curveSongID = nil
-    proposal = nil
+    proposals = []
     note = "已撤销，回到调音前的曲线与记忆。"
   }
 }

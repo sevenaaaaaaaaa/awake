@@ -66,6 +66,12 @@ struct SettingsView: View {
         }
         .accessibilityIdentifier("batchScrape")
         NavigationLink {
+          TuningHistoryView()
+        } label: {
+          Label("调音历史（\(store.state.tuningLog?.count ?? 0)）", systemImage: "clock.arrow.circlepath")
+        }
+        .accessibilityIdentifier("tuningHistory")
+        NavigationLink {
           CalibrationView()
         } label: {
           Label(

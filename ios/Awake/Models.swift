@@ -285,6 +285,23 @@ struct LibraryState: Codable {
   var earPrior: EarPrior?
   /// 是否把先验叠加到播放曲线上；nil 视为开。
   var applyEarPrior: Bool?
+  /// R3：agent 调音审计记录（谁提的、改了什么、从哪到哪）。
+  var tuningLog: [TuningRecord]?
+}
+
+/// 一次调音的完整记录：够回滚，也够解释。
+struct TuningRecord: Codable, Identifiable, Equatable {
+  var id: String = UUID().uuidString
+  var songID: String
+  var songTitle: String
+  var request: String
+  var source: String
+  var lines: [String]
+  var before: [Float]
+  var after: [Float]
+  var createdAt: Date = Date()
+  /// 已经被撤销或回滚过的记录，列表里仍然保留，但标灰。
+  var reverted: Bool = false
 }
 
 /// 一轮 A/B 校准的产物：31 段先验 + 版本号 + 每个问题的选择，可审计。
@@ -655,6 +672,44 @@ enum Secrets {
   var priorDescription: String {
     guard let prior = state.earPrior else { return "暂无校准" }
     return "校准 v\(prior.version)"
+  }
+
+  // MARK: - R3 调音审计
+
+  /// 记一次调音；上限 200 条，超出丢最旧的。
+  @discardableResult
+  func logTuning(
+    song: Song, request: String, source: String, lines: [String],
+    before: [Float], after: [Float]
+  ) -> String {
+    var log = state.tuningLog ?? []
+    let record = TuningRecord(
+      songID: song.id, songTitle: song.title, request: request, source: source,
+      lines: lines, before: before, after: after)
+    log.insert(record, at: 0)
+    if log.count > 200 { log.removeLast(log.count - 200) }
+    state.tuningLog = log
+    save()
+    return record.id
+  }
+
+  func tuningHistory(for songID: String? = nil) -> [TuningRecord] {
+    let log = state.tuningLog ?? []
+    guard let songID else { return log }
+    return log.filter { $0.songID == songID }
+  }
+
+  /// 回滚到某条记录之前或之后，并把这条标成已回滚。
+  func revertTuning(_ record: TuningRecord, toBefore: Bool, player: MobilePlayer) {
+    let gains = toBefore ? record.before : record.after
+    guard gains.count == 31 else { return }
+    _ = player.setEQ(
+      gains, apo: "", origin: .manual, profile: player.currentSnapshot.profile,
+      source: "回滚：\(record.source)", announce: false)
+    if let index = state.tuningLog?.firstIndex(where: { $0.id == record.id }) {
+      state.tuningLog?[index].reverted = true
+      save()
+    }
   }
 
   /// 保存一轮校准结果：版本号递增，旧的曲线依据因此会显示「先验已更新」。
