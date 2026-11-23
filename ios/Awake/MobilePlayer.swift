@@ -162,6 +162,38 @@ struct RouteInfo: Equatable {
       return false
     }
   }
+  // MARK: - 对比：按住听「没有为这首歌适配」的声音
+
+  /// 当前生效的曲线快照（只读），给「这首歌的声音」摘要用。
+  var currentSnapshot: EQSnapshot { snapshot }
+
+  private var compareSaved: EQSnapshot?
+
+  var isComparing: Bool { compareSaved != nil }
+
+  /// 按住开始对比：把曲线临时压平。没有可对比的调整时返回 false，界面别装作在对比。
+  @discardableResult
+  func beginCompare() -> Bool {
+    guard compareSaved == nil else { return true }
+    let saved = snapshot
+    let adapted = saved.gains.contains { abs($0) >= 0.5 } || !saved.apo.isEmpty || abs(preamp) >= 0.5
+    guard adapted else { return false }
+    compareSaved = saved
+    _ = setEQ(
+      Array(repeating: 0, count: 31), apo: "", origin: .manual,
+      profile: saved.profile, source: "", announce: false)
+    return true
+  }
+
+  /// 松手恢复原曲线；幂等，重复调用无副作用。
+  func endCompare() {
+    guard let saved = compareSaved else { return }
+    compareSaved = nil
+    _ = setEQ(
+      saved.gains, apo: saved.apo, origin: saved.origin,
+      profile: saved.profile, source: saved.source, announce: false)
+  }
+
   @discardableResult private func applyEQ() -> Bool {
     do {
       preamp = try EQMath.configure(

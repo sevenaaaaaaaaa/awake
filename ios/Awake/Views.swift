@@ -263,14 +263,62 @@ struct NowPlayingView: View {
         .environmentObject(player)
     } else {
       nowPlaying
+        .onDisappear { player.endCompare() }
     }
   }
+  /// 播放页第一块：这首歌为什么这样响，以及「按住听原声」。
+  private var soundSummaryCard: some View {
+    let summary = SoundSummaryBuilder.make(
+      snapshot: player.currentSnapshot, hasSong: player.song != nil)
+    return VStack(alignment: .leading, spacing: 6) {
+      Text("这首歌的声音")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+      Text(summary.headline)
+        .font(.system(size: 15, weight: .medium))
+      Text(summary.basis)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      if player.isComparing {
+        Text("对比中：现在是没有适配的原声，松手回来")
+          .font(.caption2)
+          .foregroundStyle(Color(hex: store.state.skin.colors.accent))
+      } else {
+        Text(summary.hasAdaptation ? "按住这里 = 听没有适配的原声" : "没有可对比的适配：曲线本来就是平的")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(14)
+    .background(
+      Color(hex: store.state.skin.colors.surface),
+      in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .contentShape(Rectangle())
+    .onLongPressGesture(
+      minimumDuration: 0.15, perform: {},
+      onPressingChanged: { pressing in
+        if pressing {
+          _ = player.beginCompare()
+        } else {
+          player.endCompare()
+        }
+        // 曲线面板读的是本页 @State；对比会临时改线，松手后要跟回真实快照，
+        // 否则面板停在被压平的那条线上，用户以为改动丢了。
+        gains = player.currentSnapshot.gains
+      }
+    )
+    .accessibilityIdentifier("soundSummary")
+  }
+
   private var nowPlaying: some View {
     ZStack(alignment: .top) {
       Color(hex: store.state.skin.colors.bg).ignoresSafeArea()
       ScrollView {
         VStack(alignment: .leading, spacing: 0) {
           if let song = player.song {
+            soundSummaryCard
+              .padding(.bottom, 16)
             ChainStrip(steps: chainSteps(song))
             if activeChain != nil {
               EQCurvePanel(gains: $gains, editable: true, onCommit: commitGains)

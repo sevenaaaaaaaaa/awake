@@ -50,6 +50,7 @@
 		ACD23958C48763E9DFC8A433 /* PluginStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 891D5286386ECEB61547D15A /* PluginStore.swift */; };
 		B2010DF4B036EE42DE9F020D /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B67216F06EEA6B1C51089A5 /* SettingsViews.swift */; };
 		B783FE24AB2F617F7FFA445F /* BackupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9099E526F9866ECBED6C6F72 /* BackupTests.swift */; };
+		BAA975D65A9CD06CD666DD2D /* SoundSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69B92F59BA7AA316799C4B1F /* SoundSummary.swift */; };
 		BAE27F68DEF71B352517C2D3 /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D3C1A668EB8F5A462FFD7F1 /* Diagnostics.swift */; };
 		BEFE026FF88841E93F33C788 /* LabViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F144CAD80E2FA1490AE8F500 /* LabViews.swift */; };
 		BFC2DAC0C79C993A33AB5DB9 /* builtin-03.flac in Resources */ = {isa = PBXBuildFile; fileRef = 964BE2241E1B87C61C91A2F3 /* builtin-03.flac */; };
@@ -107,6 +108,7 @@
 		607A1E2CD64256B88623FB49 /* Backup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backup.swift; sourceTree = "<group>"; };
 		663B242F9EA518DA6611AED2 /* AwakeTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AwakeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		67C90F29C21FA66AA05D4D24 /* PlaylistFetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistFetch.swift; sourceTree = "<group>"; };
+		69B92F59BA7AA316799C4B1F /* SoundSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundSummary.swift; sourceTree = "<group>"; };
 		6B8CF48452425D64B33864E1 /* PlaylistImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistImportView.swift; sourceTree = "<group>"; };
 		78C62F4E4623656837A7005F /* PlayerInstrument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerInstrument.swift; sourceTree = "<group>"; };
 		817D79843367BFCA224EA56D /* AwakeUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AwakeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -225,6 +227,7 @@
 				891D5286386ECEB61547D15A /* PluginStore.swift */,
 				E40E9A956315BB1CF4C1AC0C /* Services.swift */,
 				5B67216F06EEA6B1C51089A5 /* SettingsViews.swift */,
+				69B92F59BA7AA316799C4B1F /* SoundSummary.swift */,
 				4BFF41650CE622F89415946F /* SoundViews.swift */,
 				09A7E4B3CD23B4B8B1828F48 /* Speech.swift */,
 				E2A6E6BA7288E46474438EEC /* SpeechRender.swift */,
@@ -415,6 +418,7 @@
 				ACD23958C48763E9DFC8A433 /* PluginStore.swift in Sources */,
 				3EEE4B57BC5DDD7C667C8C79 /* Services.swift in Sources */,
 				B2010DF4B036EE42DE9F020D /* SettingsViews.swift in Sources */,
+				BAA975D65A9CD06CD666DD2D /* SoundSummary.swift in Sources */,
 				4B2B9E96F4274C216D84C376 /* SoundViews.swift in Sources */,
 				89BDB891FF29B7B9EF39A999 /* Speech.swift in Sources */,
 				CA79B3264CA933FD003508B7 /* SpeechRender.swift in Sources */,
@@ -541,7 +545,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 38;
+				CURRENT_PROJECT_VERSION = 39;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -562,7 +566,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.23;
+				MARKETING_VERSION = 0.9.24;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -664,7 +668,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 38;
+				CURRENT_PROJECT_VERSION = 39;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -679,7 +683,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.23;
+				MARKETING_VERSION = 0.9.24;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
