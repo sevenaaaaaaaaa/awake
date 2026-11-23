@@ -1,10 +1,14 @@
 name: release
 
-# 出两个产物：macOS arm64 的 .app 压缩包、iOS unsigned IPA。
-# 公开仓库的 macOS runner 不额外计费，所以默认走线上，省本机 CPU 与时间。
+# 只出 macOS 产物。
 #
-# 版本号只有两个来源：推送 v* tag（取 tag 名去 v），或手动触发时填的 input。
-# 两边都必须在仓库里已经 bump 过——workflow 不替你改文件，改了也不该由 CI 来改。
+# iOS 不在 CI 里出包，两次实测都不通（run 45207790417 / 45208937945）：
+# - macos-15 只有 Xcode 16.4，项目用到 iOS 26 的 glassEffect / tabViewBottomAccessory，编译 exit 65；
+# - macos-26 自带 Xcode 26.6，但在这台镜像上 `xcodebuild -version` 直接崩溃（XcodebuildPreIDEHandler）。
+# 所以 IPA 走本地 Tools/build_ios_app.sh，并复制到 iCloud。
+#
+# 版本号来源：推送 v* tag（取 tag 名去 v），或手动触发时填的 input。
+# workflow 不改文件——版本 bump 在提交里完成。
 
 on:
   workflow_dispatch:
@@ -84,53 +88,8 @@ jobs:
             dist-rust/Awake-*-macos-arm64.zip.sha256
           if-no-files-found: error
 
-  ios:
-    needs: version
-    # 项目用到 iOS 26 的 glassEffect / tabViewBottomAccessory（Glass.swift、Views.swift），
-    # macos-15 上的 Xcode 16.4 编不过，必须用带 Xcode 26 的镜像。
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check Xcode
-        run: |
-          set -euo pipefail
-          xcodebuild -version
-          MAJOR=$(xcodebuild -version | head -1 | awk '{print $2}' | cut -d. -f1)
-          if [ "$MAJOR" -lt 26 ]; then
-            echo "::error::这台 runner 的 Xcode 主版本是 $MAJOR，项目用到 iOS 26 API，至少需要 26。请换 runner 镜像或回到本地打包。"
-            exit 1
-          fi
-
-      - name: Install xcodegen
-        run: brew install xcodegen
-
-      - name: Build unsigned IPA
-        run: bash Tools/build_ios_app.sh
-
-      - name: Verify IPA
-        run: |
-          set -euo pipefail
-          VERSION="${{ needs.version.outputs.value }}"
-          IPA="dist-ios/Awake-${VERSION}-ios-arm64-unsigned.ipa"
-          test -f "$IPA"
-          TMP="$(mktemp -d)"
-          unzip -q -o "$IPA" "Payload/Awake.app/Info.plist" -d "$TMP"
-          plutil -extract CFBundleShortVersionString raw "$TMP/Payload/Awake.app/Info.plist"
-          plutil -extract CFBundleVersion raw "$TMP/Payload/Awake.app/Info.plist"
-          rm -rf "$TMP"
-          ls -lh "$IPA"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ios-ipa
-          path: |
-            dist-ios/Awake-*-ios-arm64-unsigned.ipa
-            dist-ios/Awake-*-ios-arm64-unsigned.ipa.sha256
-          if-no-files-found: error
-
   publish:
-    needs: [version, macos, ios]
+    needs: [version, macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -144,9 +103,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          mapfile -t FILES < <(find artifacts -type f \( -name '*.zip' -o -name '*.ipa' -o -name '*.sha256' \))
+          mapfile -t FILES < <(find artifacts -type f \( -name '*.zip' -o -name '*.sha256' \))
           printf '%s\n' "${FILES[@]}"
           gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 \
             || gh release create "$TAG" --repo "${{ github.repository }}" --title "$TAG" --notes "见 docs/releases/${TAG}.md"
           gh release upload "$TAG" "${FILES[@]}" --repo "${{ github.repository }}" --clobber
-

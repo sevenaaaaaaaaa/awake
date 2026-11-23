@@ -68,16 +68,25 @@ shasum -a 256 "$HOME/Library/Mobile Documents/com~apple~CloudDocs/Awake-<版本>
 
 ## 6. 线上打包（推荐，省本机资源）
 
-`.github/workflows/release.yml` 提供两个产物：`Awake-<ver>-macos-arm64.zip` 与
-`Awake-<ver>-ios-arm64-unsigned.ipa`（都带 `.sha256`）。
+`.github/workflows/release.yml` 只出 **macOS**：`Awake-<ver>-macos-arm64.zip` + `.sha256`。
+iOS 的 IPA 仍由本地 `Tools/build_ios_app.sh` 出，再复制到 iCloud。
 
 - 触发：推送 `v<ver>` tag，或在 Actions 页面手动运行并填版本号。
 - 计费：仓库是公开的，GitHub-hosted macOS runner 不额外计费；私有仓库会烧分钟数。
-- **实测（2026-11-23，run 45207790417）**：`macos-15` 上是 **Xcode 16.4**，
-  而 `Glass.swift` 的 `glassEffect`、`Views.swift` 的 `tabViewBottomAccessory` 都是 iOS 26 API，
-  编译直接 exit 65（另有两条 "unable to type-check in reasonable time" 是同一原因下的连锁）。
-  iOS job 已改到 `macos-26`，并在开头显式检查 Xcode 主版本，不够就报一句人话再退出。
-- 这条限制来自项目依赖 iOS 26 SDK，不是 workflow 能绕过的。`macos-26` 也不可用时，退回本地打包。
+
+**为什么 iOS 不在 CI（两次实测，别重走）**
+
+| 镜像 | 结果 |
+| --- | --- |
+| `macos-15` | Xcode **16.4**；`Glass.swift` 的 `glassEffect`、`Views.swift` 的 `tabViewBottomAccessory` 是 iOS 26 API，编译 **exit 65** |
+| `macos-26` | Xcode 26.6，但 `xcodebuild -version` 在这台镜像上**直接崩溃**（`XcodebuildPreIDEHandler`），job 在检查步骤就死 |
+
+run 45207790417 / 45208937945。iOS 26 SDK 是项目的硬依赖，不是 workflow 能绕过的。
+真要线上出 IPA，只有自托管 runner（装本机这套 Xcode），那就不省资源了。
+
+**另一个 CI 专属坑**：`Tools/build_rust_app.sh` 原来用 `lipo -verify_arch` 验架构，
+Xcode 16.4 的 lipo 在 CI 上把文件路径当成架构名（`unknown architecture specification flag`）。
+已改成 `lipo -archs` + 逐行比对，两边行为一致。
 - CI 红**不发布**：先修，再从头走。
 
 ## 7. 产物与位置

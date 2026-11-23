@@ -60,7 +60,13 @@ mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 # 而这一步要证明的本来就是「各架构都编出来了」，在源文件上验同样成立且更稳。
 index=0
 for arch in $ARCHS; do
-  lipo -verify_arch "$arch" "${BINARIES[$index]}"
+  # 不用 `lipo -verify_arch`：Xcode 16.4 的 lipo 在 CI 上把文件路径当成架构名，
+  # 报 "unknown architecture specification flag"。`-archs` + 逐行比对在各版本行为一致。
+  built="$(lipo -archs "${BINARIES[$index]}")"
+  if ! printf '%s\n' $built | grep -qx "$arch"; then
+    echo "构建产物不含 $arch（实际：$built）" >&2
+    exit 1
+  fi
   index=$((index + 1))
 done
 
