@@ -43,6 +43,7 @@ import SwiftUI
       RootView().environmentObject(store).environmentObject(player).modifier(
         TestingMotionPreference()
       ).task {
+        await store.seedBuiltinMusicIfNeeded()
         #if DEBUG
           if ProcessInfo.processInfo.arguments.contains("--uitesting") { player.volume = 0 }
         #endif

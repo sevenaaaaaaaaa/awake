@@ -190,6 +190,25 @@ async fn scan_folder(
 }
 
 /// 「本地文件」来源：逐个文件导入，不复制、不移动用户的文件。
+fn collect_audio_files(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_audio_files(&path, out);
+        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            if matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "flac" | "mp3" | "m4a" | "wav" | "aif" | "aiff" | "alac" | "ogg"
+            ) {
+                out.push(path);
+            }
+        }
+    }
+}
+
 async fn scan_files(
     paths: Vec<String>,
     append: bool,
@@ -1017,6 +1036,32 @@ pub fn run() {
                 state.data_dir.clone(),
                 state.taste.clone(),
             );
+            // 本地版：首次运行时把打进包的示例曲库（Contents/Resources/DemoMusic）导入。
+            // 不联网、不依赖来源配置；标记文件落盘后不再重复。
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = handle.state::<AppState>();
+                    let marker = state.data_dir.join(".builtin-demo-imported");
+                    if marker.exists() {
+                        return;
+                    }
+                    let Ok(resource) = handle.path().resource_dir() else {
+                        return;
+                    };
+                    let dir = resource.join("DemoMusic");
+                    let mut paths = Vec::new();
+                    collect_audio_files(&dir, &mut paths);
+                    if paths.is_empty() {
+                        return;
+                    }
+                    let args: Vec<String> =
+                        paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+                    if scan_files(args, true, Some("内置示例".into()), state).await.is_ok() {
+                        let _ = std::fs::write(&marker, b"1");
+                    }
+                });
+            }
             // 诊断：打印窗口实际加载的 URL 与前端资源解析结果
             tauri::Manager::get_webview_window(app, "main").map(|w| {
                 println!("[awake] WINDOW_URL={:?}", w.url());
