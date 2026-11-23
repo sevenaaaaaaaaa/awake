@@ -277,6 +277,19 @@ struct LibraryState: Codable {
   /// 听书进度：key 为书（专辑键或单曲 ID）。
   var bookProgress: [String: BookProgress]?
   var importedFolderPaths: [String: [String]]?
+  /// V4：每首歌自己的曲线（key = song.id）。旧档案没有这个字段，保持可选。
+  var songCurves: [String: SongCurve]?
+  /// 切歌时是否自动套用这首歌的曲线；nil 视为开。
+  var autoSongCurve: Bool?
+}
+
+/// 一首歌对应的曲线。存的是完整快照而不是差分：差分一旦基线变了就会算错。
+struct SongCurve: Codable, Equatable {
+  var gains: [Float]
+  var apo: String = ""
+  var origin: EQOrigin = .manual
+  var source: String = ""
+  var updatedAt: Date = .distantPast
 }
 struct AppFailure: LocalizedError {
   var message: String
@@ -543,6 +556,40 @@ enum Secrets {
 
   /// 用一次扫描结果替换某个来源的曲目：按 locator 保留收藏、本机缓存文件名、封面、
   /// 歌词、评论与人工整理过的元数据。重复连接同一来源时不会再叠加一份副本。
+  // MARK: - V4 每首歌的曲线
+
+  /// 会话内锁定：用户手动调过之后，不希望切歌被自动覆盖。
+  @Published var curveLocked = false
+
+  func songCurve(_ songID: String) -> SongCurve? {
+    guard let curve = state.songCurves?[songID], curve.gains.count == 31 else { return nil }
+    return curve
+  }
+
+  /// 把当前快照记到一首歌上（调音或手动保存时调用）。
+  func rememberCurve(_ snapshot: EQSnapshot, for songID: String, label: String) {
+    var map = state.songCurves ?? [:]
+    map[songID] = SongCurve(
+      gains: snapshot.gains, apo: snapshot.apo, origin: snapshot.origin,
+      source: snapshot.source.isEmpty ? label : snapshot.source, updatedAt: Date())
+    state.songCurves = map
+    save()
+  }
+
+  func forgetCurve(_ songID: String) {
+    state.songCurves?[songID] = nil
+    save()
+  }
+
+  /// 切歌时套用这首歌的曲线；锁定或关闭自动时不动。
+  func applySongCurve(_ songID: String?, player: MobilePlayer) {
+    guard !curveLocked, state.autoSongCurve ?? true, let songID, let curve = songCurve(songID)
+    else { return }
+    _ = player.setEQ(
+      curve.gains, apo: curve.apo, origin: curve.origin, profile: nil,
+      source: curve.source, announce: false)
+  }
+
   func mergeScannedSongs(_ rows: [Song], previous: [Song]) -> [Song] {
     let byLocator = Dictionary(previous.map { ($0.locator, $0) }, uniquingKeysWith: { first, _ in first })
     return rows.map { row in

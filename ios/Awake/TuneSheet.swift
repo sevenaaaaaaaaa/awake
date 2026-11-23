@@ -10,6 +10,9 @@ struct TuneSheet: View {
   @State private var note = ""
   @State private var proposal: TuningProposal?
   @State private var previous: EQSnapshot?
+  /// 撤销时连「这首歌的曲线」一起还原，否则音频回去了、记忆还留着。
+  @State private var previousCurve: SongCurve?
+  @State private var curveSongID: String?
 
   private var aiReady: Bool {
     !store.state.curatorModel.isEmpty && store.state.curatorURL == store.state.curatorCredentialEndpoint
@@ -95,7 +98,21 @@ struct TuneSheet: View {
       profile: snapshot.profile,
       source: proposal.source == "AI" ? "一句话调音：" + text : "本地规则：" + text,
       announce: false)
-    note = ok ? "已应用，松手听一下差别。" : "应用失败，曲线保持原样。"
+    guard ok else {
+      note = "应用失败，曲线保持原样。"
+      return
+    }
+    // V4：把这版曲线记到当前这首歌上，切歌回来还在。
+    if let song = player.song {
+      curveSongID = song.id
+      previousCurve = store.songCurve(song.id)
+      store.rememberCurve(
+        player.currentSnapshot, for: song.id,
+        label: proposal.source == "AI" ? "一句话调音" : "本地规则")
+      note = "已应用并记到这首歌，切歌回来还在。"
+    } else {
+      note = "已应用，松手听一下差别。"
+    }
   }
 
   @MainActor
@@ -104,8 +121,20 @@ struct TuneSheet: View {
     _ = player.setEQ(
       snapshot.gains, apo: snapshot.apo, origin: snapshot.origin,
       profile: snapshot.profile, source: snapshot.source, announce: false)
+    if let songID = curveSongID {
+      if let saved = previousCurve {
+        var map = store.state.songCurves ?? [:]
+        map[songID] = saved
+        store.state.songCurves = map
+        store.save()
+      } else {
+        store.forgetCurve(songID)
+      }
+    }
     previous = nil
+    previousCurve = nil
+    curveSongID = nil
     proposal = nil
-    note = "已撤销，回到调音前的曲线。"
+    note = "已撤销，回到调音前的曲线与记忆。"
   }
 }

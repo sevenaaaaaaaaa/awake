@@ -38,6 +38,10 @@ struct RootView: View {
         .environmentObject(store)
         .environmentObject(player)
     }
+    // V4：切歌自动套用这首歌的曲线。放在 RootView，因为换歌也可能来自迷你条或队列。
+    .onChange(of: player.song?.id) { _, id in
+      store.applySongCurve(id, player: player)
+    }
     .alert(
       "Awake",
       isPresented: Binding(
@@ -283,6 +287,41 @@ struct NowPlayingView: View {
       Text(summary.basis)
         .font(.caption)
         .foregroundStyle(.secondary)
+      if let song = player.song {
+        if let curve = store.songCurve(song.id) {
+          Text("已记住这首歌的曲线 · \(curve.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        HStack(spacing: 10) {
+          Toggle(
+            "切歌自动套用",
+            isOn: Binding(
+              get: { store.state.autoSongCurve ?? true },
+              set: { value in
+                store.state.autoSongCurve = value
+                store.save()
+              })
+          )
+          .toggleStyle(.switch)
+          .controlSize(.mini)
+          .labelsHidden()
+          .accessibilityIdentifier("autoSongCurve")
+          Text("切歌自动套用").font(.caption2).foregroundStyle(.secondary)
+          Spacer(minLength: 0)
+          Button(store.curveLocked ? "已锁定" : "锁定当前") {
+            store.curveLocked.toggle()
+          }
+          .font(.caption2)
+          .buttonStyle(.borderless)
+          Button("记住这首歌") {
+            store.rememberCurve(
+              player.currentSnapshot, for: song.id, label: "手动保存")
+          }
+          .font(.caption2)
+          .buttonStyle(.borderless)
+        }
+      }
       if player.isComparing {
         Text("对比中：现在是没有适配的原声，松手回来")
           .font(.caption2)
