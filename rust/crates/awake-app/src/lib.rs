@@ -1186,6 +1186,7 @@ pub fn run() {
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             scan_library,
+            intelligence::suggest_curve,
             builtin_demo_status,
             builtin_demo_install,
             builtin_demo_remove,

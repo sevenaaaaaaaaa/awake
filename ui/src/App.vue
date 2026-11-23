@@ -1038,6 +1038,86 @@ const heroAlbum = computed(
 function updateGains(next: number[]) {
   s.gains.splice(0, s.gains.length, ...next);
 }
+const tuneText = ref("");
+const tuneBusy = ref(false);
+const tuneLines = ref<string[]>([]);
+const tuneWhy = ref("");
+const tuneNote = ref("");
+const tuneGains = ref<number[] | null>(null);
+let tunePrev: number[] | null = null;
+
+const soundRegions = [
+  { name: "低频", lo: 20, hi: 200, up: "鼓更近、下潜更实", down: "去掉低频的糊" },
+  { name: "中低", lo: 200, hi: 800, up: "厚度更足", down: "减掉箱音" },
+  { name: "中高", lo: 800, hi: 4000, up: "人声更靠前", down: "人声退后、不刺" },
+  { name: "高频", lo: 4000, hi: 20000, up: "更亮、空气感", down: "压住齿音" },
+];
+/** 一句话说清「这条曲线在干什么」——只描述真实增益，平直就直说。 */
+const soundSummary = computed(() => {
+  const bands = frequencies
+    .map((f, i) => [f, s.gains[i] ?? 0] as [number, number])
+    .filter(([, g]) => Math.abs(g) >= 1);
+  if (!bands.length) {
+    return { headline: "平直曲线：这首歌没有做任何适配", has: false };
+  }
+  const parts: string[] = [];
+  for (const region of soundRegions) {
+    const slice = bands.filter(([f]) => f >= region.lo && f < region.hi);
+    if (!slice.length) continue;
+    const mean = slice.reduce((sum, [, g]) => sum + g, 0) / slice.length;
+    if (Math.abs(mean) < 0.5) continue;
+    const sign = mean > 0 ? "+" : "";
+    parts.push(
+      `${region.name} ${sign}${mean.toFixed(0)} dB：${mean > 0 ? region.up : region.down}`,
+    );
+  }
+  return {
+    headline: parts.slice(0, 2).join("；") || "有轻微调整（每段不足 1 dB）",
+    has: true,
+  };
+});
+
+async function suggestTuning() {
+  if (!desktop || tuneBusy.value) return;
+  const request = tuneText.value.trim();
+  if (!request) return;
+  tuneBusy.value = true;
+  tuneLines.value = [];
+  tuneWhy.value = "";
+  tuneNote.value = "";
+  try {
+    const result = await call<{ gains: number[]; lines: string[]; why: string }>(
+      "suggest_curve",
+      { req: { request, current: [...s.gains] } },
+    );
+    tunePrev = [...s.gains];
+    tuneGains.value = result.gains;
+    tuneLines.value = result.lines;
+    tuneWhy.value = result.why;
+    tuneNote.value = "预览已生成，点「应用」才会改曲线。";
+  } catch (error) {
+    tuneNote.value = String(error);
+  } finally {
+    tuneBusy.value = false;
+  }
+}
+async function applyTuning() {
+  if (!tuneGains.value) return;
+  updateGains(tuneGains.value);
+  await s.applyEq();
+  tuneNote.value = "已应用；不满意可以撤销。";
+}
+async function undoTuning() {
+  if (!tunePrev) return;
+  updateGains(tunePrev);
+  await s.applyEq();
+  tunePrev = null;
+  tuneGains.value = null;
+  tuneLines.value = [];
+  tuneWhy.value = "";
+  tuneNote.value = "已撤销，回到调音前。";
+}
+
 /**
  * 演奏式旁路：按住 B 期间把整条曲线压平（真写后端，不是视觉切换），
  * 松手把按下前的曲线写回去。平直曲线没有可旁路的东西，就不闪这一下。
@@ -2649,6 +2729,49 @@ onUnmounted(() => {
               }}</small>
             </div>
           </div>
+          <section class="eq-card">
+            <div class="section-heading">
+              <div>
+                <h2>这首歌的声音</h2>
+                <p>{{ soundSummary.headline }}</p>
+              </div>
+              <span class="muted">{{ processing ? "EQ 增强中" : "原声" }} · 按住 B 对比</span>
+            </div>
+            <div class="tune-row">
+              <button
+                v-for="phrase in ['人声太靠后', '低频糊', '想更亮', '太吵']"
+                :key="phrase"
+                class="text-button"
+                :disabled="tuneBusy || !desktop"
+                @click="tuneText = phrase"
+              >
+                {{ phrase }}
+              </button>
+            </div>
+            <div class="tune-input">
+              <input
+                v-model="tuneText"
+                :disabled="tuneBusy"
+                placeholder="说一句话，例如：人声再靠前一点，低频别那么糊"
+              />
+              <button
+                class="button primary"
+                :disabled="tuneBusy || !desktop || !tuneText.trim()"
+                @click="suggestTuning"
+              >
+                {{ tuneBusy ? "调音中…" : "让 AI 调" }}
+              </button>
+            </div>
+            <p v-if="tuneNote" class="muted">{{ tuneNote }}</p>
+            <div v-if="tuneLines.length" class="tune-preview">
+              <p v-for="line in tuneLines" :key="line" class="muted">{{ line }}</p>
+              <p v-if="tuneWhy" class="muted">{{ tuneWhy }}</p>
+              <button class="button primary" :disabled="tuneBusy" @click="applyTuning">
+                应用
+              </button>
+              <button class="button" :disabled="tuneBusy" @click="undoTuning">撤销</button>
+            </div>
+          </section>
           <section class="eq-card">
             <div class="section-heading">
               <div>
