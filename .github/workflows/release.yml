@@ -1,0 +1,143 @@
+name: release
+
+# 出两个产物：macOS arm64 的 .app 压缩包、iOS unsigned IPA。
+# 公开仓库的 macOS runner 不额外计费，所以默认走线上，省本机 CPU 与时间。
+#
+# 版本号只有两个来源：推送 v* tag（取 tag 名去 v），或手动触发时填的 input。
+# 两边都必须在仓库里已经 bump 过——workflow 不替你改文件，改了也不该由 CI 来改。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号，例如 0.9.40（对应 tag v0.9.40；tag 不存在时只出产物不发布）"
+        required: true
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.detect.outputs.value }}
+    steps:
+      - id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+  macos:
+    needs: version
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Install UI dependencies
+        run: npm ci --prefix ui
+
+      - name: Build macOS app
+        env:
+          AWAKE_ARCHS: arm64
+        run: bash Tools/build_rust_app.sh
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.version.outputs.value }}"
+          cd dist-rust
+          ditto -c -k --keepParent Awake.app "Awake-${VERSION}-macos-arm64.zip"
+          shasum -a 256 "Awake-${VERSION}-macos-arm64.zip" > "Awake-${VERSION}-macos-arm64.zip.sha256"
+          lipo -archs Awake.app/Contents/MacOS/Awake
+          ls -lh "Awake-${VERSION}-macos-arm64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: |
+            dist-rust/Awake-*-macos-arm64.zip
+            dist-rust/Awake-*-macos-arm64.zip.sha256
+          if-no-files-found: error
+
+  ios:
+    needs: version
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode
+        run: xcodebuild -version
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Build unsigned IPA
+        run: bash Tools/build_ios_app.sh
+
+      - name: Verify IPA
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.version.outputs.value }}"
+          IPA="dist-ios/Awake-${VERSION}-ios-arm64-unsigned.ipa"
+          test -f "$IPA"
+          TMP="$(mktemp -d)"
+          unzip -q -o "$IPA" "Payload/Awake.app/Info.plist" -d "$TMP"
+          plutil -extract CFBundleShortVersionString raw "$TMP/Payload/Awake.app/Info.plist"
+          plutil -extract CFBundleVersion raw "$TMP/Payload/Awake.app/Info.plist"
+          rm -rf "$TMP"
+          ls -lh "$IPA"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: |
+            dist-ios/Awake-*-ios-arm64-unsigned.ipa
+            dist-ios/Awake-*-ios-arm64-unsigned.ipa.sha256
+          if-no-files-found: error
+
+  publish:
+    needs: [version, macos, ios]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mapfile -t FILES < <(find artifacts -type f \( -name '*.zip' -o -name '*.ipa' -o -name '*.sha256' \))
+          printf '%s\n' "${FILES[@]}"
+          gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "${{ github.repository }}" --title "$TAG" --notes "见 docs/releases/${TAG}.md"
+          gh release upload "$TAG" "${FILES[@]}" --repo "${{ github.repository }}" --clobber
+
