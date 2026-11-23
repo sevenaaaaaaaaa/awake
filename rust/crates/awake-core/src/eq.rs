@@ -95,11 +95,42 @@ impl EqCurve {
         c
     }
 
-    /// 提升多少就压多少前级（含安全余量），等价 Swift `headroomCurve(margin:)`。
+    /// 整条曲线的复合频响峰值（dB），含 31 段图形均衡与参数滤波器。
+    ///
+    /// 峰值在 20 kHz（或 Nyquist 附近）以下按 1/16 倍频程网格扫描；
+    /// 用途只是前级余量，所以不需要更细的网格。
+    pub fn peak_gain_db(&self) -> f32 {
+        let rate = 48_000.0f32;
+        let top = 20_000.0f32.min(rate * 0.49);
+        let mut peak = 0.0f32;
+        let mut freq = 20.0f32;
+        while freq < top {
+            let mut total = 0.0f32;
+            for (i, center) in EQ_BAND_FREQUENCIES.iter().enumerate() {
+                if self.gains[i].abs() < 1e-6 {
+                    continue;
+                }
+                let coeffs = BiquadCoeffs::peaking(*center, rate, self.gains[i], THIRD_OCTAVE_Q);
+                total += coeffs.magnitude_db(freq, rate);
+            }
+            for i in 0..self.filter_count.min(16) {
+                total += self.filters[i].coefficients(rate).magnitude_db(freq, rate);
+            }
+            peak = peak.max(total);
+            freq *= 1.045;
+        }
+        peak
+    }
+
+    /// 前级余量：按复合峰值压，而不是把各段正增益相加。
+    ///
+    /// 旧实现取单段最大增益（`max_gain`）：一段 +9 dB 是对的，但十几段同时 +3 dB 时
+    /// 复合峰值远高于 3 dB，前级没压够，会削波。现在两端（iOS / 桌面）用同一口径。
     pub fn headroom(&self, margin: f32) -> Self {
-        let boost = self.max_gain().max(0.0);
+        let peak = self.peak_gain_db().max(0.0);
         let mut c = self.clone();
-        c.preamp = c.preamp.min(-(boost + margin));
+        // 最多压到 -24 dB，避免一段误设把音量压没。
+        c.preamp = c.preamp.min(-(peak + margin)).max(-24.0);
         c
     }
 
@@ -315,9 +346,25 @@ mod tests {
         let mut curve = EqCurve::flat();
         curve.gains[5] = 9.0;
         let hr = curve.headroom(1.0);
+        // 复合峰值用 1/16 倍频程网格采样，允许 0.05 dB 的采样误差。
         assert!(
-            (hr.preamp + 10.0).abs() < 1e-6,
-            "前级应压到 -10 dB，实测 {}",
+            (hr.preamp + 10.0).abs() < 0.05,
+            "前级应压到约 -10 dB，实测 {}",
+            hr.preamp
+        );
+    }
+
+    #[test]
+    fn headroom_uses_composite_peak_not_max_band() {
+        // 相邻三段各 +3 dB：复合峰值应显著高于 3 dB，但远低于「相加」的 9 dB。
+        let mut curve = EqCurve::flat();
+        for i in 10..13 {
+            curve.gains[i] = 3.0;
+        }
+        let hr = curve.headroom(1.0);
+        assert!(
+            hr.preamp < -3.0 && hr.preamp > -9.0,
+            "复合峰值口径应落在 -3..-9 dB，实测 {}",
             hr.preamp
         );
     }
