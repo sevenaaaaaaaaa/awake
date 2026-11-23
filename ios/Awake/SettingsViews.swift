@@ -50,6 +50,16 @@ struct SettingsView: View {
         Text("NAS 与网盘也可通过文件 App 连接并导入。远程曲目首次播放先下载到本机，随后进入统一 EQ 播放链路；当前 iOS 版不宣称远程即点即流或跨采样率无缝。")
           .font(.caption).foregroundStyle(.secondary)
       }
+      Section("声音档案") {
+        NavigationLink {
+          SongCurveListView()
+        } label: {
+          Label("每首歌的曲线（\(store.state.songCurves?.count ?? 0)）", systemImage: "waveform.path")
+        }
+        .accessibilityIdentifier("songCurves")
+        Text("看清自动适配替你记住了哪些歌：逐条套用、改来源标注、删除。")
+          .font(.caption).foregroundStyle(.secondary)
+      }
       Section("本地内置版") {
         LabeledContent("内置示例", value: "\(store.builtinSongs.count) 首")
         Text(
