@@ -14,6 +14,9 @@ struct MediaInfo: Codable, Equatable {
   var source_note = "", suggested_filename = "", cover_style = "auto"
   var credits: [String] = []
   var reviews: [MediaReview] = []
+  /// 免费数据源补全的艺人 / 专辑资料；旧档案没有这两个字段，保持可选。
+  var artist_bio: String?
+  var album_info: String?
 }
 struct MediaCandidate: Codable, Identifiable {
   var id: String, title: String, artist: String, album: String, release_id: String, group_id: String

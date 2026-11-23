@@ -56,6 +56,18 @@ struct MediaInfoView: View {
             }
           }
         }
+        Section("艺人 / 专辑资料（免费 API）") {
+          Button("查询并填入") { Task { await enrich() } }
+            .disabled((draft.artist.isEmpty || draft.artist == "未知艺人") && draft.album.isEmpty)
+          Text("数据来自 MusicBrainz 与 Wikipedia（CC BY-SA）。只发送曲名、艺人与专辑名，不上传音频、路径或凭据。")
+            .font(.caption).foregroundStyle(.secondary)
+          if let bio = info.artist_bio, !bio.isEmpty {
+            Text(bio).font(.caption).textSelection(.enabled)
+          }
+          if let albumInfo = info.album_info, !albumInfo.isEmpty {
+            Text(albumInfo).font(.caption).textSelection(.enabled)
+          }
+        }
         Section("歌词") {
           Button("导入 LRC / TXT 歌词") { importKind = "lyrics"; importing = true }
           TextEditor(text: Binding(get: { draft.lyrics ?? "" }, set: { draft.lyrics = $0 })).frame(minHeight: 150).accessibilityLabel("歌词内容")
@@ -115,6 +127,20 @@ struct MediaInfoView: View {
     }
   }
   private func safeURL(_ text: String) -> URL? { guard let url = URL(string: text), ["https", "http"].contains(url.scheme ?? "") else { return nil }; return url }
+  private func enrich() async {
+    busy = true; error = ""; notice = ""
+    defer { busy = false }
+    let result = await FreeMetadata.enrich(artist: draft.artist, album: draft.album)
+    if result.artistBio == nil && result.albumInfo == nil {
+      notice = "免费源没有查到可用资料，保持原样。"
+      return
+    }
+    if let bio = result.artistBio { info.artist_bio = bio }
+    if let albumInfo = result.albumInfo { info.album_info = albumInfo }
+    info.credits = Array(Set(info.credits + result.credits)).sorted()
+    notice = "资料已填入预览，保存后生效。"
+  }
+
   private func search() async {
     busy = true; error = ""; notice = ""; defer { busy = false }
     do { candidates = try await MediaLookup.search(title: draft.title, artist: draft.artist == "未知艺人" ? "" : draft.artist); if candidates.isEmpty { notice = "没有可靠候选，可以手动编辑并使用设计配图。" } }
