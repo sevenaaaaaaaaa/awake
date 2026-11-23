@@ -107,6 +107,49 @@ const sourcePath = ref(""),
   saveOpen = ref(false),
   playlistName = ref(""),
   saveSmart = ref(true);
+/** 本地内置版：包内示例的状态与两个维护动作。 */
+const builtinStatus = ref<{ available: number; imported: number; seeded: boolean } | null>(null);
+const builtinBusy = ref(false);
+const builtinNote = ref("");
+async function refreshBuiltinStatus() {
+  if (!desktop) return;
+  try {
+    builtinStatus.value = await call("builtin_demo_status");
+  } catch {
+    builtinStatus.value = null;
+  }
+}
+async function installBuiltinDemo() {
+  if (!desktop || builtinBusy.value) return;
+  builtinBusy.value = true;
+  builtinNote.value = "";
+  try {
+    const added = await call<number>("builtin_demo_install");
+    builtinNote.value = `已导入 ${added} 首`;
+    await s.refresh();
+  } catch (error) {
+    builtinNote.value = String(error);
+  } finally {
+    builtinBusy.value = false;
+    await refreshBuiltinStatus();
+  }
+}
+async function clearLocalRecords() {
+  if (!desktop || builtinBusy.value) return;
+  if (!confirm("删除本机导入的曲目（含内置示例）？远程来源与设置会保留。")) return;
+  builtinBusy.value = true;
+  builtinNote.value = "";
+  try {
+    const removed = await call<number>("local_records_clear");
+    builtinNote.value = `已清空 ${removed} 首`;
+    await s.refresh();
+  } catch (error) {
+    builtinNote.value = String(error);
+  } finally {
+    builtinBusy.value = false;
+    await refreshBuiltinStatus();
+  }
+}
 const useCloud = ref(false),
   curatorEndpoint = ref("https://api.openai.com/v1"),
   curatorModel = ref(""),
@@ -1435,6 +1478,7 @@ async function rescanForImport(): Promise<boolean> {
 }
 
 onMounted(() => {
+  void refreshBuiltinStatus();
   window.addEventListener("keydown", keydown);
   window.addEventListener("keyup", keyup);
   // 切走应用时 keyup 收不到：不补这一条，旁路会一直挂在开着的状态上。
@@ -2312,6 +2356,37 @@ onUnmounted(() => {
               <Icon name="plus" />添加音乐来源
             </button>
           </div>
+          <article class="source-card">
+            <span class="source-icon"><Icon name="folder" :size="28" /></span>
+            <div>
+              <span class="subtle-badge">本地内置版</span>
+              <h2>内置示例曲库</h2>
+              <p class="source-path">
+                包内 {{ builtinStatus?.available ?? 0 }} 首 · 已入库
+                {{ builtinStatus?.imported ?? 0 }} 首<template v-if="builtinStatus?.seeded">
+                  · 已播种</template
+                >
+              </p>
+              <small>示例音频随包分发，不联网；重装或清空后会重新导入。</small>
+              <p v-if="builtinNote" class="job-error">{{ builtinNote }}</p>
+              <p>
+                <button
+                  class="button"
+                  :disabled="builtinBusy || !desktop"
+                  @click="installBuiltinDemo"
+                >
+                  重新导入
+                </button>
+                <button
+                  class="button"
+                  :disabled="builtinBusy || !desktop"
+                  @click="clearLocalRecords"
+                >
+                  清空本地记录
+                </button>
+              </p>
+            </div>
+          </article>
           <div class="source-cards">
             <article
               v-for="source in s.sources"

@@ -344,6 +344,74 @@ async fn import_local_files(
 }
 
 #[derive(Serialize)]
+pub struct BuiltinDemoStatus {
+    pub available: usize,
+    pub imported: usize,
+    pub seeded: bool,
+}
+
+/// 本地内置版：包内示例音频数量、当前已入库的本地曲目数、是否已经播种过。
+#[tauri::command]
+fn builtin_demo_status(app: tauri::AppHandle, state: State<'_, AppState>) -> BuiltinDemoStatus {
+    let mut available = 0;
+    if let Ok(resource) = app.path().resource_dir() {
+        let mut paths = Vec::new();
+        collect_audio_files(&resource.join("DemoMusic"), &mut paths);
+        available = paths.len();
+    }
+    let imported = state
+        .library
+        .lock()
+        .snapshot
+        .tracks
+        .iter()
+        .filter(|track| track.source_id == "local-files")
+        .count();
+    let seeded = state.data_dir.join(".builtin-demo-imported").exists();
+    BuiltinDemoStatus {
+        available,
+        imported,
+        seeded,
+    }
+}
+
+/// 重新导入包内的示例曲库（幂等：已入库的文件会被 scan_files 去重）。
+#[tauri::command]
+async fn builtin_demo_install(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    let resource = app.path().resource_dir().map_err(|e| e.to_string())?;
+    let mut paths = Vec::new();
+    collect_audio_files(&resource.join("DemoMusic"), &mut paths);
+    if paths.is_empty() {
+        return Err("包内没有找到示例音频（Contents/Resources/DemoMusic）".into());
+    }
+    let args: Vec<String> = paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+    let result = scan_files(args, true, Some("内置示例".into()), state.clone()).await?;
+    let _ = std::fs::write(state.data_dir.join(".builtin-demo-imported"), b"1");
+    Ok(result.tracks.len())
+}
+
+/// 清空本地添加的记录：删掉本机导入来源（含内置示例）及其曲目，保留远程来源与设置。
+#[tauri::command]
+fn local_records_clear(state: State<'_, AppState>) -> Result<usize, String> {
+    let mut lib = state.library.lock();
+    let removed = lib
+        .snapshot
+        .tracks
+        .iter()
+        .filter(|track| track.source_id == "local-files")
+        .count();
+    lib.snapshot.tracks.retain(|track| track.source_id != "local-files");
+    lib.snapshot.sources.retain(|source| source.id != "local-files");
+    lib.save().map_err(|e| e.to_string())?;
+    drop(lib);
+    let _ = std::fs::remove_file(state.data_dir.join(".builtin-demo-imported"));
+    Ok(removed)
+}
+
+#[derive(Serialize)]
 pub struct LibraryView {
     pub tracks: Vec<Track>,
     pub albums: Vec<awake_core::Album>,
@@ -1077,6 +1145,9 @@ pub fn run() {
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             scan_library,
+            builtin_demo_status,
+            builtin_demo_install,
+            local_records_clear,
             media_info::inspect_media,
             media_info::search_media_info,
             media_info::fetch_media_resources,
