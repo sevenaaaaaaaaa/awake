@@ -38,6 +38,8 @@ mod plugin;
 mod preset;
 mod plex;
 mod remote;
+mod self_check;
+mod song_curves;
 mod speech;
 mod telegram;
 mod vault;
@@ -57,6 +59,8 @@ pub struct AppState {
     pub data_dir: PathBuf,
     /// 有声书 / 新闻播报的合成任务进度。
     pub speech_jobs: Arc<Mutex<std::collections::HashMap<String, speech::SpeechJob>>>,
+    /// 桌面侧的按歌记忆 + 一份听感先验（S1）。
+    pub song_curves: Arc<Mutex<song_curves::SongCurveStore>>,
 }
 
 impl AppState {
@@ -67,6 +71,7 @@ impl AppState {
         // 凭据存储（凭据文件 + 钥匙串镜像）必须先指到数据目录，
         // 否则来源密码与 Plex Token 会被写到无处可寻的默认位置。
         vault::init(&data_dir);
+        let curves = song_curves::load(&data_dir);
         Self {
             library: Arc::new(Mutex::new(Library::open(store))),
             services: Mutex::new(intelligence::load(&data_dir)),
@@ -78,6 +83,7 @@ impl AppState {
             taste: Arc::new(Mutex::new(experience::load(&data_dir))),
             data_dir,
             speech_jobs: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            song_curves: Arc::new(Mutex::new(curves)),
         }
     }
 }
@@ -1291,7 +1297,16 @@ pub fn run() {
             handoff::handoff_status,
             handoff::handoff_stop,
             handoff_send::handoff_scan_phones,
-            handoff_send::handoff_send_to_phone
+            handoff_send::handoff_send_to_phone,
+            song_curves::import_listening_profile,
+            song_curves::curve_for_track,
+            song_curves::remember_song_curve,
+            song_curves::forget_song_curve,
+            song_curves::pending_curves,
+            song_curves::assign_pending_curve,
+            song_curves::drop_pending_curve,
+            song_curves::song_curves_summary,
+            self_check::self_check
         ])
         .build(tauri::generate_context!())
         .expect("启动 Awake 失败")

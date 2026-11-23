@@ -13,6 +13,7 @@ pub mod decode;
 pub mod eq;
 pub mod feedmeta;
 pub mod library;
+pub mod listening;
 pub mod lyrics;
 pub mod media_info;
 pub mod metadata;
@@ -26,6 +27,11 @@ pub use analyze::{to_mono, Spectrum, SpectrumAnalyzer};
 pub use decode::{decode_file, probe_format, DecodedAudio, TrackFormat};
 pub use eq::{EqCurve, Equalizer, BAND_COUNT, EQ_BAND_FREQUENCIES};
 pub use library::{collect_audio_files, scan_local_files, scan_local_source, Library};
+pub use listening::{
+    apply_prior, match_curves, normalize_title, parse_profile, same_device, stale_hint,
+    track_fingerprint, CurveBasis, CurveMatch, EarPrior, ListeningProfile, MatchReport,
+    ProfileError, RejectReason, RejectedCurve, SongCurve, TrackRef, Unmatched, UnmatchedReason,
+};
 pub use metadata::{read_tags, AudioTags};
 pub use models::{group_albums, Album, LibrarySnapshot, MediaSource, SourceKind, Track};
 pub use resample::resample_interleaved;

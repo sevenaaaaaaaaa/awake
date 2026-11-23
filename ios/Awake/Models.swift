@@ -344,14 +344,56 @@ struct CurveBasis: Codable, Equatable {
   static func make(
     headphone: String, song: Song, trigger: String, prior: String = "暂无校准"
   ) -> CurveBasis {
-    let minutes = Int(song.duration) / 60
-    let seconds = Int(song.duration) % 60
-    var fingerprint: [String] = []
-    if song.duration > 0 { fingerprint.append(String(format: "%d:%02d", minutes, seconds)) }
-    if song.sampleRate > 0 { fingerprint.append("\(Int(song.sampleRate / 1000)) kHz") }
-    if !song.album.isEmpty { fingerprint.append(song.album) }
-    let track = fingerprint.isEmpty ? trigger : fingerprint.joined(separator: " · ") + " · " + trigger
-    return CurveBasis(headphone: headphone, track: track, prior: prior)
+    CurveBasis(
+      headphone: headphone,
+      track: fingerprint(
+        duration: song.duration, sampleRate: song.sampleRate, album: song.album, trigger: trigger),
+      prior: prior)
+  }
+
+  /// 曲目依据的写法。与桌面 `listening::track_fingerprint` 逐字一致：
+  /// 空的一段直接不写，而不是留下一个悬空的「 · 」。
+  static func fingerprint(
+    duration: Double, sampleRate: Double, album: String, trigger: String
+  ) -> String {
+    var parts: [String] = []
+    if duration > 0 {
+      let total = Int(duration)
+      parts.append(String(format: "%d:%02d", total / 60, total % 60))
+    }
+    if sampleRate > 0 { parts.append("\(Int(sampleRate / 1000)) kHz") }
+    let album = album.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !album.isEmpty { parts.append(album) }
+    let trigger = trigger.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trigger.isEmpty { parts.append(trigger) }
+    return parts.joined(separator: " · ")
+  }
+}
+
+/// 两端共用的听感规则。与 Rust 侧 `awake-core::listening` 逐条对应：
+/// 数值与判定必须一致，否则同一副耳机在两端会得到不同结论。
+enum EarRules {
+  /// 增益限幅，与桌面 `MAX_GAIN_DB` 同一个数。
+  static let maxGaindB: Float = 12
+
+  static func applyingPrior(_ gains: [Float], prior: EarPrior?, enabled: Bool) -> [Float] {
+    guard enabled, let prior, prior.gains.count == 31, gains.count == 31 else { return gains }
+    return zip(gains, prior.gains).map { max(-maxGaindB, min(maxGaindB, $0 + $1)) }
+  }
+
+  static func basisMismatch(saved: String, now: String) -> Bool {
+    let saved = saved.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    let now = now.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !saved.isEmpty, !now.isEmpty else { return false }
+    if saved == now { return false }
+    return !(saved.contains(now) || now.contains(saved))
+  }
+
+  /// 依据失效时给人看的一句话；成立时为空串。与桌面 `stale_hint` 同一写法。
+  static func basisHint(saved: String, now: String) -> String {
+    guard basisMismatch(saved: saved, now: now) else { return "" }
+    return "依据里记的是「\(saved.trimmingCharacters(in: .whitespacesAndNewlines))」，"
+      + "现在用的是「\(now.trimmingCharacters(in: .whitespacesAndNewlines))」"
   }
 }
 struct AppFailure: LocalizedError {
@@ -648,11 +690,7 @@ enum Secrets {
   /// 这条曲线的依据还成立吗：耳机名对不上就算失效（大小写、空白、型号包含关系都容忍）。
   func basisMismatch(_ curve: SongCurve, currentHeadphone: String) -> Bool {
     guard let detail = curve.basisDetail else { return false }
-    let saved = detail.headphone.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-    let now = currentHeadphone.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !saved.isEmpty, !now.isEmpty else { return false }
-    if saved == now { return false }
-    return !(saved.contains(now) || now.contains(saved))
+    return EarRules.basisMismatch(saved: detail.headphone, now: currentHeadphone)
   }
 
   func forgetCurve(_ songID: String) {
@@ -662,10 +700,7 @@ enum Secrets {
 
   /// 把个人先验叠加到一条曲线上（逐段相加，限幅 ±12）；没校准或关闭叠加时原样返回。
   func applyingPrior(_ gains: [Float]) -> [Float] {
-    guard state.applyEarPrior ?? true, let prior = state.earPrior,
-      prior.gains.count == 31, gains.count == 31
-    else { return gains }
-    return zip(gains, prior.gains).map { max(-12, min(12, $0 + $1)) }
+    EarRules.applyingPrior(gains, prior: state.earPrior, enabled: state.applyEarPrior ?? true)
   }
 
   /// 依据里「先验」那一段的写法。

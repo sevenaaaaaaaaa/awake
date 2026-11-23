@@ -3,6 +3,7 @@ import { APP_VERSION } from "./version";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { call, desktop, importAudio } from "./bridge";
 import { configurePluginHost, resolvePluginTrack } from "./plugins";
+import type { CurveResolution } from "./curve";
 import {
   emptyTaste,
   frequencies,
@@ -316,6 +317,15 @@ export function useAwake() {
         fault.value = blocked;
         return;
       }
+      // S1：切歌先问这首有没有记忆。有就换成记忆曲线（已叠先验），没有就沿用当前链路曲线。
+      // 查询失败只记进 curveInfo=null，不拦播放——听不到歌比听不到依据更糟。
+      if (desktop) {
+        try {
+          await useCurveFor(t);
+        } catch {
+          curveInfo.value = null;
+        }
+      }
       await call("play_track", {
         req: {
           source_id: t.source_id,
@@ -394,6 +404,38 @@ export function useAwake() {
       preamp.value = curve.preamp;
     });
   }
+  /** 当前这首歌的曲线来源与依据；播放页据此显示三段依据（S1-c）。 */
+  const curveInfo = ref<CurveResolution | null>(null);
+  async function resolveCurveFor(trackId: string, chain: number[] = gains.value) {
+    return call<CurveResolution>("curve_for_track", {
+      trackId,
+      chainGains: [...chain],
+      applyPriorEnabled: true,
+    });
+  }
+  /** 有记忆就换成记忆曲线；没有记忆就什么都不做（链路曲线已经在播了）。 */
+  async function useCurveFor(track: Track) {
+    const resolved = await resolveCurveFor(track.id);
+    curveInfo.value = resolved;
+    if (resolved.source === "song") await applyEq(resolved.gains);
+    return resolved;
+  }
+  /** 「记住这首歌」：把当前曲线与三段依据写到这首歌上。 */
+  async function rememberSongCurve(trigger = "") {
+    if (!desktop || !now.value) return null;
+    const basis = await call<{ headphone: string; track: string; prior: string }>(
+      "remember_song_curve",
+      { trackId: now.value.id, gains: [...gains.value], trigger },
+    );
+    curveInfo.value = await resolveCurveFor(now.value.id);
+    return basis;
+  }
+  /** 忘掉这首歌的记忆，回到链路曲线。 */
+  async function forgetSongCurve() {
+    if (!desktop || !now.value) return;
+    await call("forget_song_curve", { trackId: now.value.id });
+    curveInfo.value = await resolveCurveFor(now.value.id);
+  }
   async function preset(kind: "flat" | "warm" | "vocal" | "soft") {
     const g = frequencies.map((f) =>
       kind === "warm"
@@ -448,7 +490,19 @@ export function useAwake() {
         const saved =
           taste.value.sound_profiles[key] ||
           (!context?.chain ? taste.value.sound_profiles[info.name] : undefined);
-        await applyEq(saved || Array(31).fill(0));
+        // S1：当前这首歌有记忆时，按歌记忆优先于「这台设备上次的声音」。
+        let songCurve: CurveResolution | null = null;
+        if (desktop && now.value) {
+          try {
+            songCurve = await resolveCurveFor(now.value.id);
+          } catch {
+            songCurve = null;
+          }
+        }
+        curveInfo.value = songCurve;
+        await applyEq(
+          songCurve?.source === "song" ? songCurve.gains : saved || Array(31).fill(0),
+        );
         if (desktop) {
           const corrected = await call<{ preamp: number }>(
             "restore_correction",
@@ -456,7 +510,7 @@ export function useAwake() {
           );
           preamp.value = corrected.preamp;
         }
-        if (saved) toast(`已恢复 ${info.name} 的听感`);
+        if (saved && songCurve?.source !== "song") toast(`已恢复 ${info.name} 的听感`);
         if (outputChanged && now.value && playing.value && desktop) {
           const position = playback.value.position;
           const list = queue.value.slice(queueIndex.value);
@@ -780,6 +834,11 @@ export function useAwake() {
     seek,
     favorite,
     applyEq,
+    curveInfo,
+    resolveCurveFor,
+    useCurveFor,
+    rememberSongCurve,
+    forgetSongCurve,
     preset,
     rememberSound,
     scan,

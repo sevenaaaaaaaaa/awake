@@ -353,6 +353,14 @@ pub struct DeviceInfo {
     channels: u16,
 }
 
+/// 当前输出设备名，给「按歌记忆」的依据用。
+/// 拿不到就返回空串：调用方据此不判依据失效，而不是写一个假的设备名。
+pub(crate) fn output_device_name() -> String {
+    output_device()
+        .map(|info| info.name)
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 pub fn output_device() -> Result<DeviceInfo, String> {
     use cpal::traits::{DeviceTrait, HostTrait};

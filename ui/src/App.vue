@@ -25,6 +25,9 @@ import DataTransfer from "./DataTransfer.vue";
 import BooksView from "./BooksView.vue";
 import WeeklySummary from "./WeeklySummary.vue";
 import PluginSearch from "./PluginSearch.vue";
+import CurveBasisCard from "./CurveBasisCard.vue";
+import SelfCheckCard from "./SelfCheckCard.vue";
+import type { PendingCurve } from "./curve";
 import {
   invalidatePlugin,
   parsePluginRegistry,
@@ -1102,7 +1105,60 @@ async function suggestTuning() {
   }
 }
 const profileNote = ref("");
-/** R4：导入另一台设备导出的听感档案——只有先验可以立刻叠加，按歌曲线暂存到本地待用。 */
+/** S1-c：导入时没对上曲目的曲线，等用户点一首接上。 */
+const pendingCurves = ref<PendingCurve[]>([]);
+async function refreshPending() {
+  if (!desktop) return;
+  try {
+    pendingCurves.value = await call<PendingCurve[]>("pending_curves");
+  } catch {
+    pendingCurves.value = [];
+  }
+}
+async function rememberCurve() {
+  try {
+    const basis = await s.rememberSongCurve("");
+    s.toast(
+      basis
+        ? "已记住：" + (basis.headphone || "未识别耳机") + " · " + basis.prior
+        : "已记住这首歌",
+    );
+  } catch (error) {
+    profileNote.value = String(error);
+  }
+}
+async function forgetCurve() {
+  try {
+    await s.forgetSongCurve();
+    s.toast("已忘掉这首歌的记忆，回到链路曲线");
+  } catch (error) {
+    profileNote.value = String(error);
+  }
+}
+async function assignPending(iosId: string, trackId: string) {
+  try {
+    await call("assign_pending_curve", { iosId, trackId });
+    await refreshPending();
+    if (s.now?.id === trackId) await s.useCurveFor(s.now);
+    s.toast("已接上这条曲线");
+  } catch (error) {
+    profileNote.value = String(error);
+  }
+}
+async function dropPending(iosId: string) {
+  try {
+    await call("drop_pending_curve", { iosId });
+    await refreshPending();
+    s.toast("已放弃这条曲线");
+  } catch (error) {
+    profileNote.value = String(error);
+  }
+}
+/**
+ * S1：导入听感档案。
+ * 只做三件事：解析（后端）、按歌落库、正在播的那首若命中就立刻套用。
+ * **不再把先验直接加到当前曲线上**——那样连点两次就叠两次，而且分不清哪部分是先验。
+ */
 async function importListeningProfile(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
@@ -1111,23 +1167,39 @@ async function importListeningProfile(event: Event) {
   profileNote.value = "";
   try {
     const text = await file.text();
-    const data = JSON.parse(text) as {
-      prior?: { gains?: number[] } | null;
-      curves?: Record<string, unknown>;
-    };
-    const prior = (data.prior?.gains ?? []).filter(
-      (value): value is number => typeof value === "number" && Number.isFinite(value),
-    );
-    if (prior.length !== 31) throw new Error("档案里没有可用的 31 段先验");
-    const next = s.gains.map((gain, index) =>
-      Math.max(-12, Math.min(12, gain + prior[index])),
-    );
-    updateGains(next);
-    await s.applyEq();
-    const curves = Object.keys(data.curves ?? {}).length;
-    profileNote.value =
-      "已叠加先验；档案含 " + curves + " 首按歌曲线（桌面暂按歌记忆，已记录数量）";
-    localStorage.setItem("awake-listening-profile", JSON.stringify({ prior }));
+    const outcome = await call<{
+      device: string;
+      curves_total: number;
+      matched: number;
+      unmatched: { title: string; reason: string }[];
+      rejected: { title: string; reason: string }[];
+      prior: { version: number; device: string; headphone: string | null } | null;
+      applied_track: string | null;
+      note: string;
+    }>("import_listening_profile", { json: text });
+    let note = outcome.note;
+    if (outcome.applied_track && s.now?.id === outcome.applied_track) {
+      await s.useCurveFor(s.now);
+      note += "；当前这首已套用";
+    }
+    if (outcome.unmatched.length) {
+      note +=
+        "。待指定：" +
+        outcome.unmatched
+          .slice(0, 3)
+          .map((item) => item.title + "（" + item.reason + "）")
+          .join("；");
+    }
+    if (outcome.rejected.length) {
+      note +=
+        "。跳过：" +
+        outcome.rejected
+          .slice(0, 3)
+          .map((item) => item.title + "（" + item.reason + "）")
+          .join("；");
+    }
+    profileNote.value = note;
+    await refreshPending();
   } catch (error) {
     profileNote.value = String(error);
   }
@@ -1649,6 +1721,7 @@ onMounted(() => {
   )
     .then((unlisten) => (scanCleanup = unlisten))
     .catch(() => {});
+  void refreshPending();
   void loadWeekly();
   void loadInsight();
   void loadPresets();
@@ -2802,6 +2875,17 @@ onUnmounted(() => {
               <span v-if="profileNote" class="muted">{{ profileNote }}</span>
             </div>
 
+            <CurveBasisCard
+              :curve="s.curveInfo"
+              :pending="pendingCurves"
+              :desktop="desktop"
+              :playing="s.now"
+              @remember="rememberCurve"
+              @forget="forgetCurve"
+              @assign="assignPending"
+              @drop="dropPending"
+            />
+
             <div v-if="tuneLines.length" class="tune-preview">
               <p v-for="line in tuneLines" :key="line" class="muted">{{ line }}</p>
               <p v-if="tuneWhy" class="muted">{{ tuneWhy }}</p>
@@ -2944,6 +3028,7 @@ onUnmounted(() => {
               </p>
             </div>
           </section>
+          <SelfCheckCard />
         </template>
 
         <template v-else-if="view === 'studio'">
