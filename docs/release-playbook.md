@@ -73,8 +73,11 @@ shasum -a 256 "$HOME/Library/Mobile Documents/com~apple~CloudDocs/Awake-<版本>
 
 - 触发：推送 `v<ver>` tag，或在 Actions 页面手动运行并填版本号。
 - 计费：仓库是公开的，GitHub-hosted macOS runner 不额外计费；私有仓库会烧分钟数。
-- 已知限制：runner 的 Xcode 版本由 GitHub 决定，不一定是本机那套 beta。若代码用到更新的 SDK，
-  iOS job 会红——那就退回本地打包，并把失败原因记在 release note 的「已知边界」里。
+- **实测（2026-11-23，run 45207790417）**：`macos-15` 上是 **Xcode 16.4**，
+  而 `Glass.swift` 的 `glassEffect`、`Views.swift` 的 `tabViewBottomAccessory` 都是 iOS 26 API，
+  编译直接 exit 65（另有两条 "unable to type-check in reasonable time" 是同一原因下的连锁）。
+  iOS job 已改到 `macos-26`，并在开头显式检查 Xcode 主版本，不够就报一句人话再退出。
+- 这条限制来自项目依赖 iOS 26 SDK，不是 workflow 能绕过的。`macos-26` 也不可用时，退回本地打包。
 - CI 红**不发布**：先修，再从头走。
 
 ## 7. 产物与位置

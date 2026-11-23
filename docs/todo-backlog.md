@@ -310,3 +310,25 @@ prior.clamp（先验叠加先加后限幅（10 + 5 → 12））：10 + 5 应被�
   `same_device` 留在桌面，iOS 就只能照抄一份，抄错了没有任何东西会红。
   挪进 core 之后，桌面锁的是两端共用的那份规则。
 
+
+## 发版自动化（2026-11-23）
+
+**规则写在哪**
+
+- 灵魂卡（`~/.dsh/prompt-inject.md`）新增「发版纪律」：一次大版本收尾，自动走
+  验证 → 五处版本同步 → 提交 → push → tag → Release → 更新 /Applications/app → IPA 进 iCloud → 汇报，
+  不用等提醒。
+- 仓库根新增 `AGENTS.md`（进仓库的 agent 先读），细则在 `docs/release-playbook.md`。
+
+**线上打包**
+
+- `.github/workflows/release.yml`：`macos` job 出 `Awake-<ver>-macos-arm64.zip`，
+  `ios` job 出 `Awake-<ver>-ios-arm64-unsigned.ipa`，各带 `.sha256`；tag 推送时自动挂到同名 Release。
+- 公开仓库的 macOS runner 不额外计费，所以默认走线上。
+
+**实测结论（run 45207790417）**
+
+- `macos-15` 的 Xcode 是 **16.4**，而项目用了 iOS 26 的 `glassEffect` 与 `tabViewBottomAccessory`，
+  iOS job 直接 exit 65。已把 iOS job 改到 `macos-26`，并在 job 开头检查 Xcode 主版本。
+- 教训：**"线上能编"和"本机能编"是两件事，要看 SDK 版本，不是看代码新不新。**
+
