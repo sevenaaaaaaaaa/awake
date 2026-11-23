@@ -59,6 +59,12 @@ struct SettingsView: View {
         .accessibilityIdentifier("songCurves")
         Text("看清自动适配替你记住了哪些歌：逐条套用、改来源标注、删除。")
           .font(.caption).foregroundStyle(.secondary)
+        NavigationLink {
+          BatchScrapeView()
+        } label: {
+          Label("批量补全资料（歌词 / 封面 / 资料）", systemImage: "square.and.arrow.down.on.square")
+        }
+        .accessibilityIdentifier("batchScrape")
       }
       Section("本地内置版") {
         LabeledContent("内置示例", value: "\(store.builtinSongs.count) 首")
