@@ -256,6 +256,7 @@ struct NowPlayingView: View {
   @State private var receiving = false
   @State private var showEnhancement = false
   @State private var gains = Array(repeating: Float(0), count: 31)
+  @State private var tuningOpen = false
   var body: some View {
     if swiping {
       SwipePlayerView(onClose: { swiping = false })
@@ -264,6 +265,9 @@ struct NowPlayingView: View {
     } else {
       nowPlaying
         .onDisappear { player.endCompare() }
+        .sheet(isPresented: $tuningOpen) {
+          TuneSheet().environmentObject(store).environmentObject(player)
+        }
     }
   }
   /// 播放页第一块：这首歌为什么这样响，以及「按住听原声」。
@@ -318,7 +322,16 @@ struct NowPlayingView: View {
         VStack(alignment: .leading, spacing: 0) {
           if let song = player.song {
             soundSummaryCard
-              .padding(.bottom, 16)
+              .padding(.bottom, 10)
+            Button {
+              tuningOpen = true
+            } label: {
+              Label("说一句话调音", systemImage: "spark")
+                .font(.system(size: 13, weight: .medium))
+            }
+            .buttonStyle(.borderless)
+            .padding(.bottom, 16)
+            .accessibilityIdentifier("openTuning")
             ChainStrip(steps: chainSteps(song))
             if activeChain != nil {
               EQCurvePanel(gains: $gains, editable: true, onCommit: commitGains)
