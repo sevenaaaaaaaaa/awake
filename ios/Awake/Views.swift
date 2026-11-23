@@ -292,7 +292,19 @@ struct NowPlayingView: View {
           Text("已记住这首歌的曲线 · \(curve.updatedAt.formatted(date: .abbreviated, time: .shortened))")
             .font(.caption2)
             .foregroundStyle(.secondary)
-          if let basis = curve.basis, !basis.isEmpty {
+          if let detail = curve.basisDetail {
+            Text("耳机：\(detail.headphone)").font(.caption2).foregroundStyle(.tertiary)
+            Text("曲目：\(detail.track)").font(.caption2).foregroundStyle(.tertiary)
+            Text("先验：\(detail.prior)").font(.caption2).foregroundStyle(.tertiary)
+            if store.basisMismatch(curve, currentHeadphone: player.route.name) {
+              Text("依据失效：这条曲线是在「\(detail.headphone)」上做的，你现在用「\(player.route.name)」。")
+                .font(.caption2)
+                .foregroundStyle(.orange)
+              Button("按当前耳机重调") { tuningOpen = true }
+                .font(.caption2)
+                .buttonStyle(.borderless)
+            }
+          } else if let basis = curve.basis, !basis.isEmpty {
             Text("依据：\(basis)").font(.caption2).foregroundStyle(.tertiary)
           }
         }
@@ -320,7 +332,9 @@ struct NowPlayingView: View {
           Button("记住这首歌") {
             store.rememberCurve(
               player.currentSnapshot, for: song.id, label: "手动保存",
-              basis: "耳机：\(player.route.name) · 手动保存")
+              basis: "耳机：\(player.route.name) · 手动保存",
+              detail: CurveBasis.make(
+                headphone: player.route.name, song: song, trigger: "手动保存"))
           }
           .font(.caption2)
           .buttonStyle(.borderless)

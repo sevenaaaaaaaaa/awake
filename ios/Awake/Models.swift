@@ -293,6 +293,30 @@ struct SongCurve: Codable, Equatable {
   /// 依据记录：这条曲线在什么前提下成立（耳机 / 链路 / 用什么方法调的）。
   /// 可选，0.9.27–0.9.30 写下的记录没有这个字段也能读。
   var basis: String?
+  /// R1：结构化的三段依据（耳机 / 曲目 / 先验）。旧记录没有它，用 basis 兜底。
+  var basisDetail: CurveBasis?
+}
+
+/// 一条曲线凭什么成立——三段，缺一段就说缺。
+struct CurveBasis: Codable, Equatable {
+  /// 耳机或输出设备：AVAudioSession 报的路由名，或链路上填的耳机型号。
+  var headphone: String
+  /// 曲目侧的触发：时长/采样率等可核对的指纹，加上这次调音的由头（用户原话或方法）。
+  var track: String
+  /// 个人先验：目前还没有校准，写「暂无校准」；R2 之后这里是校准版本。
+  var prior: String
+
+  /// 组装三段依据：耳机取当前路由名，曲目取可核对的指纹 + 这次调音的由头。
+  static func make(headphone: String, song: Song, trigger: String) -> CurveBasis {
+    let minutes = Int(song.duration) / 60
+    let seconds = Int(song.duration) % 60
+    var fingerprint: [String] = []
+    if song.duration > 0 { fingerprint.append(String(format: "%d:%02d", minutes, seconds)) }
+    if song.sampleRate > 0 { fingerprint.append("\(Int(song.sampleRate / 1000)) kHz") }
+    if !song.album.isEmpty { fingerprint.append(song.album) }
+    let track = fingerprint.isEmpty ? trigger : fingerprint.joined(separator: " · ") + " · " + trigger
+    return CurveBasis(headphone: headphone, track: track, prior: "暂无校准")
+  }
 }
 struct AppFailure: LocalizedError {
   var message: String
@@ -571,15 +595,28 @@ enum Secrets {
 
   /// 把当前快照记到一首歌上（调音或手动保存时调用）。basis 记录这次适配的前提。
   func rememberCurve(
-    _ snapshot: EQSnapshot, for songID: String, label: String, basis: String = ""
+    _ snapshot: EQSnapshot, for songID: String, label: String, basis: String = "",
+    detail: CurveBasis? = nil
   ) {
     var map = state.songCurves ?? [:]
+    let previous = map[songID]
     map[songID] = SongCurve(
       gains: snapshot.gains, apo: snapshot.apo, origin: snapshot.origin,
       source: snapshot.source.isEmpty ? label : snapshot.source, updatedAt: Date(),
-      basis: basis.isEmpty ? map[songID]?.basis : basis)
+      basis: basis.isEmpty ? previous?.basis : basis,
+      basisDetail: detail ?? previous?.basisDetail)
     state.songCurves = map
     save()
+  }
+
+  /// 这条曲线的依据还成立吗：耳机名对不上就算失效（大小写、空白、型号包含关系都容忍）。
+  func basisMismatch(_ curve: SongCurve, currentHeadphone: String) -> Bool {
+    guard let detail = curve.basisDetail else { return false }
+    let saved = detail.headphone.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    let now = currentHeadphone.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !saved.isEmpty, !now.isEmpty else { return false }
+    if saved == now { return false }
+    return !(saved.contains(now) || now.contains(saved))
   }
 
   func forgetCurve(_ songID: String) {

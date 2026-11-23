@@ -53,7 +53,16 @@ struct SongCurveListView: View {
               Text(row.title).font(.headline)
               Text(row.artist).font(.caption).foregroundStyle(.secondary)
               Text(row.summary).font(.caption2).foregroundStyle(.secondary)
-              if let basis = row.curve.basis, !basis.isEmpty {
+              if let detail = row.curve.basisDetail {
+                Text("耳机：" + detail.headphone).font(.caption2).foregroundStyle(.tertiary)
+                Text("曲目：" + detail.track).font(.caption2).foregroundStyle(.tertiary)
+                Text("先验：" + detail.prior).font(.caption2).foregroundStyle(.tertiary)
+                if store.basisMismatch(row.curve, currentHeadphone: player.route.name) {
+                  Text("依据已失效：当前输出是「" + player.route.name + "」")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                }
+              } else if let basis = row.curve.basis, !basis.isEmpty {
                 Text("依据：" + basis).font(.caption2).foregroundStyle(.tertiary)
               }
               Text("\(row.curve.source.isEmpty ? "未标注来源" : row.curve.source) · \(row.curve.updatedAt.formatted(date: .abbreviated, time: .shortened))")
