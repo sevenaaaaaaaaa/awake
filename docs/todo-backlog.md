@@ -294,6 +294,9 @@ prior.clamp（先验叠加先加后限幅（10 + 5 → 12））：10 + 5 应被�
 - `docs/prompt-s2-ios-selfcheck.md`：S2 的 iOS 那半（含 8 条断言的完整代码、入口、验收、陷阱）。
   基线已确认：`ios/Awake/Models.swift` 的 `EarRules` / `CurveBasis.fingerprint` 改动已 `BUILD SUCCEEDED`，
   接手的人不用重做，只差 `SelfCheck.swift` 与两处入口。
+  已做两层离线验证（**不替代设备手点**）：`swiftc -typecheck` 全量 0 error、`SelfCheck.swift` 零警告；
+  原文抽出的 `EarRules`/`CurveBasis` 在 macOS 上跑同一段断言 8/8，把 `maxGaindB` 改成 6
+  只有 `prior.clamp` 变红（`期望 12.0，实际 6.0`），改回即 8/8 —— 与桌面端的实验结果同形。
 - `docs/prompt-s3-s4.md`：S3 先验按设备、S4 频谱依据，各一段可直接开工的提示词。
 
 新会话直接贴文件，或说「读 docs/prompt-s2-ios-selfcheck.md 并执行」。

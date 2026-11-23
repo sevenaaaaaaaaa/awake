@@ -255,6 +255,28 @@ struct PureLogicCheckView: View {
         .accessibilityIdentifier("openPureLogicCheck")
 ```
 
+## 接手前已经验过的两层（别重做，也别当成已验收）
+
+2026-11-23 23:35，在 `/tmp` 的副本里验过，**仓库代码一个字没动**：
+
+1. **能编译**：把 `ios/Awake/*.swift` 全量复制到临时目录，加入本文件的 `SelfCheck.swift`，
+   跑 `swiftc -typecheck`（iPhoneSimulator SDK 27.0，target `arm64-apple-ios17.0-simulator`）
+   → **0 error**，`SelfCheck.swift` 零警告（那 8 条 warning 全在既有文件里）。
+   这一步顺带证明 `Song(title:album:duration:sampleRate:)`、`EarPrior(...)`、
+   `SongCurve(...)`、`ListeningProfile(...)` 这些调用签名**真的合法**，不是纸上推的。
+2. **8 条断言真的绿、也真的能红**：从 `Models.swift` / `ListeningProfile.swift` /
+   `EffectState.swift` **原文抽出** `EarPrior`/`SongCurve`/`CurveBasis`/`EarRules`/
+   `ListeningProfile`，在 macOS 上跑同一段断言：
+   - 原样 → `TOTAL 8/8`
+   - `maxGaindB` 改成 `6` → **只有** `prior.clamp` 红：`FAIL prior.clamp 期望 12.0，实际 6.0`，
+     其余 7 条全绿；改回 `12` → 8/8。
+   - 这和桌面端改坏 `MAX_GAIN_DB` 的结果一致（见 `docs/todo-backlog.md` S2 段），
+     说明断言彼此独立，不是一坏全红。
+
+**这两层不算验收。** 没验的是：整包 `xcodebuild`（链接、资源、target membership）、
+两处入口能不能点开、Form 和 `Button(_:systemImage:)` 的实际渲染、设备上的读数。
+所以「8/8」这个结论仍然只能在设备上点出来——下面那三步一条都不能省。
+
 ## 验收（三步，都要真的跑）
 
 ```sh

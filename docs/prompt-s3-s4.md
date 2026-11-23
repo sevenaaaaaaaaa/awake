@@ -19,7 +19,11 @@
   `MobileStore.applyingPrior` 用唯一一份 `state.earPrior`；校准页 `CalibrationView.swift` 写入它。
 - 桌面：`rust/crates/awake-app/src/song_curves.rs` 的 `SongCurveStore.prior: Option<EarPrior>` 也只有一份；
   `import_listening_profile` 直接 `store.prior = Some(prior)`，连点两次是覆盖（不叠加，但也不区分设备）。
-- 两端 `EarPrior` 已经有 `headphone: Option<String>`（Rust）/ 没有（Swift），字段命名要统一。
+- 两端 `EarPrior` 字段不齐：Rust（`rust/crates/awake-core/src/listening.rs:77`）已经有
+  `headphone: Option<String>`（`#[serde(default)]`，旧档案照样能读）**和** `source_device: String`；
+  Swift（`ios/Awake/Models.swift:308`）两个都没有。
+  所以「记录来源耳机」**不用新造字段**，Rust 侧直接用现成的 `source_device`；
+  Swift 侧补 `headphone` 时一定要给默认值（空串 = 不知道），否则老 JSON 解码会失败。
 
 ### 要做
 
@@ -59,8 +63,14 @@
 ### 现在的代码
 
 - iOS 没有频谱分析；`ios/Awake/Models.swift` 的 `CurveBasis { headphone, track, prior }` 只有字符串。
-- 桌面 `rust/crates/awake-core/src/analyze.rs` 有 `Spectrum`（32 段）与 `SpectrumAnalyzer`；
-  `decode.rs` 能解前 N 秒。两边口径必须一致，别各写一套频段划分。
+- 桌面 `rust/crates/awake-core/src/analyze.rs` 有 `Spectrum { bands: [f32; 32] }` 与 `SpectrumAnalyzer`
+  （32 段对数分布，20 Hz – 20 kHz）。两边口径必须一致，别各写一套频段划分。
+- **别被它第一行注释骗了**：那里写着「对应 Swift 的 SpectrumAnalyzer / TrackSpectrumAnalyzer」，
+  但当前 `ios/Awake/` 里这两个类型`grep` 不到（`ls ios/Awake | grep -i spectrum` 为空）——
+  这套东西当年设计过、Swift 侧没落地。所以 S4 就把 `TrackSpectrumAnalyzer` 这个**名字用回来**，
+  别另起新名，否则注释和代码永久对不上。
+- `decode.rs` **没有**「解前 N 秒」这种函数：只有 `decode_file(path)` 和 `PlaybackHandle::seek(seconds)`。
+  前 30 秒自己 seek(0) 再截取，别去找现成 API。
 - `ios/Resources/headphones-v1.json` 有静态耳机参数，可用于差异估计。
 
 ### 要做
