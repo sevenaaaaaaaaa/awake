@@ -34,6 +34,7 @@
 		6993337721F0C0B36E17B9EA /* ConfigFolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B670BC504A3AA154BAAEC3A /* ConfigFolder.swift */; };
 		6B9BC687943CCFE3D7AD6EFA /* TelegramService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 010B6479A9D277C37E652BF4 /* TelegramService.swift */; };
 		6CA381D36D7CA1B3CDDEFFD4 /* Equipment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D022D5C4EE49F4F242D715A /* Equipment.swift */; };
+		6EAF662BC57B7BBF10E0ED7D /* AddMusicView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF7D39C0686A97339031BB0B /* AddMusicView.swift */; };
 		733BB4FB46BFE7D39660EC54 /* MediaInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = B171903FC8AE4346A5AC0C83 /* MediaInfo.swift */; };
 		775D05480848FEABEF09AEEC /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBC4D62DEC457DBE5281F0A /* Views.swift */; };
 		7E206D5ACCAF7A80D855093A /* MediaInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 577909C48018E6F4BB732837 /* MediaInfoView.swift */; };
@@ -129,6 +130,7 @@
 		D46453423DD3AE1496E25E97 /* PluginRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginRegistry.swift; sourceTree = "<group>"; };
 		D4DBA378C7D6D05CD323C399 /* AudioMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMath.swift; sourceTree = "<group>"; };
 		D60BC7EC39C288BF72662FCD /* HandoffReceiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffReceiveView.swift; sourceTree = "<group>"; };
+		DF7D39C0686A97339031BB0B /* AddMusicView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddMusicView.swift; sourceTree = "<group>"; };
 		E0F2E4C7352FA47E7CE2E7AC /* SwipePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipePlayer.swift; sourceTree = "<group>"; };
 		E14CA279FE9B8282B5072B66 /* EffectViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectViews.swift; sourceTree = "<group>"; };
 		E2A6E6BA7288E46474438EEC /* SpeechRender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRender.swift; sourceTree = "<group>"; };
@@ -187,6 +189,7 @@
 		FBB66834F62A194CDB151774 /* Awake */ = {
 			isa = PBXGroup;
 			children = (
+				DF7D39C0686A97339031BB0B /* AddMusicView.swift */,
 				D4DBA378C7D6D05CD323C399 /* AudioMath.swift */,
 				C1F7175870746206A87BB270 /* AwakeApp.swift */,
 				607A1E2CD64256B88623FB49 /* Backup.swift */,
@@ -376,6 +379,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6EAF662BC57B7BBF10E0ED7D /* AddMusicView.swift in Sources */,
 				2564CA1CFEB8D307C8CAE7A1 /* AudioMath.swift in Sources */,
 				C6A306C515D66EB2AC69C212 /* AwakeApp.swift in Sources */,
 				8222DC01CE94B79EB3778DED /* Backup.swift in Sources */,
@@ -537,7 +541,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 37;
+				CURRENT_PROJECT_VERSION = 38;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -558,7 +562,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.21;
+				MARKETING_VERSION = 0.9.23;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -660,7 +664,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 37;
+				CURRENT_PROJECT_VERSION = 38;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -675,7 +679,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.21;
+				MARKETING_VERSION = 0.9.23;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

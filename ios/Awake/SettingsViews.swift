@@ -14,23 +14,18 @@ struct SettingsView: View {
   @State private var backupCreate = false
   @State private var backupCandidate: BackupCandidate?
   @State private var restoredBackup: BackupPreview?
-  @ObservedObject private var pluginLibrary = PluginLibrary.shared
   @State private var builtinNote = ""
   @State private var confirmRemoveBuiltin = false
   @State private var confirmClearLocal = false
   var body: some View {
     Form {
       Section("音乐来源") {
-        Button("添加音乐来源", systemImage: "plus") { sourceSheet = true }
-          .accessibilityIdentifier("addSource")
-        Button("导入音频文件", systemImage: "doc.badge.plus") { picking = .audioFiles }
-          .accessibilityIdentifier("importAudioFiles")
-        Button("导入本地 / Telegram 下载文件夹", systemImage: "folder") { picking = .audioFolder }
-          .accessibilityIdentifier("importFolder")
-        Button("导入「文件」里的 Awake 文件夹", systemImage: "tray.and.arrow.down") {
-          Task { await store.importOwnFolder() }
+        NavigationLink {
+          AddMusicView()
+        } label: {
+          Label("添加音乐", systemImage: "plus")
         }
-        .accessibilityIdentifier("importOwnFolder")
+        .accessibilityIdentifier("addMusic")
         ForEach(store.state.sources) { s in
           VStack(alignment: .leading, spacing: 8) {
             Text(s.name).font(.headline)
@@ -53,26 +48,6 @@ struct SettingsView: View {
           }
         }
         Text("NAS 与网盘也可通过文件 App 连接并导入。远程曲目首次播放先下载到本机，随后进入统一 EQ 播放链路；当前 iOS 版不宣称远程即点即流或跨采样率无缝。")
-          .font(.caption).foregroundStyle(.secondary)
-      }
-      Section("来源配置文件夹") {
-        NavigationLink {
-          ConfigFolderView()
-        } label: {
-          Label("记住文件夹 · 刷新导入", systemImage: "folder.badge.gearshape")
-        }
-        .accessibilityIdentifier("configFolder")
-        Text("选一个文件夹（iCloud Drive 也行），把来源配置文件丢进去，进这个页面点「刷新扫描」列出来，点一条就填进添加来源的表单。")
-          .font(.caption).foregroundStyle(.secondary)
-      }
-      Section("网络音乐插件") {
-        NavigationLink {
-          PluginsView()
-        } label: {
-          Label("插件库（\(pluginLibrary.plugins.count)）", systemImage: "puzzlepiece.extension")
-        }
-        .accessibilityIdentifier("pluginLibrary")
-        Text("导入 MusicFree 兼容的 .js 插件。这一版只做导入与保存，搜索与播放要等沙箱接上。")
           .font(.caption).foregroundStyle(.secondary)
       }
       Section("本地内置版") {
