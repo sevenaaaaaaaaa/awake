@@ -66,6 +66,12 @@ struct SettingsView: View {
         }
         .accessibilityIdentifier("batchScrape")
         NavigationLink {
+          ListeningProfileExportView()
+        } label: {
+          Label("导出听感档案（跨设备）", systemImage: "arrow.up.forward.app")
+        }
+        .accessibilityIdentifier("exportProfile")
+        NavigationLink {
           TuningHistoryView()
         } label: {
           Label("调音历史（\(store.state.tuningLog?.count ?? 0)）", systemImage: "clock.arrow.circlepath")

@@ -1101,6 +1101,37 @@ async function suggestTuning() {
     tuneBusy.value = false;
   }
 }
+const profileNote = ref("");
+/** R4：导入另一台设备导出的听感档案——只有先验可以立刻叠加，按歌曲线暂存到本地待用。 */
+async function importListeningProfile(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !desktop) return;
+  profileNote.value = "";
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text) as {
+      prior?: { gains?: number[] } | null;
+      curves?: Record<string, unknown>;
+    };
+    const prior = (data.prior?.gains ?? []).filter(
+      (value): value is number => typeof value === "number" && Number.isFinite(value),
+    );
+    if (prior.length !== 31) throw new Error("档案里没有可用的 31 段先验");
+    const next = s.gains.map((gain, index) =>
+      Math.max(-12, Math.min(12, gain + prior[index])),
+    );
+    updateGains(next);
+    await s.applyEq();
+    const curves = Object.keys(data.curves ?? {}).length;
+    profileNote.value =
+      "已叠加先验；档案含 " + curves + " 首按歌曲线（桌面暂按歌记忆，已记录数量）";
+    localStorage.setItem("awake-listening-profile", JSON.stringify({ prior }));
+  } catch (error) {
+    profileNote.value = String(error);
+  }
+}
 async function applyTuning() {
   if (!tuneGains.value) return;
   updateGains(tuneGains.value);
@@ -2763,6 +2794,14 @@ onUnmounted(() => {
               </button>
             </div>
             <p v-if="tuneNote" class="muted">{{ tuneNote }}</p>
+            <div class="profile-import">
+              <label class="text-button">
+                导入听感档案（跨设备）
+                <input type="file" accept=".json" hidden @change="importListeningProfile" />
+              </label>
+              <span v-if="profileNote" class="muted">{{ profileNote }}</span>
+            </div>
+
             <div v-if="tuneLines.length" class="tune-preview">
               <p v-for="line in tuneLines" :key="line" class="muted">{{ line }}</p>
               <p v-if="tuneWhy" class="muted">{{ tuneWhy }}</p>
