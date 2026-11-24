@@ -113,7 +113,7 @@ struct LabView: View {
               }
               Text("\(r.headphone) · \(r.connection)").font(.caption)
               if !r.note.isEmpty { Text(r.note).font(.subheadline) }
-              Text("累计应用内收听：\(Int(r.listenedSeconds)) 秒").font(.caption).foregroundStyle(.secondary)
+              AwakeNote(text: "累计应用内收听：\(Int(r.listenedSeconds)) 秒")
             }
           }
         }
@@ -219,14 +219,38 @@ struct RatingSlider: View {
         Text("\(Int(value)) / 5").monospacedDigit().foregroundStyle(.secondary)
       }.font(.subheadline)
       Slider(value: $value, in: 1...5, step: 1).accessibilityLabel(name)
+        .tabSwipeExempt()
     }
   }
+}
+
+/// 策展模式：只改 AI 想解决什么，不假装本地排序能分场景。
+struct CurateMode: Identifiable, Equatable {
+  var id: String
+  var name: String
+  var intent: String
+  var prompt: String
+
+  static let now = CurateMode(
+    id: "now", name: "此刻", intent: "按当前心情选，不做场景假设",
+    prompt: "想听一些适合此刻的音乐，不限定场景")
+  static let commute = CurateMode(
+    id: "commute", name: "通勤", intent: "有噪声、注意力被分散：选抓耳的",
+    prompt: "通勤路上听：环境有噪声、注意力被分散，想要抓耳、节奏清楚的歌")
+  static let focus = CurateMode(
+    id: "focus", name: "专注", intent: "少人声、少起伏，别抢注意力",
+    prompt: "工作专注时听：少人声、少大起伏，不要抢注意力")
+  static let night = CurateMode(
+    id: "night", name: "深夜", intent: "小音量、不刺耳，收着听",
+    prompt: "深夜小音量听：不刺耳、不轰头，适合收着听")
+  static let all: [CurateMode] = [now, commute, focus, night]
 }
 
 struct AgentView: View {
   @EnvironmentObject var store: MobileStore
   @EnvironmentObject var player: MobilePlayer
   @State private var intent = "想听一些适合此刻的音乐"
+  @State private var curateMode = CurateMode.now
   @State private var busy = false
   @State private var results: [Song] = []
   @State private var reason = ""
@@ -239,10 +263,25 @@ struct AgentView: View {
         Text("收藏与有效收听记录在本机影响排序。当前有 \(store.state.listens.count) 条聆听记录。").font(.subheadline)
         Button("按本地偏好选曲") {
           results = Array(store.recommendations().prefix(30))
-          reason = "根据真实收藏、艺人与有效收听记录排序"
+          reason = "根据真实收藏、艺人与有效收听记录排序（本地排序不区分场景）"
         }
       }
       Section("云端 AI 策展") {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 8) {
+            ForEach(CurateMode.all) { mode in
+              Button(mode.name) {
+                curateMode = mode
+                intent = mode.prompt
+              }
+              .buttonStyle(.bordered)
+              .controlSize(.small)
+              .accessibilityIdentifier("curateMode_" + mode.id)
+            }
+          }
+          .padding(.vertical, 2)
+        }
+        Text(curateMode.intent).font(.caption2).foregroundStyle(.secondary)
         TextField("描述想听的感觉", text: $intent, axis: .vertical)
         Button(busy ? "正在选曲…" : "本次使用 AI 选曲") { Task { await curate() } }.disabled(
           busy || store.state.songs.isEmpty)
@@ -288,6 +327,7 @@ struct AgentView: View {
       guard !candidates.isEmpty else { throw AppFailure("Telegram 媒体库仅支持本地选曲；没有可发送到云端的候选") }
       let payload: [String: Any] = [
         "intent": String(intent.prefix(4000)),
+        "mode": curateMode.name,
         "candidates": candidates.map {
           [
             "id": $0.id, "title": String($0.title.prefix(200)),

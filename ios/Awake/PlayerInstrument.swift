@@ -65,10 +65,10 @@ struct ChainStrip: View {
       ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
         VStack(alignment: .leading, spacing: 4) {
           Text(step.label)
-            .font(.system(size: 10, weight: .regular))
+            .font(.caption2.weight(.regular))
             .foregroundStyle(.secondary)
           Text(step.value)
-            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .font(.caption.weight(.medium).monospaced())
             .foregroundStyle(.primary)
             .lineLimit(1)
             .minimumScaleFactor(0.75)
@@ -180,11 +180,11 @@ struct EQCurvePanel: View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(alignment: .firstTextBaseline) {
         Text("31 段曲线")
-          .font(.system(size: 12, weight: .medium))
+          .font(.caption.weight(.medium))
           .foregroundStyle(.secondary)
         Spacer()
         Text(caption)
-          .font(.system(size: 12, weight: .medium, design: .monospaced))
+          .font(.caption.weight(.medium).monospaced())
           .foregroundStyle(abs(shownValue) < 0.05 ? muted : accent)
       }
       GeometryReader { geo in
@@ -258,7 +258,7 @@ struct EQCurvePanel: View {
       context.stroke(line, with: .color(border.opacity(0.7)), lineWidth: 0.5)
       context.draw(
         Text(PlayerFormat.freq(frequency))
-          .font(.system(size: 9, weight: .regular, design: .monospaced))
+          .font(.caption2.weight(.regular).monospaced())
           .foregroundStyle(muted),
         at: CGPoint(x: px, y: origin.y + height + 9), anchor: .center)
     }
@@ -274,7 +274,7 @@ struct EQCurvePanel: View {
       if step == 0 {
         context.draw(
           Text("0")
-            .font(.system(size: 9, weight: .regular, design: .monospaced))
+            .font(.caption2.weight(.regular).monospaced())
             .foregroundStyle(muted),
           at: CGPoint(x: origin.x + 3, y: py - 7), anchor: .leading)
       }
@@ -369,7 +369,7 @@ struct MiniEnhancementLabel: View {
       details = true
     } label: {
       Text(player.enhancement.shortTitle)
-        .font(.system(size: 10, weight: .medium, design: .monospaced))
+        .font(.caption2.weight(.medium).monospaced())
         .foregroundStyle(.secondary)
         .contentShape(Rectangle())
     }

@@ -1117,6 +1117,41 @@ final class AwakeTests: XCTestCase {
     XCTAssertThrowsError(try reopened.curatorSecret())
   }
 
+  func testLyricLineLookupUsesLastTimestampBeforePlayhead() {
+    let text = "[offset:0]\n[00:10.00]第一行\n[00:20.50]第二行\n[01:05.25]第三行"
+    let lines = MediaLyrics.parse(text)
+    XCTAssertEqual(lines.count, 3, "三行带时间戳的歌词都要解析出来")
+    XCTAssertNil(MediaLyrics.currentIndex(lines, at: 5), "早于第一行时没有当前行")
+    XCTAssertEqual(MediaLyrics.currentIndex(lines, at: 10), 0)
+    XCTAssertEqual(MediaLyrics.currentIndex(lines, at: 20.4), 0)
+    XCTAssertEqual(MediaLyrics.currentIndex(lines, at: 20.5), 1)
+    XCTAssertEqual(MediaLyrics.currentIndex(lines, at: 999), 2)
+    XCTAssertNil(MediaLyrics.currentIndex([], at: 1), "空歌词没有当前行")
+  }
+
+  func testTuningModesAreDistinctAndRespectClamp() {
+    XCTAssertEqual(TuningModes.all.count, 5, "五个模式：均衡 / 人声 / 耐听暖声 / 现场感 / 夜间")
+    XCTAssertEqual(Set(TuningModes.all.map(\.id)).count, 5, "模式 id 不能重复")
+    for mode in TuningModes.all {
+      XCTAssertFalse(mode.name.isEmpty)
+      XCTAssertFalse(mode.intent.isEmpty)
+      XCTAssertFalse(mode.instruction.isEmpty)
+    }
+    let flat = Array(repeating: Float(0), count: 31)
+    let curves = TuningModes.all.compactMap { SoundTuning.local("人声太靠后", mode: $0, from: flat) }
+    XCTAssertEqual(curves.count, 5, "同一句话在每个模式下都要能给出结果")
+    XCTAssertGreaterThan(Set(curves.map(\.gains)).count, 1, "不同模式不能给出完全相同的曲线")
+    for proposal in curves {
+      let changed = zip(proposal.gains, flat).filter { abs($0 - $1) >= 0.01 }.count
+      XCTAssertLessThanOrEqual(changed, SoundTuning.maxBands, "最多改 6 段")
+      for gain in proposal.gains {
+        XCTAssertLessThanOrEqual(abs(gain), 12, "单段不得超过 ±12 dB")
+      }
+      XCTAssertTrue(proposal.source.contains("本地规则"), proposal.source)
+    }
+    XCTAssertNil(SoundTuning.local("", mode: .night, from: flat), "没有输入时不凭空改曲线")
+  }
+
   func testAudioErrorsBecomeActionableChinese() {
     // 用户看到的那一句是 OSStatus -50 的英文原文，看不出是哪个动作失败、也不知道该怎么办。
     let raw = NSError(domain: NSOSStatusErrorDomain, code: -50, userInfo: nil)

@@ -7,6 +7,8 @@ struct RootView: View {
   @EnvironmentObject var player: MobilePlayer
   @Environment(\.scenePhase) private var scenePhase
   @State private var tab = 0
+  /// 横滑翻页的豁免区：横向控件自己处理横滑。
+  @State private var swipeExempt: [CGRect] = []
   var body: some View {
     TabView(selection: $tab) {
       NavigationStack { HomeView() }.tabItem { Label("为你", systemImage: "waveform") }
@@ -26,6 +28,22 @@ struct RootView: View {
     }
     // mini player 用 iOS 26 的 tabViewBottomAccessory：它由系统排在 tab 托盘之上，
     // 不再是「压在托盘上的浮层」。safeAreaInset 那条路会让两者互相遮盖。
+    // 横滑换 tab：只认「明显横向、起手不在屏幕边缘、也不在横向控件里」的手势。
+    // 向左 = 下一个，向右 = 上一个，到头不循环；在滑杆 / chip / 曲线上横滑仍然是操作控件。
+    .simultaneousGesture(
+      DragGesture(minimumDistance: 30, coordinateSpace: .global)
+        .onEnded { value in
+          guard
+            let next = TabPaging.nextTab(
+              current: tab, count: 5, translation: value.translation,
+              start: value.startLocation, width: UIScreen.main.bounds.width,
+              exempt: swipeExempt)
+          else { return }
+          withAnimation(.easeOut(duration: DS.Motion.standard)) { tab = next }
+        }
+    )
+    .onPreferenceChange(TabSwipeExemptKey.self) { swipeExempt = $0 }
+    .sensoryFeedback(.selection, trigger: tab)
     .modifier(MiniPlayerAccessory())
     .tint(Color(hex: store.state.skin.colors.accent))
     .preferredColorScheme(store.state.skin.mode == "light" ? .light : .dark)
@@ -261,6 +279,7 @@ struct NowPlayingView: View {
   @State private var showEnhancement = false
   @State private var gains = Array(repeating: Float(0), count: 31)
   @State private var tuningOpen = false
+  @State private var showInstruments = false
   var body: some View {
     if swiping {
       SwipePlayerView(onClose: { swiping = false })
@@ -283,7 +302,7 @@ struct NowPlayingView: View {
         .font(.caption.weight(.semibold))
         .foregroundStyle(.secondary)
       Text(summary.headline)
-        .font(.system(size: 15, weight: .medium))
+        .font(.subheadline.weight(.medium))
       Text(summary.basis)
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -396,76 +415,41 @@ struct NowPlayingView: View {
 
   private var nowPlaying: some View {
     ZStack(alignment: .top) {
-      Color(hex: store.state.skin.colors.bg).ignoresSafeArea()
-      ScrollView {
-        VStack(alignment: .leading, spacing: 0) {
+      PlaybackAmbience(artwork: player.song?.artwork, playing: player.playing)
+      ScrollView(showsIndicators: false) {
+        VStack(spacing: 0) {
           if let song = player.song {
-            soundSummaryCard
-              .padding(.bottom, 10)
-            Button {
-              tuningOpen = true
-            } label: {
-              Label("说一句话调音", systemImage: "spark")
-                .font(.system(size: 13, weight: .medium))
-            }
-            .buttonStyle(.borderless)
-            .padding(.bottom, 16)
-            .accessibilityIdentifier("openTuning")
-            ChainStrip(steps: chainSteps(song))
-            if activeChain != nil {
-              EQCurvePanel(gains: $gains, editable: true, onCommit: commitGains)
-                .padding(.top, 20)
-              statusLine(song)
-                .padding(.top, 8)
-            } else {
-              // 没有链路就不画一条空线：说明现状，并给出下一步。
-              chainEmptyBlock
-                .padding(.top, 20)
-            }
-            HStack(alignment: .top, spacing: 16) {
-              PlayerPlate(title: song.title, artwork: song.artwork, size: 112)
-              VStack(alignment: .leading, spacing: 4) {
-                Text(song.title)
-                  .font(.system(size: 20, weight: .medium))
-                  .lineLimit(2)
-                Text(song.artist)
-                  .font(.system(size: 13, weight: .regular))
-                  .foregroundStyle(.secondary)
-                  .lineLimit(1)
-                if !song.album.isEmpty {
-                  Text(song.album)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                }
-                Text(metaLine(song))
-                  .font(.system(size: 11, weight: .regular, design: .monospaced))
-                  .foregroundStyle(.tertiary)
-                  .lineLimit(1)
-              }
-              Spacer(minLength: 0)
-            }
-            .padding(.top, 24)
-            scrubber
-              .padding(.top, 24)
-            transport
-              .padding(.top, 20)
+            heroBlock(song)
+            LyricsStage(
+              song: song, position: player.position, onSeek: { player.seek($0) },
+              onEdit: { editingInfo = true }
+            )
+            .padding(.top, 12)
+            PlayerProgressBar(
+              position: player.position, duration: player.duration,
+              onSeek: { player.seek($0) }
+            )
+            .padding(.top, 10)
+            PlayerTransportDeck(
+              playing: player.playing, onPrevious: { player.previous() },
+              onToggle: { player.toggle() }, onNext: { player.next() }
+            )
+            .padding(.top, 6)
             tools(song)
-              .padding(.top, 24)
-            if let text = song.lyrics, !text.isEmpty {
-              instrumentSection("歌词") { MediaLyricsView(text: text) }
-                .padding(.top, 32)
-            }
+              .padding(.top, 2)
+            instrumentsBlock(song)
+              .padding(.top, 26)
             siblingsSection(song)
             if let reviews = song.mediaInfo?.reviews, !reviews.isEmpty {
               instrumentSection("听众乐评") { reviewsBody(reviews) }
-                .padding(.top, 24)
+                .padding(.top, 28)
             }
           }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .padding(.bottom, 32)
+        .padding(.horizontal, 24)
+        .padding(.top, 6)
+        .padding(.bottom, 48)
+        .frame(maxWidth: .infinity)
       }
       .safeAreaInset(edge: .top, spacing: 0) { playerHeader }
     }
@@ -473,7 +457,13 @@ struct NowPlayingView: View {
     // cover 不继承 TabView 上的 tint：不补这一行，播放/上一首/下一首会退回系统的蓝，
     // 黑白两色的规则当场破掉。
     .tint(Color(hex: store.state.skin.colors.accent))
-    .onAppear { syncGains() }
+    .onAppear {
+      syncGains()
+      #if DEBUG
+        // 截图用：直接打开调音面板，验证模式选择。
+        if ProcessInfo.processInfo.environment["AWAKE_E2E_TUNING"] == "1" { tuningOpen = true }
+      #endif
+    }
     .onChange(of: player.route.uid) { _, _ in syncGains() }
     .sheet(isPresented: $editingInfo) { if let song = player.song { MediaInfoView(song: song) } }
     .sheet(isPresented: $handingOff) { HandoffSheet() }
@@ -483,6 +473,97 @@ struct NowPlayingView: View {
         .environmentObject(player)
     }
     .overlay(alignment: .top) { EffectActivationOverlay(priority: 1) }
+  }
+
+  /// 首屏：封面 + 曲名。曲名用语义字号建立层级，不再和设置项一个大小。
+  private func heroBlock(_ song: Song) -> some View {
+    VStack(spacing: 18) {
+      HeroArtwork(song: song, size: heroSize, playing: player.playing)
+      VStack(spacing: 5) {
+        Text(song.title)
+          .font(.title2.weight(.semibold))
+          .foregroundStyle(Color(hex: store.state.skin.colors.text))
+          .multilineTextAlignment(.center)
+          .lineLimit(2)
+          .accessibilityAddTraits(.isHeader)
+        Text(song.artist)
+          .font(.subheadline)
+          .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+          .lineLimit(1)
+        if !song.album.isEmpty {
+          Text(song.album)
+            .font(.caption)
+            .foregroundStyle(Color(hex: store.state.skin.colors.muted).opacity(0.7))
+            .lineLimit(1)
+        }
+      }
+      .frame(maxWidth: .infinity)
+    }
+    .padding(.top, 8)
+  }
+
+  private var heroSize: CGFloat {
+    let width = UIScreen.main.bounds.width
+    return min(max(196, width - 148), 260)
+  }
+
+  /// 仪器区默认收起：播放页先回答「在听什么」，再回答「为什么这样响」。
+  private func instrumentsBlock(_ song: Song) -> some View {
+    VStack(spacing: 0) {
+      Button {
+        withAnimation(.easeInOut(duration: 0.22)) { showInstruments.toggle() }
+      } label: {
+        HStack(spacing: 10) {
+          Text("声音与仪器")
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+          Spacer(minLength: 8)
+          Text(enhancementLine)
+            .font(.caption2.monospaced())
+            .foregroundStyle(Color(hex: store.state.skin.colors.muted).opacity(0.72))
+            .lineLimit(1)
+          Image(systemName: "chevron.down")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Color(hex: store.state.skin.colors.muted).opacity(0.72))
+            .rotationEffect(.degrees(showInstruments ? 180 : 0))
+        }
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityIdentifier("toggleInstruments")
+      .accessibilityValue(showInstruments ? "已展开" : "已收起")
+
+      if showInstruments {
+        VStack(alignment: .leading, spacing: 20) {
+          soundSummaryCard
+          Button {
+            tuningOpen = true
+          } label: {
+            Label("说一句话调音", systemImage: "spark")
+              .font(.footnote.weight(.medium))
+              .foregroundStyle(Color(hex: store.state.skin.colors.text))
+              .padding(.horizontal, 14)
+              .padding(.vertical, 9)
+              .background(Capsule().fill(Color(hex: store.state.skin.colors.surface)))
+              .overlay(
+                Capsule().stroke(Color(hex: store.state.skin.colors.border), lineWidth: 0.6))
+          }
+          .buttonStyle(.plain)
+          .accessibilityIdentifier("openTuning")
+          ChainStrip(steps: chainSteps(song))
+          if activeChain != nil {
+            EQCurvePanel(gains: $gains, editable: true, onCommit: commitGains)
+            statusLine(song)
+          } else {
+            // 没有链路就不画一条空线：说明现状，并给出下一步。
+            chainEmptyBlock
+          }
+        }
+        .padding(.top, 4)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+      }
+    }
   }
 
   // MARK: 顶部条
@@ -498,7 +579,7 @@ struct NowPlayingView: View {
         dismiss()
       } label: {
         Image(systemName: "chevron.down")
-          .font(.system(size: 15, weight: .medium))
+          .font(.subheadline.weight(.medium))
           .foregroundStyle(.secondary)
           .frame(width: 44, height: 44)
           .contentShape(Rectangle())
@@ -506,15 +587,21 @@ struct NowPlayingView: View {
       .accessibilityLabel("关闭正在播放")
       Spacer(minLength: 0)
       Text("正在播放")
-        .font(.system(size: 12, weight: .medium))
+        .font(.caption.weight(.medium))
         .foregroundStyle(.secondary)
       Spacer(minLength: 0)
       Color.clear.frame(width: 44, height: 44)
     }
-    .padding(.horizontal, 4)
-    .background(Color(hex: store.state.skin.colors.bg))
-    .overlay(alignment: .bottom) {
-      Rectangle().fill(Color(hex: store.state.skin.colors.border).opacity(0.5)).frame(height: 0.5)
+    .padding(.horizontal, 8)
+    // 内容会从下面滚过去：磨砂底 + 向下渐隐，既兜住文字又不切成一块实色条。
+    .background {
+      // 深色底上系统材质会显出一块灰：这里用底色本身做遮罩，再向下渐隐。
+      LinearGradient(
+        stops: [
+          .init(color: Color(hex: store.state.skin.colors.bg).opacity(0.96), location: 0),
+          .init(color: Color(hex: store.state.skin.colors.bg).opacity(0.88), location: 0.7),
+          .init(color: Color(hex: store.state.skin.colors.bg).opacity(0), location: 1),
+        ], startPoint: .top, endPoint: .bottom)
     }
   }
 
@@ -533,27 +620,27 @@ struct NowPlayingView: View {
       VStack(alignment: .leading, spacing: 8) {
         HStack(alignment: .firstTextBaseline) {
           Text("31 段曲线")
-            .font(.system(size: 12, weight: .medium))
+            .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
           Spacer(minLength: 0)
           Text("平直")
-            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .font(.caption.weight(.medium).monospaced())
             .foregroundStyle(Color(hex: store.state.skin.colors.muted))
         }
         HStack(alignment: .center, spacing: 12) {
           VStack(alignment: .leading, spacing: 4) {
             Text("还没有听感链路")
-              .font(.system(size: 13, weight: .medium))
+              .font(.footnote.weight(.medium))
               .foregroundStyle(.primary)
             Text("当前输出按平直曲线播放。在「声音」里选耳机型号与链路后，这里会画出实际生效的 31 段曲线。")
-              .font(.system(size: 12, weight: .regular))
+              .font(.caption.weight(.regular))
               .foregroundStyle(.secondary)
               .fixedSize(horizontal: false, vertical: true)
               .multilineTextAlignment(.leading)
           }
           Spacer(minLength: 0)
           Image(systemName: "chevron.right")
-            .font(.system(size: 12, weight: .medium))
+            .font(.caption.weight(.medium))
             .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 14)
@@ -617,14 +704,14 @@ struct NowPlayingView: View {
           )
           .frame(width: 5, height: 5)
         Text(enhancementLine)
-          .font(.system(size: 12, weight: .regular, design: .monospaced))
+          .font(.caption.weight(.regular).monospaced())
           .foregroundStyle(.secondary)
           .lineLimit(1)
           .minimumScaleFactor(0.85)
         Spacer(minLength: 0)
         if activeChain == nil {
           Text("去设置")
-            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .font(.caption2.weight(.medium).monospaced())
             .foregroundStyle(Color(hex: store.state.skin.colors.accent))
         }
       }
@@ -651,80 +738,8 @@ struct NowPlayingView: View {
     return parts.joined(separator: " · ")
   }
 
-  private var scrubber: some View {
-    VStack(spacing: 6) {
-      GeometryReader { geo in
-        let progress = player.duration > 0
-          ? min(1, max(0, player.position / player.duration)) : 0
-        ZStack(alignment: .leading) {
-          Capsule().fill(Color(hex: store.state.skin.colors.border)).frame(height: 2)
-          Capsule()
-            .fill(Color(hex: store.state.skin.colors.accent))
-            .frame(width: max(1, geo.size.width * progress), height: 2)
-        }
-        .frame(maxHeight: .infinity, alignment: .center)
-        .contentShape(Rectangle())
-        .gesture(
-          DragGesture(minimumDistance: 0).onChanged { value in
-            guard player.duration > 0, geo.size.width > 0 else { return }
-            let ratio = max(0, min(1, value.location.x / geo.size.width))
-            player.seek(Double(ratio) * player.duration)
-          })
-      }
-      .frame(height: 20)
-      HStack {
-        Text(clock(player.position))
-        Spacer()
-        Text(clock(player.duration))
-      }
-      .font(.system(size: 11, weight: .regular, design: .monospaced))
-      .foregroundStyle(.secondary)
-    }
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel("播放进度")
-  }
-
-  private var transport: some View {
-    HStack(spacing: 0) {
-      Button {
-        player.previous()
-      } label: {
-        Image(systemName: "backward.end.fill")
-          .font(.system(size: 17, weight: .medium))
-          .foregroundStyle(.secondary)
-          .frame(width: 56, height: 56)
-      }
-      .accessibilityLabel("上一首")
-      Spacer(minLength: 0)
-      Button {
-        player.toggle()
-      } label: {
-        ZStack {
-          Circle()
-            .fill(Color(hex: store.state.skin.colors.text))
-            .frame(width: 56, height: 56)
-          Image(systemName: player.playing ? "pause.fill" : "play.fill")
-            .font(.system(size: 19, weight: .semibold))
-            .foregroundStyle(Color(hex: store.state.skin.colors.bg))
-            .offset(x: player.playing ? 0 : 1.5)
-        }
-      }
-      .accessibilityLabel(player.playing ? "暂停" : "播放")
-      Spacer(minLength: 0)
-      Button {
-        player.next()
-      } label: {
-        Image(systemName: "forward.end.fill")
-          .font(.system(size: 17, weight: .medium))
-          .foregroundStyle(.secondary)
-          .frame(width: 56, height: 56)
-      }
-      .accessibilityLabel("下一首")
-    }
-  }
-
   private func tools(_ song: Song) -> some View {
-    HStack(spacing: 20) {
+    HStack(spacing: 8) {
       Button {
         if let index = store.state.songs.firstIndex(where: { $0.id == song.id }) {
           store.state.songs[index].favorite.toggle()
@@ -732,19 +747,19 @@ struct NowPlayingView: View {
         }
       } label: {
         Image(systemName: song.favorite ? "heart.fill" : "heart")
-          .font(.system(size: 16, weight: .regular))
+          .font(.body.weight(.regular))
           .foregroundStyle(
             song.favorite ? Color(hex: store.state.skin.colors.accent) : .secondary)
-          .frame(width: 32, height: 32)
+          .frame(width: 44, height: 44)
       }
       .accessibilityLabel(song.favorite ? "取消收藏" : "收藏")
       Button {
         swiping = true
       } label: {
         Image(systemName: "shuffle")
-          .font(.system(size: 16, weight: .regular))
+          .font(.body.weight(.regular))
           .foregroundStyle(.secondary)
-          .frame(width: 32, height: 32)
+          .frame(width: 44, height: 44)
       }
       .accessibilityLabel("刷音乐")
       .accessibilityIdentifier("swipeModeEntry")
@@ -759,9 +774,9 @@ struct NowPlayingView: View {
           .accessibilityIdentifier("editPlayingMedia")
       } label: {
         Image(systemName: "ellipsis.circle")
-          .font(.system(size: 17, weight: .regular))
+          .font(.body.weight(.regular))
           .foregroundStyle(.secondary)
-          .frame(width: 32, height: 32)
+          .frame(width: 44, height: 44)
       }
       .accessibilityLabel("更多")
     }
@@ -782,12 +797,12 @@ struct NowPlayingView: View {
               } label: {
                 HStack(spacing: 12) {
                   Text(other.title)
-                    .font(.system(size: 13, weight: .regular))
+                    .font(.footnote.weight(.regular))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                   Spacer(minLength: 12)
                   Text(clock(other.duration))
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(.caption2.weight(.regular).monospaced())
                     .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 9)
@@ -811,7 +826,7 @@ struct NowPlayingView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: 10) {
       Text(title)
-        .font(.system(size: 12, weight: .medium))
+        .font(.caption.weight(.medium))
         .foregroundStyle(.secondary)
       content()
     }
@@ -826,23 +841,23 @@ struct NowPlayingView: View {
               ? "专辑乐评" : review.scope == "recording" ? "单曲乐评" : "导入评论")
               + " · " + review.author
           )
-          .font(.system(size: 11, weight: .regular, design: .monospaced))
+          .font(.caption2.weight(.regular).monospaced())
           .foregroundStyle(.secondary)
-          Text(review.text).font(.system(size: 14)).lineLimit(7)
+          Text(review.text).font(.subheadline).lineLimit(7)
           Text(review.source + " · " + review.license)
-            .font(.system(size: 11))
+            .font(.caption2)
             .foregroundStyle(.tertiary)
           if let url = URL(string: review.url),
             ["https", "http"].contains(url.scheme ?? "")
           {
-            Link("查看原文与署名", destination: url).font(.system(size: 12))
+            Link("查看原文与署名", destination: url).font(.caption)
           }
         }
       }
       Button {
         editingInfo = true
       } label: {
-        Text("查看全部与来源").font(.system(size: 12))
+        Text("查看全部与来源").font(.caption)
       }
       .accessibilityIdentifier("editPlayingMediaDetail")
     }
@@ -913,26 +928,51 @@ struct HomeView: View {
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 20) {
+      VStack(alignment: .leading, spacing: DS.Space.l) {
         hero
-        entries
-        Text("下一次心动").font(.headline).padding(.top, 4)
         if store.state.songs.isEmpty {
-          ContentUnavailableView(
-            "从你的音乐开始", systemImage: "music.note",
-            description: Text("在曲库导入文件，或在设置连接自己的 NAS、WebDAV 和 Plex。"))
+          AwakeEmptyState(
+            icon: "music.note", title: "还没有音乐",
+            message: "先在曲库里加歌，或在设置里连接自己的服务器。",
+            actionTitle: "去添加音乐",
+            action: { store.requestedTab = 4 })
+        } else {
+          AwakeSectionTitle(
+            title: "为你挑选", status: "\(store.state.songs.count) 首可选")
+          VStack(spacing: 0) {
+            ForEach(Array(picks.enumerated()), id: \.element.id) { index, song in
+              SongRow(song: song)
+              if index < picks.count - 1 {
+                Rectangle()
+                  .fill(DS.hairline(store.state.skin))
+                  .frame(height: 0.5)
+                  .padding(.leading, 60)
+              }
+            }
+          }
+          AwakeSectionTitle(title: "工具")
+          tools
         }
-        ForEach(Array(store.recommendations().prefix(12))) { SongRow(song: $0) }
         if !store.state.ratings.isEmpty {
-          Panel {
-            Label("越听，越合拍", systemImage: "waveform.path.ecg").font(.headline)
-            Text(
-              store.localAdvice(chainID: store.activeChain(route: player.route.uid)?.id).first ?? ""
-            ).font(.subheadline).foregroundStyle(.secondary)
+          AwakeCard {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
+              Text("越听，越合拍").font(.subheadline.weight(.semibold))
+              Text(
+                store.localAdvice(chainID: store.activeChain(route: player.route.uid)?.id).first ?? ""
+              )
+              .font(.footnote)
+              .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+            }
           }
         }
-      }.padding(20)
-    }.appSurface().navigationTitle("").toolbar { if store.busy { ProgressView() } }
+      }
+      .padding(.horizontal, DS.Space.page)
+      .padding(.vertical, DS.Space.m)
+    }
+    .appSurface()
+    // 与曲库、设置同一套页面标题：大标题 + 内容从标题下开始。
+    .navigationTitle("为你")
+    .toolbar { if store.busy { ProgressView() } }
   }
 
   /// 首屏只回答一个问题：现在按一下会发生什么。
@@ -949,12 +989,12 @@ struct HomeView: View {
           VStack(alignment: .leading, spacing: 3) {
             Text(player.playing ? "正在听" : "接着听")
               .font(.caption).foregroundStyle(.secondary)
-            Text(song.title).font(.system(size: 19, weight: .semibold)).lineLimit(1)
+            Text(song.title).font(.title3.weight(.semibold)).lineLimit(1)
             Text(song.artist).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
           }
           Spacer(minLength: 8)
           Image(systemName: player.playing ? "waveform" : "play.fill")
-            .font(.system(size: 19, weight: .medium))
+            .font(.title3.weight(.medium))
             .foregroundStyle(Color(hex: store.state.skin.colors.accent))
             .frame(width: 48, height: 48)
             .background(Circle().fill(Color(hex: store.state.skin.colors.raised)))
@@ -977,9 +1017,10 @@ struct HomeView: View {
     } else {
       Panel {
         VStack(alignment: .leading, spacing: 12) {
-          Text("此刻，为你而鸣").font(.title3.bold())
-          Text("从 \(store.state.songs.count) 首音乐与真实聆听记录中，找回自己的节奏。")
-            .font(.subheadline).foregroundStyle(.secondary)
+          Text("从第一首开始").font(.title3.weight(.semibold))
+          Text("按收藏与真实聆听记录排序，不猜。")
+            .font(.footnote)
+            .foregroundStyle(Color(hex: store.state.skin.colors.muted))
           Button("开始我的电台", systemImage: "play.fill") {
             if let first = store.recommendations().first {
               Task { await playSong(first, store: store, player: player) }
@@ -993,31 +1034,27 @@ struct HomeView: View {
 
   /// 四个入口收进一张面板、四行，每行一个去向。
   /// 原来四个胶囊权重完全一样，选哪个只能靠读字；现在一眼是列表，副标题告诉你进去以后做什么。
-  private var entries: some View {
-    VStack(spacing: 0) {
-      entry(
-        icon: "sparkles", title: "听歌搭子", detail: "让它接着排接下来的歌",
-        destination: AnyView(AgentView()))
-      hairline
-      entry(
-        icon: "heart.text.clipboard", title: "听感反馈", detail: "这条链路听起来哪里不对",
-        destination: AnyView(LabView()))
-      hairline
-      entry(
-        icon: "book.closed", title: "听书与播报", detail: "把文字读成声音",
-        destination: AnyView(BooksHubView()))
-      hairline
-      entry(
-        icon: "chart.bar", title: "本周总结", detail: "这周都听了什么",
-        destination: AnyView(WeeklySummaryView()))
-    }
-    .glassSurface(
-      RoundedRectangle(cornerRadius: store.state.skin.radius, style: .continuous),
-      enabled: store.state.skin.mode == "glass")
-    .background {
-      if store.state.skin.mode != "glass" {
-        RoundedRectangle(cornerRadius: store.state.skin.radius, style: .continuous).fill(
-          Color(hex: store.state.skin.colors.surface))
+  /// 只算一次：每行都调 recommendations() 会重复排序整库。
+  private var picks: [Song] { Array(store.recommendations().prefix(12)) }
+
+  /// 只保留没有别处入口的两项。听感反馈在「评测」、听书在「曲库」工具栏，
+  /// 这里再放一遍就是同一件事两个入口，动线因此变乱。
+  private var tools: some View {
+    AwakeCard {
+      VStack(spacing: 0) {
+        NavigationLink {
+          AgentView()
+        } label: {
+          AwakeRow(icon: "sparkles", title: "听歌搭子", detail: "让它接着排接下来的歌")
+        }
+        .buttonStyle(.plain)
+        Divider().opacity(0.4)
+        NavigationLink {
+          WeeklySummaryView()
+        } label: {
+          AwakeRow(icon: "chart.bar", title: "本周总结", detail: "这周都听了什么")
+        }
+        .buttonStyle(.plain)
       }
     }
   }
@@ -1035,16 +1072,16 @@ struct HomeView: View {
     } label: {
       HStack(spacing: 14) {
         Image(systemName: icon)
-          .font(.system(size: 17, weight: .regular))
+          .font(.body.weight(.regular))
           .foregroundStyle(Color(hex: store.state.skin.colors.text))
           .frame(width: 26)
         VStack(alignment: .leading, spacing: 2) {
-          Text(title).font(.system(size: 15, weight: .medium))
+          Text(title).font(.subheadline.weight(.medium))
           Text(detail).font(.caption).foregroundStyle(.secondary)
         }
         Spacer(minLength: 8)
         Image(systemName: "chevron.right")
-          .font(.system(size: 12, weight: .semibold))
+          .font(.caption.weight(.semibold))
           .foregroundStyle(Color(hex: store.state.skin.colors.muted))
       }
       .padding(.horizontal, 16).padding(.vertical, 13)
@@ -1123,24 +1160,20 @@ struct LibraryView: View {
           Text("正在导入或缓存音频…")
         }
       }
-      if !store.state.sources.isEmpty {
-        Section {
-          Picker(
-            "来源",
-            selection: Binding(
-              get: { sourceFilter ?? "" },
-              set: { sourceFilter = $0.isEmpty ? nil : $0 }
-            )
-          ) {
-            Text("全部来源 · \(store.state.songs.count) 首").tag("")
+      Section {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: DS.Space.xs) {
+            filterChip(title: "全部", count: store.state.songs.count, id: nil)
             ForEach(store.state.sources) { source in
-              Text("\(source.name) · \(count(in: source)) 首").tag(source.id)
+              filterChip(title: source.name, count: count(in: source), id: source.id)
             }
           }
-          .pickerStyle(.menu)
-          .accessibilityIdentifier("librarySourceFilter")
+          .padding(.vertical, 2)
         }
+        .accessibilityIdentifier("librarySourceFilter")
+        .tabSwipeExempt()
       }
+      .listRowBackground(Color.clear)
       if filtered.isEmpty {
         emptyLibrary
       }
@@ -1231,57 +1264,53 @@ struct LibraryView: View {
   /// iOS 26 把工具栏多出来的按钮收进了「…」：空库时用户第一眼看不见任何入口，
   /// 所以入口必须出现在空状态里，而且顺序就是他想做事的两条路——先能听，再连来源。
   private var emptyLibrary: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      Text(sourceFilter == nil ? "把音乐带进来" : "这个来源里还没有曲目")
-        .font(.system(size: 19, weight: .semibold))
-      Text(
-        sourceFilter == nil
-          ? "文件 App 里的本地、iCloud Drive 与网盘文件都能导入；也可以连自己的 NAS、WebDAV 或 Plex。"
-          : "到「设置 → 音乐来源」刷新这个来源，或者把筛选切回全部来源。"
-      )
-      .font(.subheadline).foregroundStyle(.secondary)
-
-      if sourceFilter == nil {
-        Button {
+    AwakeEmptyState(
+      icon: sourceFilter == nil ? "music.note.list" : "line.3.horizontal.decrease",
+      title: sourceFilter == nil ? "把音乐带进来" : "这个来源里还没有曲目",
+      message: sourceFilter == nil
+        ? "文件 App 里的本地、iCloud Drive 与网盘文件都能导入；也可以连接自己的 NAS、WebDAV 或 Plex。"
+        : "到「设置 → 音乐来源」刷新这个来源，或者把筛选切回全部。",
+      actionTitle: sourceFilter == nil ? "导入文件" : "切回全部",
+      action: {
+        if sourceFilter == nil {
           picking = .audioFiles
-        } label: {
-          Label("从文件导入", systemImage: "square.and.arrow.down")
-        }
-        .buttonStyle(AwakeButtonStyle())
-        .accessibilityIdentifier("libraryEmptyImportFiles")
-
-        Button {
-          picking = .audioFolder
-        } label: {
-          Label("导入一个文件夹", systemImage: "folder.badge.plus")
-        }
-        .buttonStyle(.bordered)
-
-        Button {
-          store.requestedTab = 4
-        } label: {
-          Label("连接 NAS / WebDAV / Plex", systemImage: "externaldrive.connected.to.line.below")
-        }
-        .buttonStyle(.bordered)
-      } else {
-        Button {
+        } else {
           sourceFilter = nil
-        } label: {
-          Label("看全部来源", systemImage: "line.3.horizontal.decrease")
         }
-        .buttonStyle(AwakeButtonStyle())
-
-        Button {
-          store.requestedTab = 4
-        } label: {
-          Label("到设置刷新来源", systemImage: "arrow.clockwise")
-        }
-        .buttonStyle(.bordered)
       }
-    }
-    .padding(.vertical, 8)
+    )
     .listRowBackground(Color.clear)
   }
+
+  private func filterChip(title: String, count: Int, id: String?) -> some View {
+    let selected = sourceFilter == id
+    return Button {
+      sourceFilter = id
+    } label: {
+      HStack(spacing: 5) {
+        Text(title).font(.footnote.weight(selected ? .semibold : .regular))
+        Text("\(count)").font(.caption2.monospacedDigit()).opacity(0.7)
+      }
+      .foregroundStyle(
+        selected
+          ? Color(hex: store.state.skin.colors.bg)
+          : Color(hex: store.state.skin.colors.text))
+      .padding(.horizontal, 12)
+      .frame(minHeight: 34)
+      .background(
+        Capsule().fill(
+          selected
+            ? Color(hex: store.state.skin.colors.text)
+            : Color(hex: store.state.skin.colors.surface)))
+      .overlay(
+        Capsule().stroke(
+          Color(hex: store.state.skin.colors.border),
+          lineWidth: selected ? 0 : 0.6))
+    }
+    .buttonStyle(.plain)
+    .accessibilityAddTraits(selected ? .isSelected : [])
+  }
+
 
   /// 刚连上来源时，把列表筛到这个来源 —— 与桌面端 connect → focusSource 的行为对齐。
   private func adoptPendingSource() {

@@ -168,5 +168,58 @@ do {
     "尺寸不同不合并（避免把两首不同的歌并掉）")
 }
 
+// MARK: - 横滑换 tab 的规则
+
+do {
+  let width: CGFloat = 402
+  let center = CGPoint(x: 200, y: 500)
+
+  check(
+    TabPaging.nextTab(
+      current: 1, count: 5, translation: CGSize(width: -120, height: 10), start: center,
+      width: width, exempt: []) == 2,
+    "向左滑 = 下一个")
+  check(
+    TabPaging.nextTab(
+      current: 1, count: 5, translation: CGSize(width: 120, height: 10), start: center,
+      width: width, exempt: []) == 0,
+    "向右滑 = 上一个")
+  check(
+    TabPaging.nextTab(
+      current: 4, count: 5, translation: CGSize(width: -120, height: 10), start: center,
+      width: width, exempt: []) == nil,
+    "最后一个 tab 向左滑不循环")
+  check(
+    TabPaging.nextTab(
+      current: 0, count: 5, translation: CGSize(width: 120, height: 10), start: center,
+      width: width, exempt: []) == nil,
+    "第一个 tab 向右滑不循环")
+  check(
+    TabPaging.nextTab(
+      current: 2, count: 5, translation: CGSize(width: -120, height: 90), start: center,
+      width: width, exempt: []) == nil,
+    "斜向拖动（竖直为主）不翻页")
+  check(
+    TabPaging.nextTab(
+      current: 2, count: 5, translation: CGSize(width: -40, height: 2), start: center,
+      width: width, exempt: []) == nil,
+    "位移不够不翻页")
+  check(
+    TabPaging.nextTab(
+      current: 2, count: 5, translation: CGSize(width: -120, height: 2),
+      start: CGPoint(x: 8, y: 500), width: width, exempt: []) == nil,
+    "屏幕左边缘留给返回手势")
+  check(
+    TabPaging.nextTab(
+      current: 2, count: 5, translation: CGSize(width: -120, height: 2), start: center,
+      width: width, exempt: [CGRect(x: 150, y: 450, width: 120, height: 100)]) == nil,
+    "横向控件里横滑不翻页")
+  check(
+    TabPaging.nextTab(
+      current: 2, count: 5, translation: CGSize(width: -81, height: 40), start: center,
+      width: width, exempt: []) == 3,
+    "刚好过线（81pt，竖直 40）算翻页")
+}
+
 print("LibraryImport harness: \(checks) 项断言，\(failures) 项失败")
 exit(failures == 0 ? 0 : 1)

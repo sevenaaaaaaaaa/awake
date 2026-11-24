@@ -29,7 +29,7 @@ struct MediaInfoView: View {
             Text("琥珀 · Amber").tag("amber"); Text("暮色 · Rose").tag("rose")
           }
           Button("导入封面图片") { importKind = "cover"; importing = true }
-          Text("没有图片时按标题生成设计配图。设计配图不代表原始专辑封面。").font(.caption).foregroundStyle(.secondary)
+          AwakeNote(text: "没有图片时按标题生成设计配图。设计配图不代表原始专辑封面。")
         }
         Section("曲目资料") {
           TextField("显示名称", text: $draft.title).accessibilityIdentifier("mediaTitle")
@@ -46,7 +46,7 @@ struct MediaInfoView: View {
         }
         Section("在线匹配 · 预览后保存") {
           Button("查找封面、歌词与乐评") { Task { await search() } }.disabled(draft.title.isEmpty)
-          Text("主动查询会发送你填写的曲名和艺人；加载候选还会发送专辑与时长。不上传音频、录音内容、路径或来源凭据。").font(.caption).foregroundStyle(.secondary)
+          AwakeNote(text: "主动查询会发送你填写的曲名和艺人；加载候选还会发送专辑与时长。不上传音频、录音内容、路径或来源凭据。")
           ForEach(candidates) { candidate in
             VStack(alignment: .leading, spacing: 6) {
               Text(candidate.title).font(.headline)
@@ -59,8 +59,7 @@ struct MediaInfoView: View {
         Section("艺人 / 专辑资料（免费 API）") {
           Button("查询并填入") { Task { await enrich() } }
             .disabled((draft.artist.isEmpty || draft.artist == "未知艺人") && draft.album.isEmpty)
-          Text("数据来自 MusicBrainz 与 Wikipedia（CC BY-SA）。只发送曲名、艺人与专辑名，不上传音频、路径或凭据。")
-            .font(.caption).foregroundStyle(.secondary)
+          AwakeNote(text: "数据来自 MusicBrainz 与 Wikipedia（CC BY-SA）。只发送曲名、艺人与专辑名，不上传音频、路径或凭据。")
           if let bio = info.artist_bio, !bio.isEmpty {
             Text(bio).font(.caption).textSelection(.enabled)
           }
@@ -187,16 +186,37 @@ enum MediaLyrics {
     }
     return rows.sorted { $0.time < $1.time }
   }
-}
-struct MediaLyricsView: View {
-  var text: String
-  @EnvironmentObject var player: MobilePlayer
-  var rows: [LyricLine] { MediaLyrics.parse(text) }
-  var current: Int? { rows.last { $0.time <= player.position }?.id }
-  var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      if rows.isEmpty { Text(text).lineSpacing(10).textSelection(.enabled) }
-      else { ForEach(rows) { line in Button { player.seek(line.time) } label: { Text(line.text).fontWeight(current == line.id ? .semibold : .regular).foregroundStyle(current == line.id ? .primary : .secondary).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain) } }
-    }.frame(maxWidth: .infinity, alignment: .leading)
+
+  /// 播放页每秒重算好几次 body，歌词不能每次都跑一遍正则。
+  /// 以「长度 + 哈希」做键缓存最近 24 份解析结果；编辑歌词后文本变了，键也就变了。
+  @MainActor private static var cache: [String: [LyricLine]] = [:]
+
+  @MainActor static func parseCached(_ text: String) -> [LyricLine] {
+    guard !text.isEmpty else { return [] }
+    let key = "\(text.count)-\(text.hashValue)"
+    if let hit = cache[key] { return hit }
+    let rows = parse(text)
+    if cache.count >= 24 { cache.removeAll(keepingCapacity: true) }
+    cache[key] = rows
+    return rows
+  }
+
+  /// 当前时间落在哪一行（二分查找）。早于第一行时返回 nil，由调用方决定从哪一行起算。
+  static func currentIndex(_ lines: [LyricLine], at time: Double) -> Int? {
+    guard !lines.isEmpty else { return nil }
+    var low = 0
+    var high = lines.count - 1
+    var found: Int?
+    while low <= high {
+      let mid = (low + high) / 2
+      if lines[mid].time <= time {
+        found = mid
+        low = mid + 1
+      } else {
+        high = mid - 1
+      }
+    }
+    return found
   }
 }
+

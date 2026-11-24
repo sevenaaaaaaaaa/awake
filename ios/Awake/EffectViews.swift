@@ -138,7 +138,7 @@ struct EffectActivationCard: View {
           } else {
             Circle().stroke(accent.opacity(0.35), lineWidth: 1)
           }
-          Image(systemName: event.symbol).font(.system(size: 29, weight: .light))
+          Image(systemName: event.symbol).font(.title.weight(.light))
             .scaleEffect(reduceMotion ? 1 : 0.9 + progress * 0.1)
         }.frame(width: 64, height: 64).foregroundStyle(accent).accessibilityHidden(true)
         VStack(alignment: .leading, spacing: 6) {

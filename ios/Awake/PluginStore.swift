@@ -151,8 +151,7 @@ struct PluginsView: View {
           } label: {
             VStack(alignment: .leading, spacing: 4) {
               Text(plugin.name).font(.headline)
-              Text("\(plugin.fileName) · \(plugin.bytes) 字节")
-                .font(.caption).foregroundStyle(.secondary)
+              AwakeNote(text: "\(plugin.fileName) · \(plugin.bytes) 字节")
               if let source = plugin.sourceURL {
                 Text(source).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
               }
@@ -194,17 +193,14 @@ struct PluginsView: View {
               .disabled(installing != nil)
           }
         }
-        Text("地址可以是 https 的注册表，也可以是局域网 http。也可以把 myPlugins.json 放进「来源配置文件夹」，点「从配置文件夹读」。")
-          .font(.caption).foregroundStyle(.secondary)
+        AwakeNote(text: "地址可以是 https 的注册表，也可以是局域网 http。也可以把 myPlugins.json 放进「来源配置文件夹」，点「从配置文件夹读」。")
       }
       Section {
         Button("导入插件 .js", systemImage: "square.and.arrow.down") { importing = true }
           .accessibilityIdentifier("importPlugin")
         if !note.isEmpty { Text(note).font(.caption).foregroundStyle(.red) }
-        Text("单文件上限 512 KB，按 UTF-8 文本保存。这一步只做导入与保存：搜索、解析直链要等沙箱接上（下一步 S2），现在点插件不会去联网。")
-          .font(.caption).foregroundStyle(.secondary)
-        Text("插件按你显式导入处理，信任级别等同于你安装的应用——只导入你信任来源的插件。")
-          .font(.caption).foregroundStyle(.secondary)
+        AwakeNote(text: "单文件上限 512 KB，按 UTF-8 文本保存。这一步只做导入与保存：搜索、解析直链要等沙箱接上（下一步 S2），现在点插件不会去联网。")
+        AwakeNote(text: "插件按你显式导入处理，信任级别等同于你安装的应用——只导入你信任来源的插件。")
       }
     }
     .appSurface()

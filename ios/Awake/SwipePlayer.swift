@@ -97,7 +97,7 @@ struct SwipePlayerView: View {
           }.accessibilityLabel("收藏").accessibilityIdentifier("swipeFavorite")
           Button { player.toggle() } label: {
             Image(systemName: player.playing ? "pause.circle.fill" : "play.circle.fill")
-              .font(.system(size: 56))
+              .font(.title)
           }.accessibilityLabel(player.playing ? "暂停" : "播放")
           Button {
             Task { await advance(1) }

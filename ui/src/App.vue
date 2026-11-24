@@ -1538,6 +1538,15 @@ function keydown(e: KeyboardEvent) {
     e.preventDefault();
     void s.toggle();
   }
+  // ⌘1–⌘6 直接切分区：侧栏有顺序，键盘就应该有同样的顺序。
+  if ((e.metaKey || e.ctrlKey) && /^[1-6]$/.test(e.key)) {
+    const target = nav[Number(e.key) - 1];
+    if (target) {
+      e.preventDefault();
+      go(target.id);
+    }
+    return;
+  }
   if (e.metaKey && e.key === "ArrowRight") {
     e.preventDefault();
     void s.next();
@@ -1752,11 +1761,6 @@ onUnmounted(() => {
       @change="importChange"
     />
     <aside class="sidebar">
-      <div class="brand" data-tauri-drag-region>
-        <Icon name="wave" :size="30" /><span
-          >awake<span class="brand-dot">.</span></span
-        >
-      </div>
       <button class="search-launch" @click="commandOpen = true">
         <Icon name="search" /><span>找一首音乐</span><kbd>⌘ K</kbd>
       </button>

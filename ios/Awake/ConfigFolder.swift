@@ -86,8 +86,7 @@ struct ConfigFolderView: View {
               note = ""
             }
           }
-          Text("把这个文件夹当作来源配置入口：把 .json / .xml / .txt 放进去（iCloud Drive 里改完自动同步），点「刷新扫描」就能列出来。iOS 不能后台盯盘，所以是「记住 + 一点刷新」。")
-            .font(.caption).foregroundStyle(.secondary)
+          AwakeNote(text: "把这个文件夹当作来源配置入口：把 .json / .xml / .txt 放进去（iCloud Drive 里改完自动同步），点「刷新扫描」就能列出来。iOS 不能后台盯盘，所以是「记住 + 一点刷新」。")
         }
         Section("扫到的配置") {
           if note.isEmpty {
@@ -105,8 +104,7 @@ struct ConfigFolderView: View {
               VStack(alignment: .leading, spacing: 4) {
                 Text(item.title).font(.headline)
                 if let config = item.config {
-                  Text("\(config.kind.uppercased()) · \(config.url)")
-                    .font(.caption).foregroundStyle(.secondary)
+                  AwakeNote(text: "\(config.kind.uppercased()) · \(config.url)")
                 } else if let error = item.error {
                   Text(error).font(.caption).foregroundStyle(.red)
                 }
@@ -117,8 +115,7 @@ struct ConfigFolderView: View {
             .accessibilityIdentifier("configCandidate_\(item.fileName)")
           }
           if !candidates.isEmpty {
-            Text("点一条会把类型、名称、地址填进「添加音乐来源」，密码 / Token 仍在应用内填一次——配置文件里按设计不含凭据。")
-              .font(.caption).foregroundStyle(.secondary)
+            AwakeNote(text: "点一条会把类型、名称、地址填进「添加音乐来源」，密码 / Token 仍在应用内填一次——配置文件里按设计不含凭据。")
           }
         }
       }

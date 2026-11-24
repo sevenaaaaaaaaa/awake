@@ -19,8 +19,7 @@ struct HandoffReceiveView: View {
               Text(receiver.code)
                 .font(.system(size: 40, weight: .semibold, design: .rounded).monospacedDigit())
                 .accessibilityIdentifier("receiveCode")
-              Text("在电脑上点「接力到手机」，选定这台手机后输入这 6 位数字")
-                .font(.caption).foregroundStyle(.secondary)
+              AwakeNote(text: "在电脑上点「接力到手机」，选定这台手机后输入这 6 位数字")
             }
             Button("换一组配对码") { receiver.refreshCode() }
               .accessibilityIdentifier("refreshReceiveCode")

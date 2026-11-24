@@ -79,7 +79,7 @@ struct SoundView: View {
             Spacer()
             RoutePicker().frame(width: 40, height: 40)
           }
-          Text("无线编码由系统协商；2.4GHz 接收器和小尾巴后的模拟耳机需要手动绑定。").font(.caption).foregroundStyle(.secondary)
+          AwakeNote(text: "无线编码由系统协商；2.4GHz 接收器和小尾巴后的模拟耳机需要手动绑定。")
           Picker(
             "当前链路",
             selection: Binding(
@@ -116,6 +116,7 @@ struct SoundView: View {
             }.disabled(chain == nil).accessibilityIdentifier("restoreOriginal")
           }
           EQChart(gains: chain?.gains ?? Array(repeating: 0, count: 31)).frame(height: 130)
+            .tabSwipeExempt()
           EnhancementBadge(context: "sound")
           Picker("频段", selection: $band) {
             ForEach(0..<31, id: \.self) { i in Text("\(Int(EQMath.frequencies[i])) Hz").tag(i) }
@@ -134,7 +135,8 @@ struct SoundView: View {
               if !editing { commitSlider() }
             }
           ).disabled(chain == nil).accessibilityLabel("频段增益").accessibilityIdentifier(
-            "eqGainSlider")
+            "eqGainSlider"
+          ).tabSwipeExempt()
           Text(
             "\(String(format:"%.1f",chain?.gains[band] ?? 0)) dB · 前级 \(String(format:"%.1f",player.preamp)) dB"
           ).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -189,7 +191,7 @@ struct SoundView: View {
           } label: {
             VStack(alignment: .leading, spacing: 6) {
               EQChart(gains: preset.gains(), range: 5).frame(height: 44)
-              Text(preset.title).font(.system(size: 14, weight: .medium))
+              Text(preset.title).font(.subheadline.weight(.medium))
               Text(preset.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
             .padding(12)
@@ -453,7 +455,7 @@ struct MeasurementView: View {
                 model: chain?.referenceModel.isEmpty == false
                   ? chain!.referenceModel : chain?.headphone ?? "")
           )
-          Text("不同型号需要先在链路里建立参考关系。公开资料的测量条件与当前佩戴不一定相同。").font(.caption).foregroundStyle(.secondary)
+          AwakeNote(text: "不同型号需要先在链路里建立参考关系。公开资料的测量条件与当前佩戴不一定相同。")
         }
       }
     }.appSurface().navigationTitle("社区测量参数").task {
@@ -492,7 +494,7 @@ struct ManualEQView: View {
             Button("校验并应用") { applyEq() }.buttonStyle(AwakeButtonStyle())
           }
           if let c = chain, !c.measurementSource.isEmpty {
-            Text("当前来源：\(c.measurementSource)").font(.caption).foregroundStyle(.secondary)
+            AwakeNote(text: "当前来源：\(c.measurementSource)")
           }
         }
       }.padding(20)

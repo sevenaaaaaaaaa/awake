@@ -14,6 +14,7 @@ struct TuneSheet: View {
   @State private var previousCurve: SongCurve?
   @State private var curveSongID: String?
   @State private var historyOpen = false
+  @State private var modeID = TuningModes.balance.id
 
   private var aiReady: Bool {
     !store.state.curatorModel.isEmpty && store.state.curatorURL == store.state.curatorCredentialEndpoint
@@ -25,6 +26,39 @@ struct TuneSheet: View {
   var body: some View {
     NavigationStack {
       Form {
+        Section("工作模式") {
+          ForEach(TuningModes.all) { mode in
+            Button {
+              modeID = mode.id
+            } label: {
+              HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(mode.name)
+                    .font(.subheadline.weight(mode.id == modeID ? .semibold : .regular))
+                    .foregroundStyle(Color(hex: store.state.skin.colors.text))
+                  Text(mode.intent)
+                    .font(.caption)
+                    .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                if mode.id == modeID {
+                  Image(systemName: "checkmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(hex: store.state.skin.colors.text))
+                    .padding(.top, 2)
+                }
+              }
+              .frame(minHeight: 44)
+              .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("tuningMode_" + mode.id)
+            .accessibilityAddTraits(mode.id == modeID ? .isSelected : [])
+          }
+          Text("模式决定 agent 的取舍和本地规则的默认动作；同一句话在五个模式下结果不同。")
+            .font(.caption2).foregroundStyle(.secondary)
+        }
         Section("说一句话") {
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -37,7 +71,10 @@ struct TuneSheet: View {
           }
           TextField("例如：人声再靠前一点，低频别那么糊", text: $text, axis: .vertical)
             .lineLimit(1...3)
-          Button(aiReady ? "让 agent 给候选" : "用本地规则调") { Task { await tune() } }
+          Button(aiReady ? "让 agent 给候选" : "用本地规则调") {
+            Task { await tune() }
+          }
+          .accessibilityIdentifier("runTuning")
             .disabled(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
           if busy { ProgressView() }
           if !note.isEmpty { Text(note).font(.caption).foregroundStyle(.secondary) }
@@ -46,7 +83,7 @@ struct TuneSheet: View {
           Section("候选（\(proposals.count) 条）") {
             Picker("选一条", selection: $selected) {
               ForEach(proposals.indices, id: \.self) { index in
-                Text("候选 \(index + 1)").tag(index)
+                Text(proposals.count == 1 ? "结果" : "候选 \(index + 1)").tag(index)
               }
             }
             .pickerStyle(.segmented)
@@ -68,7 +105,7 @@ struct TuneSheet: View {
         Section {
           Text(aiReady
             ? "候选之间是取舍，不是对错；每段不超过 6 dB、最多 6 段，随时可撤销，改过的都进历史。"
-            : "还没配置 AI 模型：这里用固定短语的本地规则，不冒充 agent。配置后会一次给 2–3 条候选。")
+            : "还没配置 AI 模型：这里按模式的本地规则调，结果会标明「本地规则 · 模式名」，不冒充 agent。配置后会一次给 2–3 条候选。")
             .font(.caption).foregroundStyle(.secondary)
         }
       }
@@ -94,16 +131,18 @@ struct TuneSheet: View {
     defer { busy = false }
     let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
     let currentGains = player.currentSnapshot.gains
+    let mode = TuningModes.mode(modeID)
     if aiReady {
       do {
-        proposals = try await SoundTuning.agentCandidates(request, from: currentGains, store: store)
-        note = "拿到 \(proposals.count) 条候选，挑一条再应用。"
+        proposals = try await SoundTuning.agentCandidates(
+          request, mode: mode, from: currentGains, store: store)
+        note = "「\(mode.name)」拿到 \(proposals.count) 条候选，挑一条再应用。"
         return
       } catch {
         note = "agent 没成功（\(error.localizedDescription)），先按本地规则给一版。"
       }
     }
-    if let local = SoundTuning.local(request, from: currentGains) {
+    if let local = SoundTuning.local(request, mode: mode, from: currentGains) {
       proposals = [local]
     } else if note.isEmpty {
       note = "这句话没听懂。试试短语：人声太靠后 / 低频糊 / 想更亮 / 太吵。"

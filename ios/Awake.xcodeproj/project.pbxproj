@@ -19,6 +19,7 @@
 		2564CA1CFEB8D307C8CAE7A1 /* AudioMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4DBA378C7D6D05CD323C399 /* AudioMath.swift */; };
 		2CC306AC027657AF44C1B679 /* HandoffReceiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60BC7EC39C288BF72662FCD /* HandoffReceiveView.swift */; };
 		2D354382B64F71453AC2C869 /* PlaylistImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F05A592A950DD8CF372A75D7 /* PlaylistImport.swift */; };
+		39E88D9792559B077D31750E /* NowPlayingStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA85174D3BE8275633316D69 /* NowPlayingStage.swift */; };
 		3C2D20B4E55CC99F689E2D3E /* PlexAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 046C135D8C11B5D31D674698 /* PlexAuth.swift */; };
 		3EEE4B57BC5DDD7C667C8C79 /* Services.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40E9A956315BB1CF4C1AC0C /* Services.swift */; };
 		3F8161AA90CF78F84770D5CF /* LibraryImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0073BC27DA1A09A393D4F89 /* LibraryImport.swift */; };
@@ -29,6 +30,7 @@
 		4B2B9E96F4274C216D84C376 /* SoundViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BFF41650CE622F89415946F /* SoundViews.swift */; };
 		4EA86E9A84292C2311A5E542 /* TuneSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6218DC5481DBA367D313B47 /* TuneSheet.swift */; };
 		4F2225AED07B39B3AFE0A874 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A25772CF3D1E1165C2FC3C88 /* Models.swift */; };
+		554357A07009EC7589D1491A /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBCFD2DCEA955F4ED73444D1 /* DesignSystem.swift */; };
 		56DBE0E63E118AB957312755 /* Handoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9275739D9FAAB1E4A6121F61 /* Handoff.swift */; };
 		5B4D348962767E99471F7CBA /* Glass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 883990F9FD85E4E8EC8D4D4C /* Glass.swift */; };
 		6306A72730FFAE3DD46129A9 /* Books.swift in Sources */ = {isa = PBXBuildFile; fileRef = C832FBDCFEDDD2FF8CC8DDAE /* Books.swift */; };
@@ -72,6 +74,7 @@
 		F1BF5A6DA194434499CF6C78 /* BatchScrape.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E229BB221CC2C283753E986 /* BatchScrape.swift */; };
 		F4BBB7751142267912993920 /* PluginSandbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E4387C5F8DFE0E0A4BBB239 /* PluginSandbox.swift */; };
 		FAA89E83D7EC787B26770001 /* EquipmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24EE460B200DCEB777CB6E57 /* EquipmentViews.swift */; };
+		FC6B3931D1DAF4B31947A894 /* TabPaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10460FACC283881B12E0E444 /* TabPaging.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -98,6 +101,7 @@
 		09A7E4B3CD23B4B8B1828F48 /* Speech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speech.swift; sourceTree = "<group>"; };
 		0DBC4D62DEC457DBE5281F0A /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		0EC8B7DA8A5DBD9C7E5DD51A /* HandoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffTests.swift; sourceTree = "<group>"; };
+		10460FACC283881B12E0E444 /* TabPaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabPaging.swift; sourceTree = "<group>"; };
 		1833ADE45B358BE7D885F231 /* HandoffReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffReceiver.swift; sourceTree = "<group>"; };
 		1AF17534D0B84474A7075D22 /* pluginSandbox.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = pluginSandbox.js; sourceTree = "<group>"; };
 		208569EACA50E0A6631C6296 /* PluginPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginPlayback.swift; sourceTree = "<group>"; };
@@ -149,6 +153,7 @@
 		D46453423DD3AE1496E25E97 /* PluginRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginRegistry.swift; sourceTree = "<group>"; };
 		D4DBA378C7D6D05CD323C399 /* AudioMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMath.swift; sourceTree = "<group>"; };
 		D60BC7EC39C288BF72662FCD /* HandoffReceiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffReceiveView.swift; sourceTree = "<group>"; };
+		DBCFD2DCEA955F4ED73444D1 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		DF7D39C0686A97339031BB0B /* AddMusicView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddMusicView.swift; sourceTree = "<group>"; };
 		E0F2E4C7352FA47E7CE2E7AC /* SwipePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipePlayer.swift; sourceTree = "<group>"; };
 		E14CA279FE9B8282B5072B66 /* EffectViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectViews.swift; sourceTree = "<group>"; };
@@ -159,6 +164,7 @@
 		F05A592A950DD8CF372A75D7 /* PlaylistImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistImport.swift; sourceTree = "<group>"; };
 		F144CAD80E2FA1490AE8F500 /* LabViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabViews.swift; sourceTree = "<group>"; };
 		F6218DC5481DBA367D313B47 /* TuneSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TuneSheet.swift; sourceTree = "<group>"; };
+		FA85174D3BE8275633316D69 /* NowPlayingStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingStage.swift; sourceTree = "<group>"; };
 		FC5AF23378B5703359849E3D /* BooksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BooksTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -220,6 +226,7 @@
 				B0E8E9C94B4F1AD421204B91 /* BuiltinMusic.swift */,
 				2BE146FA44D8F8B7AC25A597 /* CalibrationView.swift */,
 				4B670BC504A3AA154BAAEC3A /* ConfigFolder.swift */,
+				DBCFD2DCEA955F4ED73444D1 /* DesignSystem.swift */,
 				4D3C1A668EB8F5A462FFD7F1 /* Diagnostics.swift */,
 				05148C82B7EE499186BB6DDB /* EffectState.swift */,
 				E14CA279FE9B8282B5072B66 /* EffectViews.swift */,
@@ -238,6 +245,7 @@
 				577909C48018E6F4BB732837 /* MediaInfoView.swift */,
 				C39625E967E4D9282FC678BB /* MobilePlayer.swift */,
 				A25772CF3D1E1165C2FC3C88 /* Models.swift */,
+				FA85174D3BE8275633316D69 /* NowPlayingStage.swift */,
 				78C62F4E4623656837A7005F /* PlayerInstrument.swift */,
 				67C90F29C21FA66AA05D4D24 /* PlaylistFetch.swift */,
 				F05A592A950DD8CF372A75D7 /* PlaylistImport.swift */,
@@ -257,6 +265,7 @@
 				09A7E4B3CD23B4B8B1828F48 /* Speech.swift */,
 				E2A6E6BA7288E46474438EEC /* SpeechRender.swift */,
 				E0F2E4C7352FA47E7CE2E7AC /* SwipePlayer.swift */,
+				10460FACC283881B12E0E444 /* TabPaging.swift */,
 				010B6479A9D277C37E652BF4 /* TelegramService.swift */,
 				F6218DC5481DBA367D313B47 /* TuneSheet.swift */,
 				77ABB0C1958D1969B77F97E7 /* TuningHistoryView.swift */,
@@ -420,6 +429,7 @@
 				81B0B3B689C5372AF6728000 /* BuiltinMusic.swift in Sources */,
 				74D93314C890209A1185B954 /* CalibrationView.swift in Sources */,
 				6993337721F0C0B36E17B9EA /* ConfigFolder.swift in Sources */,
+				554357A07009EC7589D1491A /* DesignSystem.swift in Sources */,
 				BAE27F68DEF71B352517C2D3 /* Diagnostics.swift in Sources */,
 				CEDC5817D69D48E43722192E /* EffectState.swift in Sources */,
 				47C542D8C2026F53FE215AB8 /* EffectViews.swift in Sources */,
@@ -438,6 +448,7 @@
 				7E206D5ACCAF7A80D855093A /* MediaInfoView.swift in Sources */,
 				63F16572E47029185FA00BF4 /* MobilePlayer.swift in Sources */,
 				4F2225AED07B39B3AFE0A874 /* Models.swift in Sources */,
+				39E88D9792559B077D31750E /* NowPlayingStage.swift in Sources */,
 				90F947CDA41BDC54B191A7A7 /* PlayerInstrument.swift in Sources */,
 				15C5CCFFCFE0820E1B0F3E70 /* PlaylistFetch.swift in Sources */,
 				2D354382B64F71453AC2C869 /* PlaylistImport.swift in Sources */,
@@ -457,6 +468,7 @@
 				89BDB891FF29B7B9EF39A999 /* Speech.swift in Sources */,
 				CA79B3264CA933FD003508B7 /* SpeechRender.swift in Sources */,
 				E8C36A404A06FB987038951B /* SwipePlayer.swift in Sources */,
+				FC6B3931D1DAF4B31947A894 /* TabPaging.swift in Sources */,
 				6B9BC687943CCFE3D7AD6EFA /* TelegramService.swift in Sources */,
 				4EA86E9A84292C2311A5E542 /* TuneSheet.swift in Sources */,
 				DE0C9EA241650E9F07DDEDF9 /* TuningHistoryView.swift in Sources */,
@@ -581,7 +593,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 52;
+				CURRENT_PROJECT_VERSION = 53;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -602,7 +614,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.40;
+				MARKETING_VERSION = 0.9.41;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -704,7 +716,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 52;
+				CURRENT_PROJECT_VERSION = 53;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = M2H88Z5S5A;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -719,7 +731,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.9.40;
+				MARKETING_VERSION = 0.9.41;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

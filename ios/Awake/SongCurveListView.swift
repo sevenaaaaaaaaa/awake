@@ -43,8 +43,7 @@ struct SongCurveListView: View {
     Form {
       if rows.isEmpty {
         Section {
-          Text("还没有任何一首歌被记过曲线。在播放页调音或点「记住这首歌」后会出现在这里。")
-            .font(.caption).foregroundStyle(.secondary)
+          AwakeNote(text: "还没有任何一首歌被记过曲线。在播放页调音或点「记住这首歌」后会出现在这里。")
         }
       } else {
         Section("共 \(rows.count) 首") {
@@ -85,8 +84,7 @@ struct SongCurveListView: View {
         Section { Text(note).font(.caption).foregroundStyle(.secondary) }
       }
       Section {
-        Text("套用只改当前播放的曲线，不会覆盖其它歌的记忆；删除后这首歌回到链路上的曲线。")
-          .font(.caption).foregroundStyle(.secondary)
+        AwakeNote(text: "套用只改当前播放的曲线，不会覆盖其它歌的记忆；删除后这首歌回到链路上的曲线。")
       }
     }
     .appSurface()

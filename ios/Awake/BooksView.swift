@@ -97,8 +97,7 @@ struct BookDetailView: View {
           VStack(alignment: .leading, spacing: 8) {
             Text(book.title).font(.title2.bold())
             Text(book.author.isEmpty ? "未知作者" : book.author).foregroundStyle(.secondary)
-            Text("\(book.chapters.count) 章 · \(book.listenedLabel) / \(Int(book.total / 60)) 分钟")
-              .font(.caption).foregroundStyle(.secondary)
+            AwakeNote(text: "\(book.chapters.count) 章 · \(book.listenedLabel) / \(Int(book.total / 60)) 分钟")
             ProgressView(value: book.percent).tint(Color(hex: store.state.skin.colors.accent))
           }
         }
@@ -205,8 +204,7 @@ private struct SpeechStudioSection: View {
           .clipShape(RoundedRectangle(cornerRadius: 8))
           .overlay(alignment: .topLeading) {
             if text.isEmpty {
-              Text("粘贴小说、文章或剧本全文。拆剧建议每行写成「角色：台词」。")
-                .font(.caption).foregroundStyle(.secondary).padding(16).allowsHitTesting(false)
+              AwakeNote(text: "粘贴小说、文章或剧本全文。拆剧建议每行写成「角色：台词」。").padding(16).allowsHitTesting(false)
             }
           }
         if !store.state.curatorModel.isEmpty {
@@ -220,8 +218,7 @@ private struct SpeechStudioSection: View {
         }.buttonStyle(AwakeButtonStyle())
           .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).count < 20)
 
-        Text("分章与朗读都在本机完成；生成有声书会写入本机曲库并进入听书书架。")
-          .font(.caption2).foregroundStyle(.secondary)
+        AwakeNote(text: "分章与朗读都在本机完成；生成有声书会写入本机曲库并进入听书书架。")
       }
 
       if let plan {
@@ -229,8 +226,7 @@ private struct SpeechStudioSection: View {
           HStack {
             VStack(alignment: .leading, spacing: 4) {
               Text(plan.title).font(.headline)
-              Text("\(plan.chapters.count) 章 · \(plan.chapters.reduce(0) { $0 + $1.segments.reduce(0) { $0 + $1.text.count } }) 字")
-                .font(.caption).foregroundStyle(.secondary)
+              AwakeNote(text: "\(plan.chapters.count) 章 · \(plan.chapters.reduce(0) { $0 + $1.segments.reduce(0) { $0 + $1.text.count } }) 字")
             }
             Spacer()
             Button("开始朗读", systemImage: "waveform") { onNarrate(plan) }
@@ -252,7 +248,7 @@ private struct SpeechStudioSection: View {
               Text("\(index + 1)").font(.caption.monospaced()).foregroundStyle(.secondary).frame(width: 22)
               Text(chapter.title).font(.subheadline).lineLimit(1)
               Spacer()
-              Text("\(chapter.segments.count) 段").font(.caption2).foregroundStyle(.secondary)
+              AwakeNote(text: "\(chapter.segments.count) 段")
             }.padding(.vertical, 4)
           }
         }
@@ -357,8 +353,7 @@ private struct NewsSection: View {
           Button("导入 .eml 邮件") { importing = true }
           Button("导入播客音频") { importingAudio = true }
         }.font(.caption)
-        Text("只读取你给的链接或本地文件；不登录邮箱，不上传未勾选的内容。")
-          .font(.caption2).foregroundStyle(.secondary)
+        AwakeNote(text: "只读取你给的链接或本地文件；不登录邮箱，不上传未勾选的内容。")
       }
 
       if store.newsItems.isEmpty {
@@ -373,8 +368,7 @@ private struct NewsSection: View {
             HStack(alignment: .top) {
               VStack(alignment: .leading, spacing: 4) {
                 Text(item.title).font(.subheadline.weight(.semibold)).lineLimit(2)
-                Text("\(item.source) · \(item.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                  .font(.caption2).foregroundStyle(.secondary)
+                AwakeNote(text: "\(item.source) · \(item.createdAt.formatted(date: .abbreviated, time: .shortened))")
                 Text(String(item.text.prefix(120)) + "…").font(.caption).foregroundStyle(.secondary).lineLimit(2)
               }
               Spacer()
@@ -465,13 +459,12 @@ struct NarratorSheet: View {
   var body: some View {
     NavigationStack {
       VStack(spacing: 22) {
-        Image(systemName: "waveform.circle").font(.system(size: 72, weight: .ultraLight))
+        Image(systemName: "waveform.circle").font(.title.weight(.ultraLight))
           .foregroundStyle(Color.accentColor)
         Text(narrator.title.isEmpty ? plan.title : narrator.title)
           .font(.title2.bold()).multilineTextAlignment(.center)
         if narrator.totalChapters > 1 {
-          Text("第 \(narrator.chapterIndex + 1) / \(narrator.totalChapters) 章 · \(narrator.chapterTitle)")
-            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+          AwakeNote(text: "第 \(narrator.chapterIndex + 1) / \(narrator.totalChapters) 章 · \(narrator.chapterTitle)").multilineTextAlignment(.center)
         }
         ProgressView(value: narrator.progress).tint(.accentColor)
         HStack(spacing: 28) {
@@ -479,7 +472,7 @@ struct NarratorSheet: View {
             narrator.toggle()
           } label: {
             Image(systemName: narrator.paused ? "play.circle.fill" : "pause.circle.fill")
-              .font(.system(size: 58))
+              .font(.title)
           }.disabled(!narrator.speaking && !narrator.paused)
           Button {
             narrator.stop()
@@ -565,7 +558,7 @@ struct WeeklySummaryView: View {
                 HStack {
                   Text(row.artist).font(.subheadline).lineLimit(1)
                   Spacer()
-                  Text("\(Int((row.seconds / 60).rounded())) 分钟").font(.caption).foregroundStyle(.secondary)
+                  AwakeNote(text: "\(Int((row.seconds / 60).rounded())) 分钟")
                 }.padding(.vertical, 4)
               }
             }
@@ -575,8 +568,7 @@ struct WeeklySummaryView: View {
             ForEach(summary.lines, id: \.self) { line in
               Text(line).font(.subheadline).foregroundStyle(.secondary)
             }
-            Text("统计来自本机收听记录（\(summary.since.formatted(date: .numeric, time: .omitted)) – \(summary.until.addingTimeInterval(-1).formatted(date: .numeric, time: .omitted))），不会上传。")
-              .font(.caption2).foregroundStyle(.secondary)
+            AwakeNote(text: "统计来自本机收听记录（\(summary.since.formatted(date: .numeric, time: .omitted)) – \(summary.until.addingTimeInterval(-1).formatted(date: .numeric, time: .omitted))），不会上传。")
           }
         }.padding(20)
       } else {

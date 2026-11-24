@@ -124,8 +124,7 @@ struct PlaylistImportView: View {
         .frame(minHeight: 120)
         .font(.callout)
         .accessibilityIdentifier("playlistText")
-      Text("每行一首，例如：周杰伦 - 稻香。也支持从其他平台复制后直接粘贴。")
-        .font(.caption2).foregroundStyle(.secondary)
+      AwakeNote(text: "每行一首，例如：周杰伦 - 稻香。也支持从其他平台复制后直接粘贴。")
     }
   }
 
@@ -184,10 +183,8 @@ struct PlaylistImportView: View {
 
   private var footerSection: some View {
     Section {
-      Text("只导入歌单元数据并匹配你自己的音频；不会下载或播放平台版权音乐。平台页面改版、地区限制或未登录时可能只能读取部分曲目，此时可改用“粘贴文本”或导出文件。")
-        .font(.caption2).foregroundStyle(.secondary)
-      Text("CUE 需要整轨音频已经在曲库中；APE 需要先转成 FLAC / ALAC 才能播放。")
-        .font(.caption2).foregroundStyle(.secondary)
+      AwakeNote(text: "只导入歌单元数据并匹配你自己的音频；不会下载或播放平台版权音乐。平台页面改版、地区限制或未登录时可能只能读取部分曲目，此时可改用“粘贴文本”或导出文件。")
+      AwakeNote(text: "CUE 需要整轨音频已经在曲库中；APE 需要先转成 FLAC / ALAC 才能播放。")
     }
   }
   private var selectedCount: Int { matches.filter { $0.enabled }.count }

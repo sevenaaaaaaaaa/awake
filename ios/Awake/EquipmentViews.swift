@@ -20,8 +20,7 @@ struct EquipmentEditor: View {
         Picker("当前问题", selection: field(\.issue)) {
           ForEach(EquipmentKnowledge.issues, id: \.self) { Text($0).tag($0) }
         }
-        Text("保留个人喜爱的调音特色。场景和品牌故事用于形成试听建议，应用 EQ 仍需你比较确认。")
-          .font(.caption).foregroundStyle(.secondary)
+        AwakeNote(text: "保留个人喜爱的调音特色。场景和品牌故事用于形成试听建议，应用 EQ 仍需你比较确认。")
       }
       Section("已核对的型号资料") {
         NavigationLink {
@@ -43,8 +42,7 @@ struct EquipmentEditor: View {
               chain.frontend = output.frontend
             }
           }
-        Text("输出口和增益/供电模式由你确认；系统输出名称不能证明小尾巴后的耳机型号。切换输出模式会创建独立链路。")
-          .font(.caption).foregroundStyle(.secondary)
+        AwakeNote(text: "输出口和增益/供电模式由你确认；系统输出名称不能证明小尾巴后的耳机型号。切换输出模式会创建独立链路。")
       }
       Section("手动耳机参数 · 留空时使用型号资料") {
         TextField("标称阻抗 Ω（可选）", value: field(\.impedance), format: .number)
@@ -56,8 +54,7 @@ struct EquipmentEditor: View {
           Text("dB SPL / 1 V").tag("dB/V")
         }
         TextField("参数出处与测试条件", text: field(\.specSource), axis: .vertical)
-        Text("任一手动参数填写后，按手动资料整体计算，不拼接不同来源的未知参数。前端输出阻抗与耳机标称阻抗分别处理。")
-          .font(.caption).foregroundStyle(.secondary)
+        AwakeNote(text: "任一手动参数填写后，按手动资料整体计算，不拼接不同来源的未知参数。前端输出阻抗与耳机标称阻抗分别处理。")
       }
       Section("当前型号与模式的调音倾向") {
         TextField("设备端音效/固件模式，如 Signature", text: field(\.hardwareProfile))
@@ -66,8 +63,7 @@ struct EquipmentEditor: View {
           ForEach(["个人听感", "厂商描述", "社区评价"], id: \.self) { Text($0).tag($0) }
         }
         TextField("网页、作者与适用条件", text: field(\.characterSource), axis: .vertical)
-        Text("‘女毒’‘低音强’是描述性标签；不同系列、代际、耳垫、ANC 和连接方式需要分别核对。实测 EQ 仍在社区测量中导入。")
-          .font(.caption).foregroundStyle(.secondary)
+        AwakeNote(text: "‘女毒’‘低音强’是描述性标签；不同系列、代际、耳垫、ANC 和连接方式需要分别核对。实测 EQ 仍在社区测量中导入。")
       }
       if let error = validationError {
         Section("请修正后保存链路") { Text(error).foregroundStyle(.red) }
@@ -99,8 +95,7 @@ struct EquipmentSummary: View {
         if let sensitivity = model.sensitivity {
           Text("厂商灵敏度 \(sensitivity, specifier: "%.1f") \(model.unit)")
         }
-        Text("\(model.brand) · \(model.form) · \(model.status)")
-          .font(.caption).foregroundStyle(.secondary)
+        AwakeNote(text: "\(model.brand) · \(model.form) · \(model.status)")
         Text(
           "音频入口：" + model.connections.map(EquipmentKnowledge.connectionName).joined(separator: "、"))
         Text("声学状态：" + model.modes.joined(separator: "、"))

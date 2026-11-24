@@ -15,8 +15,7 @@ struct TuningHistoryView: View {
       Form {
         if records.isEmpty {
           Section {
-            Text("还没有调音记录。用「说一句话调音」改过之后会出现在这里。")
-              .font(.caption).foregroundStyle(.secondary)
+            AwakeNote(text: "还没有调音记录。用「说一句话调音」改过之后会出现在这里。")
           }
         } else {
           Section("共 \(records.count) 次") {
@@ -44,8 +43,7 @@ struct TuningHistoryView: View {
         }
         if !note.isEmpty { Section { Text(note).font(.caption) } }
         Section {
-          Text("回滚只改当前播放的曲线，并把这条例记录标成「已回滚」；不会删除记录。")
-            .font(.caption).foregroundStyle(.secondary)
+          AwakeNote(text: "回滚只改当前播放的曲线，并把这条例记录标成「已回滚」；不会删除记录。")
         }
       }
       .appSurface()

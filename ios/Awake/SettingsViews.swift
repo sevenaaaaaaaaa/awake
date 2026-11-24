@@ -1,6 +1,122 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// 设置页顶部：先回答「我现在是什么状态」，再给入口。
+///
+/// 以前这一页第一屏就是九个分区、二十多行入口，用户看不到自己的曲库有多大、
+/// AI 有没有配、缓存占了多少。这里把五个真实数字放在最上面，并且都是现算的。
+struct SettingsSummaryCard: View {
+  @EnvironmentObject var store: MobileStore
+  @State private var cacheBytes: Int64 = 0
+  @State private var sizeReady = false
+
+  private var version: String {
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+  }
+  private var build: String {
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+  }
+  private var aiConfigured: Bool { !store.state.curatorModel.isEmpty }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 3) {
+          Text("本机曲库")
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(Color(hex: store.state.skin.colors.text))
+          Text("iOS \(version) · build \(build)")
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+        }
+        Spacer(minLength: 8)
+        Text(store.state.skin.name)
+          .font(.caption2.weight(.medium))
+          .padding(.horizontal, 10)
+          .padding(.vertical, 5)
+          .background(
+            Capsule().fill(Color(hex: store.state.skin.colors.surface)))
+          .overlay(
+            Capsule().stroke(Color(hex: store.state.skin.colors.border), lineWidth: 0.6))
+      }
+      HStack(spacing: 0) {
+        stat("曲目", "\(store.state.songs.count)")
+        stat("歌单", "\(store.state.playlists?.count ?? 0)")
+        stat("来源", "\(store.state.sources.count)")
+        stat("缓存", sizeReady ? ByteText.short(cacheBytes) : "…")
+      }
+      HStack(spacing: 6) {
+        Circle()
+          .fill(
+            aiConfigured
+              ? Color(hex: store.state.skin.colors.text)
+              : Color(hex: store.state.skin.colors.muted).opacity(0.5))
+          .frame(width: 5, height: 5)
+        Text(aiConfigured ? "AI 已配置：\(store.state.curatorModel)" : "AI 未配置：调音与策展走本地规则")
+          .font(.caption2)
+          .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+        Spacer(minLength: 0)
+      }
+    }
+    .padding(16)
+    .background(
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .fill(Color(hex: store.state.skin.colors.surface))
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .stroke(Color(hex: store.state.skin.colors.border), lineWidth: 0.6))
+    .task {
+      let url = store.music
+      let bytes = await Task.detached(priority: .utility) { () -> Int64 in
+        guard
+          let list = try? FileManager.default.contentsOfDirectory(
+            at: url, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles])
+        else { return 0 }
+        return list.reduce(Int64(0)) { total, file in
+          let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+          return total + Int64(size)
+        }
+      }.value
+      cacheBytes = bytes
+      sizeReady = true
+    }
+  }
+
+  private func stat(_ label: String, _ value: String) -> some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text(value)
+        .font(.system(.title3, design: .rounded).weight(.semibold))
+        .foregroundStyle(Color(hex: store.state.skin.colors.text))
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+      Text(label)
+        .font(.caption2)
+        .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+/// 设置里的一行入口：统一走 AwakeRow，避免设置、添加音乐、曲库各有一套行样式。
+struct SettingsEntry: View {
+  @EnvironmentObject var store: MobileStore
+  var icon: String
+  var title: String
+  var subtitle: String
+  var status: String?
+
+  var body: some View {
+    AwakeRow(icon: icon, title: title, detail: subtitle, status: status, chevron: false)
+  }
+}
+
+enum ByteText {
+  static func short(_ bytes: Int64) -> String {
+    ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+  }
+}
+
 struct SettingsView: View {
   @EnvironmentObject var store: MobileStore
   @EnvironmentObject var player: MobilePlayer
@@ -19,28 +135,54 @@ struct SettingsView: View {
   @State private var confirmClearLocal = false
   @State private var repairNote = ""
   @State private var repairing = false
+  @State private var showAddMusic = false
   var body: some View {
     Form {
+      Section {
+        SettingsSummaryCard()
+          .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+          .listRowBackground(Color.clear)
+      }
       Section("音乐来源") {
-        NavigationLink {
-          AddMusicView()
+        Button {
+          showAddMusic = true
         } label: {
-          Label("添加音乐", systemImage: "plus")
+          SettingsEntry(
+            icon: "plus", title: "添加音乐",
+            subtitle: "WebDAV / Plex / Telegram，或本机文件与文件夹",
+            status: store.state.sources.isEmpty ? "还没有来源" : "\(store.state.sources.count) 个来源")
         }
+        .buttonStyle(.plain)
         .accessibilityIdentifier("addMusic")
         ForEach(store.state.sources) { s in
-          VStack(alignment: .leading, spacing: 8) {
-            Text(s.name).font(.headline)
-            Text("\(s.kind.uppercased()) · \(store.state.songs.filter{$0.sourceID==s.id}.count) 首")
-              .font(.caption).foregroundStyle(.secondary)
-            if s.kind == "telegram" { TelegramSponsoredView(source: s) }
-            HStack {
-              Button("刷新来源") { Task { await refresh(s) } }.disabled(store.busy)
-              Spacer()
+          HStack(spacing: 12) {
+            Image(systemName: sourceIcon(s.kind))
+              .font(.subheadline.weight(.regular))
+              .foregroundStyle(Color(hex: store.state.skin.colors.text).opacity(0.8))
+              .frame(width: 28, height: 28)
+              .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                  .fill(Color(hex: store.state.skin.colors.raised)))
+            VStack(alignment: .leading, spacing: 3) {
+              Text(s.name).font(.subheadline)
+              Text("\(s.kind.uppercased()) · \(store.state.songs.filter { $0.sourceID == s.id }.count) 首")
+                .font(.caption).foregroundStyle(.secondary)
+              if s.kind == "telegram" { TelegramSponsoredView(source: s) }
+            }
+            Spacer(minLength: 8)
+            Menu {
+              Button("刷新来源", systemImage: "arrow.clockwise") { Task { await refresh(s) } }
+                .disabled(store.busy)
               Button("移除来源", systemImage: "trash", role: .destructive) { sourceToRemove = s }
                 .disabled(store.busy)
                 .accessibilityIdentifier("removeSource_\(s.id)")
+            } label: {
+              Image(systemName: "ellipsis.circle")
+                .font(.body)
+                .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+                .frame(width: 44, height: 44)
             }
+            .accessibilityLabel("来源操作")
           }
         }
         if store.busy {
@@ -49,68 +191,53 @@ struct SettingsView: View {
             Text("正在导入本机音频…").font(.caption)
           }
         }
-        Text("NAS 与网盘也可通过文件 App 连接并导入。远程曲目首次播放先下载到本机，随后进入统一 EQ 播放链路；当前 iOS 版不宣称远程即点即流或跨采样率无缝。")
-          .font(.caption).foregroundStyle(.secondary)
+        AwakeNote(text: "NAS 与网盘也可通过文件 App 连接并导入。远程曲目首次播放先下载到本机，随后进入统一 EQ 播放链路；当前 iOS 版不宣称远程即点即流或跨采样率无缝。")
       }
-      Section("声音档案") {
+      Section("调音与档案") {
         NavigationLink {
           SongCurveListView()
         } label: {
-          Label("每首歌的曲线（\(store.state.songCurves?.count ?? 0)）", systemImage: "waveform.path")
+          SettingsEntry(
+            icon: "waveform.path", title: "每首歌的曲线",
+            subtitle: "自动适配替你记住了哪些歌：逐条套用、改来源标注、删除",
+            status: "\(store.state.songCurves?.count ?? 0)")
         }
         .accessibilityIdentifier("songCurves")
-        Text("看清自动适配替你记住了哪些歌：逐条套用、改来源标注、删除。")
-          .font(.caption).foregroundStyle(.secondary)
+        NavigationLink {
+          CalibrationView()
+        } label: {
+          SettingsEntry(
+            icon: "ear", title: "听觉校准",
+            subtitle: "四题 A/B 得到个人听感先验，叠加到每条曲线上",
+            status: store.state.earPrior.map { "v\($0.version)" } ?? "未校准")
+        }
+        .accessibilityIdentifier("earCalibration")
+        NavigationLink {
+          TuningHistoryView()
+        } label: {
+          SettingsEntry(
+            icon: "clock.arrow.circlepath", title: "调音历史",
+            subtitle: "谁提的、改了什么、从哪到哪，可回滚",
+            status: "\(store.state.tuningLog?.count ?? 0)")
+        }
+        .accessibilityIdentifier("tuningHistory")
         NavigationLink {
           BatchScrapeView()
         } label: {
-          Label("批量补全资料（歌词 / 封面 / 资料）", systemImage: "square.and.arrow.down.on.square")
+          SettingsEntry(
+            icon: "square.and.arrow.down.on.square", title: "批量补全资料",
+            subtitle: "歌词、封面与公开资料；拿不到的留空，不编造", status: nil)
         }
         .accessibilityIdentifier("batchScrape")
         NavigationLink {
           ListeningProfileExportView()
         } label: {
-          Label("导出听感档案（跨设备）", systemImage: "arrow.up.forward.app")
+          SettingsEntry(
+            icon: "arrow.up.forward.app", title: "导出听感档案",
+            subtitle: "把曲线、先验与依据带到另一台设备", status: nil)
         }
         .accessibilityIdentifier("exportProfile")
-        NavigationLink {
-          TuningHistoryView()
-        } label: {
-          Label("调音历史（\(store.state.tuningLog?.count ?? 0)）", systemImage: "clock.arrow.circlepath")
-        }
-        .accessibilityIdentifier("tuningHistory")
-        NavigationLink {
-          CalibrationView()
-        } label: {
-          Label(
-            store.state.earPrior.map { "听觉校准（校准 v\($0.version)）" } ?? "听觉校准（未校准）",
-            systemImage: "ear")
-        }
-        .accessibilityIdentifier("earCalibration")
-      }
-      Section("本地内置版") {
-        LabeledContent("内置示例", value: "\(store.builtinSongs.count) 首")
-        Text(
-          BuiltinMusic.available().isEmpty
-            ? "包内没有找到示例音频（builtin-*.flac），这一版可能不是内置版"
-            : "示例音频随包分发，不联网、不依赖来源配置。"
-        ).font(.caption).foregroundStyle(.secondary)
-        Button("重新导入内置示例") {
-          Task {
-            let added = await store.installBuiltinMusic(force: true)
-            builtinNote = added > 0 ? "已补进 \(added) 首" : "曲库里已经齐了"
-          }
-        }
-        .accessibilityIdentifier("installBuiltin")
-        Button("移除内置示例", role: .destructive) { confirmRemoveBuiltin = true }
-          .accessibilityIdentifier("removeBuiltin")
-        Button("清空本地添加的记录", role: .destructive) { confirmClearLocal = true }
-          .accessibilityIdentifier("clearLocalRecords")
-        if !builtinNote.isEmpty {
-          Text(builtinNote).font(.caption).foregroundStyle(.secondary)
-        }
-        Text("移除后标记会清掉，下次启动会重新放一次；想反复验证首启就「移除 → 杀掉 App → 重开」。")
-          .font(.caption).foregroundStyle(.secondary)
+        AwakeNote(text: "档案只包含曲线与依据，不包含音频文件与凭据。")
       }
       Section("曲库维护") {
         Button {
@@ -121,15 +248,46 @@ struct SettingsView: View {
             repairing = false
           }
         } label: {
-          Label(repairing ? "正在整理…" : "整理曲库（合并重复、清理缓存）", systemImage: "arrow.triangle.merge")
+          SettingsEntry(
+            icon: "arrow.triangle.merge", title: repairing ? "正在整理…" : "整理曲库",
+            subtitle: "合并重复导入、清理没人引用的缓存；先备份 library.json",
+            status: store.state.songs.count > 0 ? "\(store.state.songs.count) 首" : nil)
         }
         .disabled(repairing || store.busy)
         .accessibilityIdentifier("repairLibrary")
         if !repairNote.isEmpty {
           Text(repairNote).font(.caption).foregroundStyle(.secondary)
         }
-        Text("按内容指纹合并重复导入的曲目，歌单 / 听书进度 / 评分会跟到保留的那一条上；没人引用的缓存文件一并清掉。整理前会先备份 library.json。")
-          .font(.caption).foregroundStyle(.secondary)
+        Button {
+          Task {
+            let added = await store.installBuiltinMusic(force: true)
+            builtinNote = added > 0 ? "已补进 \(added) 首" : "曲库里已经齐了"
+          }
+        } label: {
+          SettingsEntry(
+            icon: "waveform.badge.plus", title: "补齐内置示例",
+            subtitle: BuiltinMusic.available().isEmpty
+              ? "包内没有找到 builtin-*.flac，这一版可能不是内置版"
+              : "示例音频随包分发，不联网、不依赖来源配置",
+            status: "\(store.builtinSongs.count) 首")
+        }
+        .accessibilityIdentifier("installBuiltin")
+        Button(role: .destructive) { confirmRemoveBuiltin = true } label: {
+          SettingsEntry(
+            icon: "trash", title: "移除内置示例",
+            subtitle: "删曲目、删本机音频，并清掉播种标记", status: nil)
+        }
+        .accessibilityIdentifier("removeBuiltin")
+        Button(role: .destructive) { confirmClearLocal = true } label: {
+          SettingsEntry(
+            icon: "eraser", title: "清空本地添加的记录",
+            subtitle: "只删本地导入、内置示例与插件曲目；来源配置与设置保留", status: nil)
+        }
+        .accessibilityIdentifier("clearLocalRecords")
+        if !builtinNote.isEmpty {
+          Text(builtinNote).font(.caption).foregroundStyle(.secondary)
+        }
+        AwakeNote(text: "内置示例移除后标记会清掉，下次启动会重新放一次；想反复验证首启就「移除 → 杀掉 App → 重开」。")
       }
       Section("外观") {
         Picker(
@@ -165,8 +323,12 @@ struct SettingsView: View {
         NavigationLink {
           AISettingsView().environmentObject(store)
         } label: {
-          Label("AI 策展与音乐创作", systemImage: "sparkles")
+          SettingsEntry(
+            icon: "sparkles", title: "AI 策展与音乐创作",
+            subtitle: "调音 agent、歌单策展与 ElevenLabs 作曲共用",
+            status: store.state.curatorModel.isEmpty ? "未配置" : store.state.curatorModel)
         }
+        .accessibilityIdentifier("aiSettings")
       }
       Section("诊断与数据") {
         NavigationLink {
@@ -197,16 +359,16 @@ struct SettingsView: View {
             "已从 \(restoredBackup.device) 的备份恢复：\(restoredBackup.trackCount) 首曲目、\(restoredBackup.playlistCount) 个歌单、\(restoredBackup.favoriteCount) 首收藏。"
           ).font(.caption).foregroundStyle(.secondary)
         }
-        Text("备份使用密码端到端加密，只包含曲库、歌单、收藏与配置；不备份钥匙串里的密码/Token，也不包含音频文件，换设备后需要重新填写凭据。跨平台只支持歌单导入。")
-          .font(.caption).foregroundStyle(.secondary)
+        AwakeNote(text: "备份使用密码端到端加密，只包含曲库、歌单、收藏与配置；不备份钥匙串里的密码/Token，也不包含音频文件，换设备后需要重新填写凭据。跨平台只支持歌单导入。")
       }
       Section("关于 Awake") {
         Text(
           "Awake iOS \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")"
         )
-        Text("请确认拥有来源与内容的使用权限，在授权范围内个人使用；不要制造或传播侵权内容，请支持正版音乐。应用不提供公共音乐源目录。").font(.caption)
-        Text("公开测量与 AI 建议不是实物测量或全网统计。iOS 无法通过这里强制改变蓝牙编码、耳机 ANC 或接收器固件。").font(.caption)
-          .foregroundStyle(.secondary)
+        AwakeNote(
+          title: "使用与声明",
+          text: "请确认拥有来源与内容的使用权限，在授权范围内个人使用；不要制造或传播侵权内容，请支持正版音乐。应用不提供公共音乐源目录。公开测量与 AI 建议不是实物测量或全网统计。iOS 无法通过这里强制改变蓝牙编码、耳机 ANC 或接收器固件。"
+        )
       }
     }
     .appSurface()
@@ -222,6 +384,14 @@ struct SettingsView: View {
     }
     .glassRows()
     .navigationTitle("设置")
+    .navigationDestination(isPresented: $showAddMusic) {
+      AddMusicView().environmentObject(store)
+    }
+    .onAppear {
+      #if DEBUG
+        if ProcessInfo.processInfo.environment["AWAKE_E2E_SETTINGS"] == "add" { showAddMusic = true }
+      #endif
+    }
     .sheet(isPresented: $sourceSheet) { SourceEditor() }
     .alert("移除来源？", isPresented: Binding(get: { sourceToRemove != nil }, set: { if !$0 { sourceToRemove = nil } })) {
       Button("取消", role: .cancel) { sourceToRemove = nil }
@@ -261,6 +431,14 @@ struct SettingsView: View {
       BackupRestoreSheet(candidate: candidate) { preview in restoredBackup = preview }
     }
   }
+  private func sourceIcon(_ kind: String) -> String {
+    switch kind {
+    case "plex": return "play.rectangle.on.rectangle"
+    case "telegram": return "paperplane"
+    default: return "externaldrive.connected.to.line.below"
+    }
+  }
+
   private func importSkin(_ url: URL) {
     do {
       let access = url.startAccessingSecurityScopedResource()
@@ -346,6 +524,8 @@ struct ShareView: UIViewControllerRepresentable {
 struct SourceEditor: View {
   @EnvironmentObject var store: MobileStore
   @Environment(\.dismiss) var dismiss
+  /// 从「添加音乐」带进来的来源类型：三种服务器的要求不同，不该让用户进来再选一次。
+  var initialKind: String = "webdav"
   /// 从「配置文件夹」带进来的配置；只填类型 / 名称 / 地址 / 用户名，凭据永远由用户当场输入。
   var prefill: SourceConfiguration? = nil
   @State private var name = ""
@@ -485,7 +665,10 @@ struct SourceEditor: View {
             .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty || url.isEmpty || (kind == "telegram" && !telegramReady))
             .accessibilityIdentifier("connectSource")
         }
-      }.appSurface().navigationTitle("添加音乐来源").toolbar { Button("完成") { dismiss() }.disabled(busy) }
+      }.appSurface().onAppear {
+      if prefill == nil, kind != initialKind { kind = initialKind }
+    }
+      .navigationTitle("添加音乐来源").toolbar { Button("完成") { dismiss() }.disabled(busy) }
       .onAppear { applyPrefill() }
       .onChange(of: kind) { _, _ in plexNote = ""; catalog = nil; selected = [] }
       .onChange(of: url) { _, _ in catalog = nil; selected = [] }

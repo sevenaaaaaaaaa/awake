@@ -5,5 +5,5 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 out="$(mktemp -d)/library-import-harness"
-swiftc -O -o "$out" ios/Awake/LibraryImport.swift Tools/library_import_harness/main.swift
+swiftc -O -o "$out" ios/Awake/LibraryImport.swift ios/Awake/TabPaging.swift Tools/library_import_harness/main.swift
 "$out"

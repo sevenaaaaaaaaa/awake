@@ -18,8 +18,7 @@ struct BatchScrapeView: View {
           }
           Button("停止", role: .destructive) { task?.cancel() }
         }
-        Text("顺序请求，约每秒一次；只补缺的歌词与封面，已有内容不覆盖。关掉页面会中断。")
-          .font(.caption).foregroundStyle(.secondary)
+        AwakeNote(text: "顺序请求，约每秒一次；只补缺的歌词与封面，已有内容不覆盖。关掉页面会中断。")
       }
       if scraper.finished {
         Section("结果") {
