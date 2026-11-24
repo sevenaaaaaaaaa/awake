@@ -44,6 +44,9 @@ import SwiftUI
         TestingMotionPreference()
       ).task {
         await store.installBuiltinMusic()
+        // 历史版本没有判重，重复导入会在曲库里叠出成百上千条副本；
+        // 升级后跑一次整理把它们合并回去（只跑一次，之后由设置页手动触发）。
+        await store.repairLibraryIfNeeded()
         #if DEBUG
           if ProcessInfo.processInfo.arguments.contains("--uitesting") { player.volume = 0 }
         #endif

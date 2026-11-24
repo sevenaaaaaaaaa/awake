@@ -61,6 +61,7 @@ extension MobileStore {
       } else {
         song = Song(title: item.track.title)
       }
+      song.locator = LibraryImport.cacheLocator(name)
       if song.title.isEmpty { song.title = item.track.title }
       if song.artist.isEmpty || song.artist == "未知艺人" { song.artist = item.track.artist }
       if song.album.isEmpty { song.album = item.track.album }

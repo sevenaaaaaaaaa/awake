@@ -17,6 +17,8 @@ struct SettingsView: View {
   @State private var builtinNote = ""
   @State private var confirmRemoveBuiltin = false
   @State private var confirmClearLocal = false
+  @State private var repairNote = ""
+  @State private var repairing = false
   var body: some View {
     Form {
       Section("音乐来源") {
@@ -108,6 +110,25 @@ struct SettingsView: View {
           Text(builtinNote).font(.caption).foregroundStyle(.secondary)
         }
         Text("移除后标记会清掉，下次启动会重新放一次；想反复验证首启就「移除 → 杀掉 App → 重开」。")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+      Section("曲库维护") {
+        Button {
+          Task {
+            repairing = true
+            let report = await store.repairLocalLibrary()
+            repairNote = report.summary
+            repairing = false
+          }
+        } label: {
+          Label(repairing ? "正在整理…" : "整理曲库（合并重复、清理缓存）", systemImage: "arrow.triangle.merge")
+        }
+        .disabled(repairing || store.busy)
+        .accessibilityIdentifier("repairLibrary")
+        if !repairNote.isEmpty {
+          Text(repairNote).font(.caption).foregroundStyle(.secondary)
+        }
+        Text("按内容指纹合并重复导入的曲目，歌单 / 听书进度 / 评分会跟到保留的那一条上；没人引用的缓存文件一并清掉。整理前会先备份 library.json。")
           .font(.caption).foregroundStyle(.secondary)
       }
       Section("外观") {

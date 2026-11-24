@@ -34,6 +34,9 @@ enum SpeechRenderer {
           file: output.lastPathComponent)
         song.trackNumber = index + 1
         song.addedAt = Date()
+        // 自己生成的音频给 cache: 身份：既不会被文件夹导入当成用户文件，
+        // 也不会因为 locator 为空而在整理时被误判成同一条。
+        song.locator = LibraryImport.cacheLocator(output.lastPathComponent)
         songs.append(song)
       } catch {
         try? FileManager.default.removeItem(at: caf)

@@ -208,6 +208,108 @@ final class AwakeTests: XCTestCase {
     XCTAssertTrue(store.message.contains("补齐"), "\(store.message)")
   }
 
+  @MainActor func testFolderImportIgnoresAppOwnedCache() async throws {
+    // 真实事故：用户选「我的 iPhone → Awake」，App 把自己写进去的 Music/<UUID> 副本
+    // 当成用户文件再导入一遍，每扫一次多一代拷贝。扫描器必须整棵跳过托管目录。
+    let root = try directory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = MobileStore(root: root)
+    try wav(root.appendingPathComponent("user.wav"))
+    try wav(store.music.appendingPathComponent("leftover-copy.wav"))
+    await store.importAudioFolder(root)
+    XCTAssertEqual(
+      store.state.songs.count, 1,
+      "只导入用户放进来的那一首：\(store.state.songs.map(\.title))")
+    XCTAssertEqual(store.state.songs.first?.title, "user")
+  }
+
+  @MainActor func testSameAudioUnderNewPathDoesNotDuplicate() async throws {
+    // 同一个文件换个名字、换个目录（用户把副本又拷了一份）不该再进一遍：
+    // 身份按路径判不出来时，用「字节数 + 时长 + 文件头哈希」兜底。
+    let first = try directory()
+    let second = try directory()
+    let output = try directory()
+    defer {
+      try? FileManager.default.removeItem(at: first)
+      try? FileManager.default.removeItem(at: second)
+      try? FileManager.default.removeItem(at: output)
+    }
+    try wav(first.appendingPathComponent("Blue Bird.wav"))
+    try FileManager.default.copyItem(
+      at: first.appendingPathComponent("Blue Bird.wav"),
+      to: second.appendingPathComponent("renamed-copy.wav"))
+    let store = MobileStore(root: output)
+    await store.importAudioFolder(first)
+    await store.importAudioFolder(second)
+    XCTAssertEqual(store.state.songs.count, 1, "同一段音频换路径不该再进一遍")
+    XCTAssertEqual(store.state.songs.first?.title, "Blue Bird", "保留先导入的那一条")
+  }
+
+  @MainActor func testRepairMergesDuplicatesAndKeepsPlaylistReferences() async throws {
+    let source = try directory()
+    let root = try directory()
+    defer {
+      try? FileManager.default.removeItem(at: source)
+      try? FileManager.default.removeItem(at: root)
+    }
+    try wav(source.appendingPathComponent("Blue Bird.wav"))
+    let store = MobileStore(root: root)
+    await store.importAudioFolder(source)
+    let kept = try XCTUnwrap(store.state.songs.first)
+    // 手工造一条历史重复：同一段音频在缓存里另存一份，标题是缓存文件名（UUID）。
+    let twinName = UUID().uuidString + ".wav"
+    try FileManager.default.copyItem(
+      at: store.music.appendingPathComponent(try XCTUnwrap(kept.file)),
+      to: store.music.appendingPathComponent(twinName))
+    var twin = kept
+    twin.id = UUID().uuidString
+    twin.title = String(twinName.dropLast(4))
+    twin.locator = ""
+    twin.addedAt = Date()
+    store.state.songs.append(twin)
+    store.state.playlists = [Playlist(name: "喜欢", songIDs: [twin.id, "missing-song"])]
+    store.save()
+
+    let report = await store.repairLocalLibrary()
+    XCTAssertEqual(report.merged, 1, "两条同内容曲目应合并成一条")
+    XCTAssertEqual(store.state.songs.count, 1)
+    XCTAssertEqual(store.state.songs.first?.id, kept.id, "保留有真实标题的那一条")
+    XCTAssertEqual(store.state.songs.first?.title, "Blue Bird")
+    XCTAssertEqual(
+      store.state.playlists?.first?.songIDs.first, kept.id, "歌单引用要跟到保留项")
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: store.music.appendingPathComponent(twinName).path),
+      "重复缓存文件要清掉")
+    XCTAssertNotNil(
+      store.localURL(try XCTUnwrap(store.state.songs.first)), "保留项的本机文件不能删")
+  }
+
+  @MainActor func testRepairKeepsCueSegmentsSharingOneFile() async throws {
+    let source = try directory()
+    let root = try directory()
+    defer {
+      try? FileManager.default.removeItem(at: source)
+      try? FileManager.default.removeItem(at: root)
+    }
+    try wav(source.appendingPathComponent("album.wav"), seconds: 2)
+    let store = MobileStore(root: root)
+    await store.importAudioFolder(source)
+    let base = try XCTUnwrap(store.state.songs.first)
+    var second = base
+    second.id = UUID().uuidString
+    second.title = "第二首"
+    second.segmentStart = 1
+    second.segmentEnd = 2
+    store.state.songs[0].segmentEnd = 1
+    store.state.songs[0].segmentStart = 0
+    store.state.songs.append(second)
+    store.save()
+
+    let report = await store.repairLocalLibrary()
+    XCTAssertEqual(report.merged, 0, "CUE 分轨共用同一文件，不能按内容合并")
+    XCTAssertEqual(store.state.songs.count, 2)
+  }
+
   @MainActor func testMergeScannedSongsPreservesUserState() {
     var previous = Song(title: "old", file: "cached.wav", sourceID: "s1", locator: "a")
     previous.id = "keep-me"

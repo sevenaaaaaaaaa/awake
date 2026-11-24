@@ -38,9 +38,22 @@ struct PendingTrack: Identifiable, Codable, Equatable, Hashable {
 }
 
 enum LibraryImportIdentity {
-  static func locator(for url: URL) -> String { url.standardizedFileURL.resolvingSymlinksInPath().path }
-  static func existingSongID(locator: String, songs: [Song]) -> String? { songs.first(where: { $0.locator == locator })?.id }
-  static func removedLocators(previous: [String], current: Set<String>) -> [String] { previous.filter { !current.contains($0) } }
+  /// 稳定身份：App 容器内的文件记成 `own:Awake/...`，容器外还是绝对路径。
+  /// 容器 UUID 会在重装 / 恢复备份后变，绝对路径不能当身份用。
+  static func locator(for url: URL) -> String { LibraryImport.locator(for: url) }
+  static func locator(for url: URL, documents: URL) -> String {
+    LibraryImport.locator(for: url, documents: documents)
+  }
+  /// 旧档案里的绝对路径与新 locator 折成同一个可比较的键。
+  static func identityKey(_ locator: String, documents: URL?) -> String {
+    LibraryImport.identityKey(locator, documents: documents)
+  }
+  static func existingSongID(locator: String, songs: [Song]) -> String? {
+    songs.first(where: { $0.locator == locator })?.id
+  }
+  static func removedLocators(previous: [String], current: Set<String>) -> [String] {
+    previous.filter { !current.contains($0) }
+  }
 }
 
 struct Playlist: Identifiable, Codable, Equatable {
@@ -806,11 +819,17 @@ enum Secrets {
     defer { if access { url.stopAccessingSecurityScopedResource() } }
     busy = true
     defer { busy = false }
+    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    let managedRoot = root
     // 枚举放到后台：大目录（上千首）在主线程序列化会把界面卡住。
+    // 同时排除 App 自己的缓存目录：否则「选整个 Awake 文件夹」会把上次导入写出的
+    // Music/<UUID>.m4a 再当成用户文件吃一遍，每扫一次多一代副本。
     let scan = await Task.detached(priority: .userInitiated) {
-      LibraryImport.audioFiles(in: url)
+      LibraryImport.audioFiles(in: url, excludingManagedFrom: managedRoot)
     }.value
-    Diagnostics.log("扫描文件夹 \(url.lastPathComponent)：音频 \(scan.files.count) 个，读不了 \(scan.unreadable) 个，超限 \(scan.exceeded)")
+    Diagnostics.log(
+      "扫描文件夹 \(url.lastPathComponent)：音频 \(scan.files.count) 个，读不了 \(scan.unreadable) 个，超限 \(scan.exceeded)"
+    )
     guard !scan.exceeded else {
       message = "导入失败：文件夹超过两万首，请选择更小的目录"
       return
@@ -822,16 +841,33 @@ enum Secrets {
         : "这个文件夹里没有支持的音频文件（mp3 / m4a / flac / wav / aiff / alac / caf）"
       return
     }
-    let folder = LibraryImportIdentity.locator(for: url)
-    let currentLocators = Set(scan.files.map(LibraryImportIdentity.locator))
-    let previousLocators = state.importedFolderPaths?[folder] ?? []
+    let folderKey = LibraryImport.identityKey(
+      LibraryImport.locator(for: url, documents: documents), documents: documents)
+    let currentLocators = Set(
+      scan.files.map {
+        LibraryImport.identityKey(
+          LibraryImport.locator(for: $0, documents: documents), documents: documents)
+      })
+    let records = state.importedFolderPaths ?? [:]
+    // 旧档案里的文件夹键是绝对路径（还带着旧的容器 UUID）：按身份找回来，
+    // 否则「这次扫描」与「上次记录」永远对不上，消失的成员也就永远不会被清掉。
+    let previousKey = records.keys.first {
+      LibraryImport.identityKey($0, documents: documents) == folderKey
+    }
+    let previousLocators = (previousKey.flatMap { records[$0] } ?? []).map {
+      LibraryImport.identityKey($0, documents: documents)
+    }
     let removed = Set(
       LibraryImportIdentity.removedLocators(previous: previousLocators, current: currentLocators))
     let oldState = state
     let oldSongs = state.songs
-    state.songs.removeAll { removed.contains($0.locator) && $0.sourceID == nil }
-    state.importedFolderPaths = state.importedFolderPaths ?? [:]
-    state.importedFolderPaths?[folder] = scan.files.map(LibraryImportIdentity.locator)
+    state.songs.removeAll {
+      $0.sourceID == nil
+        && removed.contains(LibraryImport.identityKey($0.locator, documents: documents))
+    }
+    var nextRecords = records.filter { $0.key != previousKey }
+    nextRecords[folderKey] = Array(currentLocators)
+    state.importedFolderPaths = nextRecords
     let result = await importFiles(scan.files, report: false, manageBusy: false)
     // 只有「一首都没进来、而且确实有文件失败」才整体回滚。
     // 个别文件读不了不再连坐：能导入的先导入，失败的名字当面说清楚。
@@ -849,7 +885,10 @@ enum Secrets {
       message = "导入失败：无法写入曲库（\(error.localizedDescription)）"
       return
     }
-    let removedIDs = Set(oldSongs.filter { removed.contains($0.locator) }.map(\.id))
+    let removedIDs = Set(
+      oldSongs.filter {
+        removed.contains(LibraryImport.identityKey($0.locator, documents: documents))
+      }.map(\.id))
     if !removedIDs.isEmpty {
       state.playlists = state.playlists?.map { playlist in
         var value = playlist
@@ -868,25 +907,29 @@ enum Secrets {
       message = verdict
     }
     Diagnostics.log(
-      "文件夹导入结果：新增 \(result.added)，补齐 \(result.healed)，跳过 \(result.skipped)，失败 \(result.failed.prefix(5).joined(separator: "、"))")
+      "文件夹导入结果：新增 \(result.added)，补齐 \(result.healed)，跳过 \(result.skipped)，失败 \(result.failed.prefix(5).joined(separator: "、"))"
+    )
   }
   /// 兜底导入：扫描 App 自己的 Documents/Awake（Files App 里可见），
   /// 把用户直接拷进来的音频导入曲库。选择器在个别重签环境里不可用时，这是另一条路。
+  ///
+  /// 只收「用户放进来的文件」：`Music/`、`Artwork/`、`Speech/`、`News/` 是 App 自己写的，
+  /// 一律不进候选；这条规则在扫描器里统一执行，两条导入路径共用。
   func importOwnFolder() async {
     let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    let root = docs.appendingPathComponent("Awake", isDirectory: true)
-    let musicPrefix = music.path + "/"
+    let ownRoot = docs.appendingPathComponent("Awake", isDirectory: true)
+    let managedRoot = root
     let scan = await Task.detached(priority: .userInitiated) {
-      LibraryImport.audioFiles(in: root)
+      LibraryImport.audioFiles(in: ownRoot, excludingManagedFrom: managedRoot)
     }.value
-    let candidates = scan.files.filter { !$0.path.hasPrefix(musicPrefix) }
-    guard !candidates.isEmpty else {
+    guard !scan.files.isEmpty else {
       message =
         "「文件」App 的 Awake 文件夹里没有待导入的音频。把文件拷进「我的 iPhone → Awake」后，再点一次这个按钮。"
-      Diagnostics.log("Documents 导入：没有候选文件（扫描到 \(scan.files.count) 个，读不了 \(scan.unreadable) 个）")
+      Diagnostics.log(
+        "Documents 导入：没有候选文件（扫描到 \(scan.files.count) 个，读不了 \(scan.unreadable) 个）")
       return
     }
-    let result = await importFiles(candidates, report: true)
+    let result = await importFiles(scan.files, report: true)
     if let verdict = LibraryImport.statusMessage(
       added: result.added, healed: result.healed, skipped: result.skipped, failed: result.failed)
     {
@@ -912,16 +955,36 @@ enum Secrets {
     if manageBusy { busy = true }
     defer { if manageBusy { busy = false } }
     var result = ImportResult()
+    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    var songs = state.songs
+    // 身份索引：O(1) 判重；旧档案里的绝对容器路径经 identityKey 折成同一身份。
+    var byIdentity: [String: Int] = [:]
+    for (index, song) in songs.enumerated() where song.sourceID == nil && !song.locator.isEmpty {
+      let key = LibraryImport.identityKey(song.locator, documents: documents)
+      if byIdentity[key] == nil { byIdentity[key] = index }
+    }
+    // 尺寸索引：只有身份没命中时才用，避免每次导入都给几千个缓存文件算哈希。
+    var bySize: [String: [Int]] = [:]
+    for (index, song) in songs.enumerated() where song.sourceID == nil && song.segmentStart == nil {
+      guard let file = song.file, let size = Self.fileSize(music.appendingPathComponent(file))
+      else { continue }
+      bySize[LibraryImport.sizeKey(size: size, duration: song.duration), default: []].append(index)
+    }
+    var changed = false
     for url in urls {
       let access = url.startAccessingSecurityScopedResource()
       defer { if access { url.stopAccessingSecurityScopedResource() } }
       do {
-        let locator = LibraryImportIdentity.locator(for: url)
-        let existing = state.songs.first(where: { $0.locator == locator && $0.sourceID == nil })
-        // 已有曲目且本机文件还在 → 真正重复；本机文件不在（备份恢复、缓存被清、
-        // 上次复制失败）→ 继续走复制，把缺失的文件补齐。
-        if let existing, !LibraryImport.shouldImport(existingHasLocalFile: localURL(existing) != nil)
-        {
+        // App 自己的缓存目录（Music / Artwork / Speech / News）永远不是用户来源：
+        // 导进来的副本就写在 Music/，把它当来源会让每扫一次多一代拷贝。
+        if LibraryImport.isManagedFile(url, root: root) {
+          result.skipped += 1
+          continue
+        }
+        let locator = LibraryImport.locator(for: url, documents: documents)
+        let identity = LibraryImport.identityKey(locator, documents: documents)
+        let existingIndex = byIdentity[identity]
+        if let existingIndex, localURL(songs[existingIndex]) != nil {
           result.skipped += 1
           continue
         }
@@ -941,6 +1004,21 @@ enum Secrets {
         }
         do {
           var song = try await Self.readSong(dest, file: name)
+          // 身份没命中时再按内容判一次：同一段音频换了名字 / 换了容器路径，
+          // 不该再进第二遍 —— 这是「每扫一次多一份」的另一半原因。
+          if existingIndex == nil,
+            let twin = Self.fingerprintTwin(
+              of: dest, duration: song.duration, candidates: bySize, songs: songs, music: music)
+          {
+            try? FileManager.default.removeItem(at: dest)
+            if songs[twin].locator != locator {
+              songs[twin].locator = locator
+              changed = true
+            }
+            byIdentity[identity] = twin
+            result.skipped += 1
+            continue
+          }
           song.locator = locator
           song.addedAt = Date()
           song.originalFilename = url.lastPathComponent
@@ -950,22 +1028,28 @@ enum Secrets {
           if song.title == dest.deletingPathExtension().lastPathComponent {
             song.title = url.deletingPathExtension().lastPathComponent
           }
-          if let existing, let index = state.songs.firstIndex(where: { $0.id == existing.id }) {
+          if let existingIndex, songs.indices.contains(existingIndex) {
             // 补齐缺失的本机文件：保留 id（歌单、听书记录都靠它），只换文件与缺失的元数据。
-            var healed = existing
+            var healed = songs[existingIndex]
             healed.file = name
+            healed.locator = locator
             if healed.duration <= 0 { healed.duration = song.duration }
             if healed.sampleRate <= 0 { healed.sampleRate = song.sampleRate }
             if healed.title.isEmpty { healed.title = song.title }
             if healed.artwork == nil { healed.artwork = song.artwork }
             if healed.lyrics == nil || healed.lyrics?.isEmpty == true { healed.lyrics = song.lyrics }
-            state.songs[index] = healed
+            songs[existingIndex] = healed
             result.healed += 1
           } else {
-            state.songs.append(song)
+            songs.append(song)
+            byIdentity[identity] = songs.count - 1
+            if let size = Self.fileSize(dest) {
+              bySize[LibraryImport.sizeKey(size: size, duration: song.duration), default: []]
+                .append(songs.count - 1)
+            }
             result.added += 1
           }
-          save()
+          changed = true
         } catch {
           try? FileManager.default.removeItem(at: dest)
           throw error
@@ -975,6 +1059,11 @@ enum Secrets {
         Diagnostics.log("导入失败 \(url.lastPathComponent)：\(error.localizedDescription)")
       }
     }
+    // 一次导入只写一次盘、只推一次界面：逐首 save() 在上千首时会把界面卡成幻灯片。
+    if changed {
+      state.songs = songs
+      save()
+    }
     if report || result.added + result.healed > 1,
       let verdict = LibraryImport.statusMessage(
         added: result.added, healed: result.healed, skipped: result.skipped, failed: result.failed)
@@ -982,6 +1071,316 @@ enum Secrets {
       message = verdict
     }
     return result
+  }
+
+  /// 缓存里有没有「同一段音频」：字节数与时长相同，再比文件头哈希。
+  nonisolated static func fingerprintTwin(
+    of url: URL, duration: Double, candidates: [String: [Int]], songs: [Song], music: URL
+  ) -> Int? {
+    guard let size = fileSize(url) else { return nil }
+    let key = LibraryImport.sizeKey(size: size, duration: duration)
+    guard let indexes = candidates[key], !indexes.isEmpty else { return nil }
+    guard let head = LibraryImport.headBytes(of: url) else { return nil }
+    let hash = LibraryImport.headHash(head)
+    for index in indexes where songs.indices.contains(index) {
+      guard let file = songs[index].file else { continue }
+      let cached = music.appendingPathComponent(file)
+      guard let cachedHead = LibraryImport.headBytes(of: cached),
+        LibraryImport.headHash(cachedHead) == hash
+      else { continue }
+      return index
+    }
+    return nil
+  }
+
+  nonisolated static func fileSize(_ url: URL) -> Int64? {
+    guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+      let size = values.fileSize
+    else { return nil }
+    return Int64(size)
+  }
+
+  // MARK: - 曲库整理（合并历史重复 / 清理缓存）
+
+  struct LibraryRepairReport {
+    var ran = false
+    var scanned = 0
+    var merged = 0
+    var removedFiles = 0
+    var freedBytes: Int64 = 0
+    var rewrittenLocators = 0
+    var backupName: String?
+    var summary: String {
+      guard ran else { return "" }
+      var parts: [String] = []
+      if merged > 0 { parts.append("合并重复 \(merged) 首") }
+      if removedFiles > 0 {
+        parts.append(
+          "清理缓存 \(removedFiles) 个（\(ByteCountFormatter.string(fromByteCount: freedBytes, countStyle: .file))）"
+        )
+      }
+      if rewrittenLocators > 0 { parts.append("修正地址 \(rewrittenLocators) 条") }
+      return parts.isEmpty ? "曲库已检查：没有发现重复项" : "整理完成：" + parts.joined(separator: "，")
+    }
+  }
+
+  /// 把历史上重复导入的曲目按「内容」合并回一条，并清理没人引用的缓存文件。
+  ///
+  /// 只动本地曲目（`sourceID == nil`）：远程来源重复的成员由来源扫描自己合并。
+  /// 合并前先备份 `library.json`；任何持久化失败都整批回滚。
+  @discardableResult
+  func repairLocalLibrary() async -> LibraryRepairReport {
+    var report = LibraryRepairReport()
+    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    var songs = state.songs
+
+    // 1. 身份归一：容器绝对路径 → own:（重装 / 恢复后绝对路径全变，旧记录就永远命中不了）
+    for index in songs.indices where songs[index].sourceID == nil {
+      let next = LibraryImport.migratedLocator(songs[index].locator, documents: documents)
+      if next != songs[index].locator {
+        songs[index].locator = next
+        report.rewrittenLocators += 1
+      }
+      // 缓存文件名漏进标题的（UUID），用导入时记下的原始文件名还原成人能读的标题。
+      if LibraryImport.isUUIDLike(songs[index].title),
+        let original = songs[index].originalFilename, !original.isEmpty
+      {
+        let stem = (original as NSString).deletingPathExtension
+        if !stem.isEmpty, !LibraryImport.isUUIDLike(stem) { songs[index].title = stem }
+      }
+    }
+
+    // 2. 收集可判重的本地曲目：CUE 虚拟分轨共用同一个文件，不能按内容合并。
+    let referenced = referencedSongIDs()
+    var entries: [LibraryImport.Entry] = []
+    for song in songs where song.sourceID == nil && song.segmentStart == nil {
+      var fingerprint: String?
+      if let file = song.file, file == URL(fileURLWithPath: file).lastPathComponent,
+        let size = Self.fileSize(music.appendingPathComponent(file)), song.duration > 0
+      {
+        fingerprint = LibraryImport.fingerprint(size: size, duration: song.duration)
+      }
+      entries.append(
+        LibraryImport.Entry(
+          id: song.id,
+          identity: LibraryImport.identityKey(song.locator, documents: documents),
+          fingerprint: fingerprint,
+          file: song.file,
+          title: song.title,
+          artist: song.artist,
+          hasArtwork: song.artwork != nil,
+          hasLyrics: song.lyrics?.isEmpty == false,
+          referenced: referenced.contains(song.id),
+          addedAt: song.addedAt))
+    }
+    report.scanned = entries.count
+    let musicPath = music.path
+    let groups = await Task.detached(priority: .utility) { () -> [LibraryImport.DuplicateGroup] in
+      var refined: [LibraryImport.DuplicateGroup] = []
+      for (key, rows) in LibraryImport.buckets(entries) where rows.count > 1 {
+        guard key.hasPrefix("fp:") else {
+          if let group = LibraryImport.group(rows) { refined.append(group) }
+          continue
+        }
+        // 只按「字节数 + 时长」分组还不够：不同歌可能刚好撞上，再用文件头哈希细分。
+        var byHash: [String: [LibraryImport.Entry]] = [:]
+        for row in rows {
+          let hash: String
+          if let file = row.file,
+            let data = LibraryImport.headBytes(
+              of: URL(fileURLWithPath: musicPath).appendingPathComponent(file))
+          {
+            hash = LibraryImport.headHash(data)
+          } else {
+            hash = "no-cache-file:" + row.id
+          }
+          byHash[hash, default: []].append(row)
+        }
+        for (_, same) in byHash {
+          if let group = LibraryImport.group(same) { refined.append(group) }
+        }
+      }
+      return refined.sorted { $0.keep < $1.keep }
+    }.value
+
+    var keepUpdates: [String: Song] = [:]
+    var dropToKeep: [String: String] = [:]
+    for group in groups {
+      guard let keepIndex = songs.firstIndex(where: { $0.id == group.keep }) else { continue }
+      var keep = songs[keepIndex]
+      for dropID in group.drop {
+        guard let dropIndex = songs.firstIndex(where: { $0.id == dropID }) else { continue }
+        let dropped = songs[dropIndex]
+        // 用户动过的痕迹并到保留项上，只补空缺，不覆盖已有。
+        if !keep.favorite { keep.favorite = dropped.favorite }
+        if keep.artwork == nil { keep.artwork = dropped.artwork }
+        if keep.lyrics?.isEmpty != false { keep.lyrics = dropped.lyrics }
+        if keep.comment?.isEmpty != false { keep.comment = dropped.comment }
+        if keep.mediaInfo == nil { keep.mediaInfo = dropped.mediaInfo }
+        if keep.originalFilename == nil { keep.originalFilename = dropped.originalFilename }
+        if keep.title.isEmpty || LibraryImport.isUUIDLike(keep.title),
+          !dropped.title.isEmpty, !LibraryImport.isUUIDLike(dropped.title)
+        {
+          keep.title = dropped.title
+          if !dropped.artist.isEmpty { keep.artist = dropped.artist }
+          if !dropped.album.isEmpty { keep.album = dropped.album }
+        }
+        dropToKeep[dropID] = group.keep
+        report.merged += 1
+      }
+      keepUpdates[group.keep] = keep
+    }
+
+    if !dropToKeep.isEmpty {
+      report.backupName = backupLibraryFile()
+      let previous = state
+      var next = state
+      let droppedIDs = Set(dropToKeep.keys)
+      next.songs = songs.filter { !droppedIDs.contains($0.id) }
+      for index in next.songs.indices {
+        if let updated = keepUpdates[next.songs[index].id] { next.songs[index] = updated }
+      }
+      next.playlists = next.playlists?.map { playlist in
+        var value = playlist
+        value.songIDs = value.songIDs.map { dropToKeep[$0] ?? $0 }
+        return value
+      }
+      next.listens = next.listens.map { listen in
+        var value = listen
+        if let keep = dropToKeep[value.songID] { value.songID = keep }
+        return value
+      }
+      next.ratings = next.ratings.map { rating in
+        var value = rating
+        if let keep = dropToKeep[value.songID] { value.songID = keep }
+        return value
+      }
+      if let creations = next.creations {
+        next.creations = creations.map { job in
+          var value = job
+          if let songID = value.songID, let keep = dropToKeep[songID] { value.songID = keep }
+          return value
+        }
+      }
+      if let log = next.tuningLog {
+        next.tuningLog = log.map { record in
+          var value = record
+          if let keep = dropToKeep[value.songID] { value.songID = keep }
+          return value
+        }
+      }
+      if let progress = next.bookProgress {
+        next.bookProgress = progress.mapValues { entry in
+          var value = entry
+          if let songID = value.songID, let keep = dropToKeep[songID] { value.songID = keep }
+          return value
+        }
+      }
+      if let curves = next.songCurves {
+        var rebuilt: [String: SongCurve] = [:]
+        for (songID, curve) in curves {
+          let key = dropToKeep[songID] ?? songID
+          if rebuilt[key] == nil { rebuilt[key] = curve }
+        }
+        next.songCurves = rebuilt
+      }
+      // 文件夹成员记录也一起归一，避免下次扫描把已合并的成员当成「消失」。
+      if let records = next.importedFolderPaths {
+        next.importedFolderPaths = Dictionary(
+          grouping: records.flatMap { key, locators in
+            locators.map { (LibraryImport.identityKey(key, documents: documents), LibraryImport.identityKey($0, documents: documents)) }
+          },
+          by: { $0.0 }
+        ).mapValues { rows in Array(Set(rows.map { $0.1 })) }
+      }
+      do {
+        try commit(next)
+      } catch {
+        state = previous
+        message = "整理失败：无法写入曲库（\(error.localizedDescription)）"
+        report.ran = false
+        return report
+      }
+      // 只删「已经没有曲目引用」的缓存文件。
+      let stillReferenced = Set(state.songs.compactMap(\.file))
+      for dropID in droppedIDs {
+        guard let dropped = songs.first(where: { $0.id == dropID }), let file = dropped.file,
+          !stillReferenced.contains(file)
+        else { continue }
+        let url = music.appendingPathComponent(file)
+        if let size = Self.fileSize(url) { report.freedBytes += size }
+        if (try? FileManager.default.removeItem(at: url)) != nil { report.removedFiles += 1 }
+      }
+    }
+
+    // 3. 孤儿缓存：没人引用、且放置超过一小时（避开正在写入的下载 / 渲染）。
+    let referencedFiles = Set(state.songs.compactMap(\.file))
+    let cutoff = Date().addingTimeInterval(-3600)
+    if !busy,
+      let listing = try? FileManager.default.contentsOfDirectory(
+        at: music, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+        options: [.skipsHiddenFiles])
+    {
+      for file in listing {
+        let name = file.lastPathComponent
+        if referencedFiles.contains(name) { continue }
+        let values = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        guard let date = values?.contentModificationDate, date < cutoff else { continue }
+        if let size = values?.fileSize { report.freedBytes += Int64(size) }
+        if (try? FileManager.default.removeItem(at: file)) != nil { report.removedFiles += 1 }
+      }
+    }
+
+    report.ran = true
+    return report
+  }
+
+  /// 歌单 / 听书进度 / 评分 / 听歌记录 / 曲线 / 调音记录里被引用的曲目 id。
+  func referencedSongIDs() -> Set<String> {
+    var ids = Set<String>()
+    for playlist in state.playlists ?? [] { ids.formUnion(playlist.songIDs) }
+    for listen in state.listens { ids.insert(listen.songID) }
+    for rating in state.ratings { ids.insert(rating.songID) }
+    for job in state.creations ?? [] { if let songID = job.songID { ids.insert(songID) } }
+    for record in state.tuningLog ?? [] { ids.insert(record.songID) }
+    for entry in (state.bookProgress ?? [:]).values {
+      if let songID = entry.songID { ids.insert(songID) }
+    }
+    return ids
+  }
+
+  /// 整理前留一份原件；只保留最近三份，避免 `library.json` 旁边越长越多。
+  func backupLibraryFile() -> String? {
+    let source = root.appendingPathComponent("library.json")
+    guard FileManager.default.fileExists(atPath: source.path) else { return nil }
+    let name = "library.json.before-repair-\(Int(Date().timeIntervalSince1970))"
+    do {
+      try FileManager.default.copyItem(at: source, to: root.appendingPathComponent(name))
+    } catch {
+      return nil
+    }
+    let manager = FileManager.default
+    if let listing = try? manager.contentsOfDirectory(atPath: root.path) {
+      let backups = listing.filter { $0.hasPrefix("library.json.before-repair-") }.sorted()
+      for stale in backups.dropLast(3) {
+        try? manager.removeItem(at: root.appendingPathComponent(stale))
+      }
+    }
+    return name
+  }
+
+  /// 启动时跑一次整理（只在第一次升级到这个版本时），之后由设置页按钮手动触发。
+  static let libraryRepairKey = "libraryRepair.v2"
+
+  func repairLibraryIfNeeded() async {
+    guard !UserDefaults.standard.bool(forKey: Self.libraryRepairKey) else { return }
+    let report = await repairLocalLibrary()
+    guard report.ran else { return }
+    UserDefaults.standard.set(true, forKey: Self.libraryRepairKey)
+    if report.merged > 0 || report.removedFiles > 0 {
+      message = report.summary
+      Diagnostics.log("曲库整理：\(report.summary)（扫描 \(report.scanned) 首）")
+    }
   }
 
   /// iCloud Drive / 文件提供者返回的 URL 直接 copy 可能失败；用 NSFileCoordinator 触发下载后再复制。

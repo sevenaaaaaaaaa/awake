@@ -904,9 +904,11 @@ enum AIService {
     try audio.read(into: buffer)
     guard buffer.frameLength > 0 else { throw AppFailure("生成音频无法解码") }
     try FileManager.default.moveItem(at: temp, to: dest)
-    return Song(
+    var song = Song(
       title: String(prompt.prefix(32)), artist: "AI · ElevenLabs", album: "Awake 原创作品",
       genre: "AI Generated", duration: Double(audio.length) / audio.processingFormat.sampleRate,
       sampleRate: audio.processingFormat.sampleRate, file: name)
+    song.locator = LibraryImport.cacheLocator(name)
+    return song
   }
 }
