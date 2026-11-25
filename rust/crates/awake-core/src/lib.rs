@@ -7,8 +7,11 @@
 //! - `resample`：设备不支持原生采样率时的兜底
 //! - `models` / `metadata` / `library`：曲库、标签与扫描
 
+pub mod adapt;
 pub mod analyze;
+pub mod artist;
 pub mod books;
+pub mod classical;
 pub mod decode;
 pub mod eq;
 pub mod feedmeta;
@@ -18,9 +21,14 @@ pub mod lyrics;
 pub mod media_info;
 pub mod metadata;
 pub mod models;
+pub mod musicbee;
+pub mod musicbee_import;
 pub mod parametric;
 pub mod pipeline;
+pub mod radio;
 pub mod resample;
+pub mod shelf;
+pub mod stream;
 pub mod taste;
 
 pub use analyze::{to_mono, Spectrum, SpectrumAnalyzer};

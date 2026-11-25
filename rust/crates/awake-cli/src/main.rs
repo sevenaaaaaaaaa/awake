@@ -36,6 +36,30 @@ fn main() -> Result<()> {
             let target = args.get(1).context("缺少曲库目录")?;
             cmd_scan(Path::new(target))
         }
+        "radio" => {
+            let sub = args.get(1).map(String::as_str).unwrap_or("probe");
+            if sub != "probe" {
+                bail!("radio 只支持 probe");
+            }
+            let target = args.get(2).context("缺少电台地址或文件路径")?;
+            let secs: f64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(4.0);
+            let flags = parse_flags(&args[4..])?;
+            cmd_radio_probe(target, secs, flags.get("ext").map(String::as_str))
+        }
+        "mbl" => {
+            let sub = args.get(1).map(String::as_str).unwrap_or("inspect");
+            let target = args.get(2).context("缺少 .mbl 路径")?;
+            let flags = parse_flags(&args[3..])?;
+            match sub {
+                "inspect" => cmd_mbl_inspect(
+                    Path::new(target),
+                    flags.get("root").map(String::as_str),
+                    flags.get("mount").map(String::as_str),
+                ),
+                "apply" => cmd_mbl_apply(Path::new(target), &flags),
+                other => bail!("mbl 只支持 inspect / apply，收到 {other}"),
+            }
+        }
         "play" => {
             let target = args.get(1).context("缺少文件路径")?;
             let secs: f32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(5.0);
@@ -55,6 +79,13 @@ fn print_usage() {
     println!("  scan <目录>             扫描曲库并统计专辑");
     println!("  eq-test <文件>          应用 31 段 EQ 并报告峰值");
     println!("  play <文件> [秒数]      cpal 播放");
+    println!("  radio probe <地址|文件> [秒数] [--ext mp3]");
+    println!("                           真实解码一段直播流，报编码/采样率/电平");
+    println!("  mbl inspect <.mbl> [--root WINDOWS根] [--mount 本地挂载点]");
+    println!("                           只读解析 MusicBee 曲库（不写回）");
+    println!("  mbl apply <.mbl> --library <数据目录> --root <WINDOWS根> --mount <挂载点>");
+    println!("                           [--source 来源ID] [--dry-run] [--force]");
+    println!("                           把播放次数/上次播放/入库时间导入 Awake 曲库（只增不减）");
 }
 
 fn collect_audio_files(path: &Path) -> Result<Vec<PathBuf>> {
@@ -161,6 +192,287 @@ fn cmd_scan(root: &Path) -> Result<()> {
                 t.title,
                 t.quality_label()
             );
+        }
+    }
+    Ok(())
+}
+
+/// MusicBee 曲库只读体检：条数、首末路径、播放次数、可选的路径映射结果。
+///
+/// 这个命令存在的意义：D1/D2 的验收要一条能对真实文件重跑的命令，而不是"我读过了"。
+/// 解析 `--key value` 与布尔开关（dry-run / force / yes）。
+fn parse_flags(args: &[String]) -> Result<std::collections::HashMap<String, String>> {
+    let mut map = std::collections::HashMap::new();
+    let mut i = 0;
+    while i < args.len() {
+        let raw = &args[i];
+        let key = raw
+            .strip_prefix("--")
+            .with_context(|| format!("未知参数: {raw}"))?
+            .to_string();
+        if key == "dry-run" || key == "force" || key == "yes" {
+            map.insert(key, "1".to_string());
+            i += 1;
+            continue;
+        }
+        let value = args.get(i + 1).with_context(|| format!("--{key} 需要值"))?.clone();
+        map.insert(key, value);
+        i += 2;
+    }
+    Ok(map)
+}
+
+fn state_value(text: &str, key: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let (k, v) = line.split_once('=')?;
+        (k.trim() == key).then(|| v.trim().to_string())
+    })
+}
+
+/// 把 MusicBee 的注解导入 Awake 曲库：只读 .mbl，只增不减，写前备份。
+///
+/// 这是 D5–D6 的可执行形态：没有界面，但语义与将来的向导一致——
+/// 先算（headline 里全是数字）、再确认（--dry-run）、最后落库（写前备份 + 状态文件）。
+fn cmd_mbl_apply(mbl: &Path, flags: &std::collections::HashMap<String, String>) -> Result<()> {
+    use awake_core::musicbee;
+    use awake_core::musicbee_import::{apply, plan, Snapshot, SourceRoot};
+    use awake_core::Library;
+
+    let library_arg = flags
+        .get("library")
+        .context("缺少 --library（数据目录或 library.json 路径）")?;
+    let library_path = {
+        let p = Path::new(library_arg);
+        if p.extension().map(|e| e == "json").unwrap_or(false) {
+            p.to_path_buf()
+        } else {
+            p.join("library.json")
+        }
+    };
+    let data_dir = library_path
+        .parent()
+        .context("--library 路径没有父目录")?
+        .to_path_buf();
+    let win_root = flags
+        .get("root")
+        .context("缺少 --root（.mbl 里路径的 Windows 根，例如 F:\\\\Music）")?
+        .as_str();
+    let mount = flags
+        .get("mount")
+        .context("缺少 --mount（本机挂载点，例如 /Volumes/Music）")?
+        .as_str();
+    let dry_run = flags.contains_key("dry-run");
+
+    let bytes = std::fs::read(mbl).with_context(|| format!("读不到 {}", mbl.display()))?;
+    let meta = std::fs::metadata(mbl).with_context(|| format!("读不到 {}", mbl.display()))?;
+    let modified_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let snapshot = Snapshot { len: meta.len(), modified_ms };
+
+    let sidecar = data_dir.join("musicbee-import.state");
+    if !flags.contains_key("force") {
+        let prev = std::fs::read_to_string(&sidecar).unwrap_or_default();
+        let same = state_value(&prev, "len") == Some(snapshot.len.to_string())
+            && state_value(&prev, "modified_ms") == Some(snapshot.modified_ms.to_string())
+            && state_value(&prev, "win_root") == Some(win_root.to_string())
+            && state_value(&prev, "mount") == Some(mount.to_string());
+        if same {
+            println!(
+                "未变化：{} 字节 / 修改时间 {} 与上次导入一致，跳过（--force 可强制重跑）。",
+                snapshot.len, snapshot.modified_ms
+            );
+            return Ok(());
+        }
+    }
+
+    let lib = musicbee::parse(&bytes).context("解析 .mbl 失败；曲库与注解都没有改动")?;
+    let mut store = Library::open(&library_path);
+
+    let mut roots: Vec<(String, String)> = store
+        .snapshot
+        .sources
+        .iter()
+        .filter(|s| s.enabled && s.url.starts_with('/'))
+        .map(|s| (s.id.clone(), s.url.clone()))
+        .collect();
+    if let Some(only) = flags.get("source") {
+        roots.retain(|(id, _)| id == only);
+    }
+    if roots.is_empty() {
+        bail!("曲库里没有可用的本地来源（url 必须是绝对路径）。先把音乐文件夹加成本地来源，或用 --source 指定。");
+    }
+    let refs: Vec<SourceRoot> = roots
+        .iter()
+        .map(|(id, root)| SourceRoot { source_id: id.as_str(), root: root.as_str() })
+        .collect();
+
+    let plan = plan(&lib, &store.snapshot.tracks, &refs, win_root);
+    println!("{}", plan.headline());
+    if plan.case_insensitive > 0 {
+        println!("（其中 {} 条靠忽略大小写匹配上）", plan.case_insensitive);
+    }
+    for item in plan.matched.iter().filter(|m| m.changed).take(5) {
+        println!("  会改: {} → {}", item.track_id, item.posix_path);
+    }
+    for path in plan.unmatched.iter().take(5) {
+        println!("  对不上: {path}");
+    }
+
+    if dry_run {
+        println!("dry-run：没有写任何文件。");
+        return Ok(());
+    }
+
+    let report = apply(&mut store.snapshot.tracks, &plan);
+    if report.updated > 0 {
+        let dir = data_dir
+            .join("backups")
+            .join(format!("musicbee-{}", awake_core::models::now_ms()));
+        std::fs::create_dir_all(&dir).ok();
+        std::fs::copy(&library_path, dir.join("library.json")).ok();
+        store.save()?;
+        println!(
+            "已写入曲库: {} 首（播放次数 {} · 上次播放 {} · 入库时间 {}）",
+            report.updated, report.play_count_raised, report.last_played_moved, report.added_at_filled
+        );
+        println!("写入前备份: {}", dir.display());
+    } else {
+        println!("没有需要改的曲目（曲库未写入）。");
+    }
+
+    let state = format!(
+        "len={}\nmodified_ms={}\nwin_root={}\nmount={}\nimported_at={}\nupdated={}\n",
+        snapshot.len,
+        snapshot.modified_ms,
+        win_root,
+        mount,
+        awake_core::models::now_ms(),
+        report.updated
+    );
+    std::fs::write(&sidecar, state).with_context(|| format!("写不了 {}", sidecar.display()))?;
+    Ok(())
+}
+
+/// 让 ChildStdout 满足 MediaSource 要求的 Sync：加一层互斥。
+struct Shared<R>(std::sync::Mutex<R>);
+
+impl<R> Shared<R> {
+    fn new(inner: R) -> Self {
+        Self(std::sync::Mutex::new(inner))
+    }
+}
+
+impl<R: std::io::Read> std::io::Read for Shared<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let mut guard = self
+            .0
+            .lock()
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "读取锁被污染"))?;
+        guard.read(buf)
+    }
+}
+
+fn guess_ext(target: &str) -> Option<&'static str> {
+    let path = target.split('?').next().unwrap_or(target).to_lowercase();
+    for ext in ["mp3", "aac", "ogg", "opus", "flac", "wav"] {
+        if path.ends_with(&format!(".{ext}")) {
+            return Some(match ext {
+                "mp3" => "mp3",
+                "aac" => "aac",
+                "ogg" => "ogg",
+                "opus" => "opus",
+                "flac" => "flac",
+                _ => "wav",
+            });
+        }
+    }
+    None
+}
+
+/// 真实解码一段流：地址走 curl 管道，文件直接读。数字全部来自解码结果。
+fn cmd_radio_probe(target: &str, secs: f64, ext: Option<&str>) -> Result<()> {
+    use awake_core::stream::{decode_summary, StreamSummary};
+
+    let hint = ext.or_else(|| guess_ext(target));
+    println!("来源: {target}");
+    if let Some(hint) = hint {
+        println!("提示: .{hint}（只帮 probe 少猜，不决定结果）");
+    }
+
+    let summary: StreamSummary = if target.starts_with("http://") || target.starts_with("https://") {
+        let mut child = std::process::Command::new("curl")
+            .args([
+                "-sS",
+                "--max-time",
+                &format!("{:.0}", secs.max(1.0) + 8.0),
+                "-A",
+                &format!("awake/{}", env!("CARGO_PKG_VERSION")),
+                target,
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .context("起不了 curl")?;
+        let stdout = child.stdout.take().context("curl 没有输出管道")?;
+        let decoded = decode_summary(Shared::new(stdout), hint, secs);
+        child.kill().ok();
+        child.wait().ok();
+        decoded?
+    } else {
+        let file = std::fs::File::open(target).with_context(|| format!("读不到 {target}"))?;
+        decode_summary(file, hint, secs)?
+    };
+
+    println!(
+        "编码: {} · {:.1} kHz · {} 声道",
+        summary.format.codec,
+        summary.format.sample_rate as f64 / 1000.0,
+        summary.format.channels
+    );
+    println!(
+        "解出: {:.2} 秒（{} 帧 · 坏帧 {}）",
+        summary.decoded_secs, summary.frames, summary.bad_packets
+    );
+    println!("电平: RMS {:.1} dBFS · 峰值 {:.3}", summary.rms_db, summary.peak);
+    Ok(())
+}
+
+fn cmd_mbl_inspect(path: &Path, win_root: Option<&str>, posix_root: Option<&str>) -> Result<()> {
+    use awake_core::musicbee;
+
+    let bytes = std::fs::read(path).with_context(|| format!("读不到 {}", path.display()))?;
+    let lib = musicbee::parse(&bytes).context("解析 .mbl 失败")?;
+
+    println!("文件: {}", path.display());
+    println!("大小: {} 字节", bytes.len());
+    println!("版本: {}", lib.version);
+    println!("声明: {} 条", lib.declared);
+    println!("解析: {} 条", lib.records.len());
+    println!("尾部: {} 字节", lib.trailing_bytes);
+    if let Some(first) = lib.records.first() {
+        println!("首条: {}", first.path);
+    }
+    if let Some(last) = lib.records.last() {
+        println!("末条: {}", last.path);
+    }
+    let plays: u32 = lib.records.iter().map(|r| r.play_count).sum();
+    println!("播放次数合计: {plays}");
+    let tagged = lib.records.iter().filter(|r| !r.tags.is_empty()).count();
+    println!("带标签: {tagged} 条（tag_code 映射未验证，只报数量）");
+
+    if let (Some(root), Some(mount)) = (win_root, posix_root) {
+        let plan = musicbee::plan(&lib.records, root, mount);
+        println!("匹配: {} 条", plan.matched.len());
+        println!("未匹配: {} 条", plan.unmatched.len());
+        if let Some(first) = plan.matched.first() {
+            println!("首条映射: {}", first.posix_path);
+        }
+        if let Some(first) = plan.unmatched.first() {
+            println!("首条未匹配: {first}");
         }
     }
     Ok(())

@@ -39,6 +39,7 @@ mod preset;
 mod plex;
 mod remote;
 mod self_check;
+mod library_insight;
 mod song_curves;
 mod speech;
 mod telegram;
@@ -1306,6 +1307,9 @@ pub fn run() {
             song_curves::assign_pending_curve,
             song_curves::drop_pending_curve,
             song_curves::song_curves_summary,
+            library_insight::shelf_overview,
+            library_insight::adapt_queue,
+            library_insight::artist_profiles,
             self_check::self_check
         ])
         .build(tauri::generate_context!())
