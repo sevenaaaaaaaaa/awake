@@ -480,3 +480,20 @@ dry-run：没有写任何文件。          ← library.json 的 sha 未变
 
 **没验的**：真实古典库上的命中率（需要真实标签样本；我手上只有构造用例）；乐章解析只认上述四种写法，遇到 `BWV 988 - Aria` 这种连写的专辑可能认不出。
 
+
+### 10.9 0.9.42 已发布（同日第六轮）
+
+| 项 | 结果 |
+| --- | --- |
+| 版本 | 0.9.42（五处同步），iOS build 54 |
+| 提交 | 4 个：iOS 界面（上一会话遗留）→ core/CLI → UI 四页 → 版本与说明 |
+| 发布前验证 | `cargo test -p awake-core -p awake-app --lib` = 117 + 123 通过（10 ignored）；`npm test` 71 通过；`vue-tsc` 0 错误 |
+| 桌面产物 | `dist-rust/Awake.app`（arm64，版本 0.9.42，codesign --verify 通过），已装到 `/Applications`，旧版备份 `/tmp/Awake-0.9.41-backup.app` |
+| iOS 产物 | `Awake-0.9.42-ios-arm64-unsigned.ipa`（9.3MB，Info.plist 0.9.42 / build 54），`ARCHIVE SUCCEEDED` |
+| 哈希 | `0c46cf919258d0ff97882a03dfd08ac739b1637c3b6e356c2908ccb20f9c699e`，iCloud 副本重算一致 |
+| GitHub | tag `v0.9.42` → Release `Awake 0.9.42`，正文用 `docs/releases/v0.9.42.md`，已上传 IPA + `.sha256` |
+
+**安装验证的一个坑（写下来）**：在 `/Applications/Awake.app/Contents/MacOS/Awake` 里 grep "适配报告" 等字样是 **0 命中**——Tauri 把前端资源压缩后嵌进二进制，纯文本搜不到。所以那条 grep 不能当"界面没更新"的证据。真正可核对的证据是：`ui/dist/assets/index-B1saP9qe.js`（360660 字节）里四个新字符串都命中，而 macOS 构建日志里嵌入的正是这个文件名。
+
+**没做的**：真机装 IPA、点一遍验收；CI 的 macOS zip 由 tag 触发的工作流产出，成败以 Actions 为准（v0.9.41 那次是红的，所以这一条不当默认绿）。
+
