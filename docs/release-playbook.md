@@ -35,8 +35,12 @@
 ```sh
 cargo test --manifest-path rust/Cargo.toml -p awake-core -p awake-app --lib
 npm test --prefix ui
-npx --prefix ui vue-tsc --noEmit    # 或 npm run build --prefix ui
+(cd ui && npx vue-tsc --noEmit)     # 或 npm run build --prefix ui
 ```
+
+> `npx --prefix ui vue-tsc --noEmit` **别用**：0.9.44 发版时它退出 1 却没有任何输出，
+> 看起来像"类型检查失败"，其实什么都没检查（npx 的 `--prefix` 不做目录切换）。
+> 必须在 `ui/` 里跑，或者用 `npm run build --prefix ui`。
 
 iOS 至少 `xcodebuild ... build` 通过（不签名也能验编译）。有一条红就停下修，不带着红发布。
 
