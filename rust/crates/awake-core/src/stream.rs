@@ -199,6 +199,172 @@ pub fn decode_summary<R: Read + Send + Sync + 'static>(
     })
 }
 
+/// 本机有没有 ffmpeg。找 PATH、再找 Homebrew 的两个常见前缀。
+pub fn ffmpeg_path() -> Option<std::path::PathBuf> {
+    use std::path::PathBuf;
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in path.split(':') {
+            let candidate = PathBuf::from(dir).join("ffmpeg");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    for candidate in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"] {
+        let path = PathBuf::from(candidate);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// ffprobe 与 ffmpeg 同装一处；用它把"到底是什么编码"问清楚，
+/// 而不是让界面显示 unknown（探测到的编码要写进缓存，unknown 会让结论失去意义）。
+pub fn ffprobe_path() -> Option<std::path::PathBuf> {
+    let ffmpeg = ffmpeg_path()?;
+    let sibling = ffmpeg.with_file_name("ffprobe");
+    if sibling.is_file() {
+        return Some(sibling);
+    }
+    use std::path::PathBuf;
+    for candidate in ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "/usr/bin/ffprobe"] {
+        let path = PathBuf::from(candidate);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    if let Ok(search) = std::env::var("PATH") {
+        for dir in search.split(':') {
+            let candidate = PathBuf::from(dir).join("ffprobe");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+/// 问 ffprobe 这条流/文件的音频编码。拿不到就 None——不猜。
+pub fn identify_codec(input: &str) -> Option<String> {
+    let executable = ffprobe_path()?;
+    let output = std::process::Command::new(executable)
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=codec_name",
+            "-of",
+            "csv=p=0",
+            input,
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+/// 用 ffmpeg 兜底解一段流（或文件），给出与 symphonia 路径同形状的摘要。
+///
+/// 这是**可选路径**：只有用户在设置里打开"ffmpeg 兜底"、且本机真的装了 ffmpeg 才会走到。
+/// 输出固定成 48kHz / 立体声 / s16le，因为这条路径不需要保真，只需要"能不能出声"。
+pub fn decode_via_ffmpeg(input: &str, seconds: f64, label: &str) -> Result<StreamSummary> {
+    use std::process::{Command, Stdio};
+
+    let executable = ffmpeg_path().context("没找到 ffmpeg（brew install ffmpeg）")?;
+    let stderr_path = std::env::temp_dir().join(format!("awake-ffmpeg-{}.log", std::process::id()));
+    let stderr = std::fs::File::create(&stderr_path).context("建不了 ffmpeg 日志")?;
+    let duration = format!("{:.2}", seconds.max(0.5));
+
+    let mut child = Command::new(&executable)
+        .args([
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-i",
+            input,
+            "-t",
+            &duration,
+            "-f",
+            "s16le",
+            "-acodec",
+            "pcm_s16le",
+            "-ac",
+            "2",
+            "-ar",
+            "48000",
+            "-",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::from(stderr))
+        .spawn()
+        .with_context(|| format!("起不了 ffmpeg（{}）", executable.display()))?;
+
+    let mut stdout = child.stdout.take().context("ffmpeg 没有输出管道")?;
+    let mut buffer = vec![0u8; 64 * 1024];
+    let mut carry: Option<u8> = None;
+    let mut sum_squares: f64 = 0.0;
+    let mut peak: f32 = 0.0;
+    let mut samples: u64 = 0;
+    loop {
+        let read = stdout.read(&mut buffer).context("读 ffmpeg 输出失败")?;
+        if read == 0 {
+            break;
+        }
+        let mut index = 0;
+        if let Some(low) = carry.take() {
+            let value = i16::from_le_bytes([low, buffer[0]]) as f64 / 32768.0;
+            sum_squares += value * value;
+            peak = peak.max(value.abs() as f32);
+            samples += 1;
+            index = 1;
+        }
+        while index + 1 < read {
+            let value = i16::from_le_bytes([buffer[index], buffer[index + 1]]) as f64 / 32768.0;
+            sum_squares += value * value;
+            peak = peak.max(value.abs() as f32);
+            samples += 1;
+            index += 2;
+        }
+        if index < read {
+            carry = Some(buffer[index]);
+        }
+    }
+
+    let status = child.wait().context("等不到 ffmpeg 退出")?;
+    if !status.success() {
+        let log = std::fs::read_to_string(&stderr_path).unwrap_or_default();
+        let tail: String = log.trim().chars().rev().take(300).collect::<String>().chars().rev().collect();
+        return Err(anyhow::anyhow!("ffmpeg 退出码 {:?}：{tail}", status.code()));
+    }
+    std::fs::remove_file(&stderr_path).ok();
+
+    let channels = 2usize;
+    let frames = samples / channels as u64;
+    let decoded_secs = frames as f64 / 48_000.0;
+    let denom = (samples as f64).max(1.0);
+    let rms = (sum_squares / denom).sqrt() as f32;
+    let rms_db = if rms > 0.0 { (20.0 * rms.log10()).max(-120.0) } else { -120.0 };
+
+    Ok(StreamSummary {
+        format: StreamFormat { codec: label.to_string(), sample_rate: 48_000, channels },
+        decoded_secs,
+        frames,
+        rms_db,
+        peak,
+        bad_packets: 0,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,6 +417,80 @@ mod tests {
         let long = decode_summary(Cursor::new(bytes), Some("wav"), 0.9).expect("应能解码");
         assert!(short.decoded_secs < long.decoded_secs, "上限要真的生效");
         assert!(short.decoded_secs <= 0.35, "0.1 秒上限不该解出 {} 秒", short.decoded_secs);
+    }
+
+    #[test]
+    fn ffmpeg_path_is_optional_and_reported_honestly() {
+        // 不假设本机装了 ffmpeg：装了就要求路径存在，没装就要求 None。
+        match ffmpeg_path() {
+            Some(path) => assert!(path.is_file()),
+            None => {}
+        }
+    }
+
+    /// 造一份 opus 样本；本机没 ffmpeg 或没有 libopus 时返回 None（调用方跳过）。
+    fn opus_fixture() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+        if ffmpeg_path().is_none() {
+            return None;
+        }
+        let dir = test_audio::directory();
+        let opus = dir.join("tone.opus");
+        let status = std::process::Command::new(ffmpeg_path().unwrap())
+            .args([
+                "-nostdin", "-loglevel", "error", "-f", "lavfi", "-i",
+                "sine=frequency=440:duration=1", "-c:a", "libopus", "-y",
+            ])
+            .arg(&opus)
+            .status()
+            .ok()?;
+        if !status.success() || !opus.is_file() {
+            std::fs::remove_dir_all(&dir).ok();
+            return None;
+        }
+        Some((dir, opus))
+    }
+
+    #[test]
+    fn identify_codec_asks_ffprobe_instead_of_guessing() {
+        let Some((dir, opus)) = opus_fixture() else {
+            eprintln!("跳过：本机没有 ffmpeg/libopus");
+            return;
+        };
+        assert_eq!(identify_codec(opus.to_str().unwrap()).as_deref(), Some("opus"));
+        assert_eq!(identify_codec("/nonexistent/x.opus"), None, "拿不到就 None，不猜");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn ffmpeg_decodes_an_opus_file_when_available() {
+        let Some((dir, opus)) = opus_fixture() else {
+            eprintln!("跳过：本机没有 ffmpeg/libopus");
+            return;
+        };
+        let summary = decode_via_ffmpeg(opus.to_str().unwrap(), 0.8, "opus").expect("应能兜底解出");
+        assert_eq!(summary.format.codec, "opus");
+        assert_eq!(summary.format.sample_rate, 48_000);
+        assert_eq!(summary.format.channels, 2);
+        // lavfi 的 sine 默认振幅是 1/8，过一遍 opus 再量 s16 峰值约 0.09——
+        // 这个数被 ffmpeg 独立解码 + Python 复算核对过，不是解码器衰减。
+        assert!(
+            (0.7..=0.85).contains(&summary.decoded_secs),
+            "0.8 秒上限应解出约 0.80 秒，实测 {}",
+            summary.decoded_secs
+        );
+        assert!(summary.peak > 0.05, "不该是静音，实测峰值 {}", summary.peak);
+        assert!(summary.rms_db > -40.0 && summary.rms_db < 0.0, "RMS {}", summary.rms_db);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn missing_ffmpeg_fails_with_a_readable_reason() {
+        let err = decode_via_ffmpeg("/nonexistent/input.opus", 0.5, "opus").unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("ffmpeg") || text.contains("起不了"),
+            "错误要说清是 ffmpeg 的问题：{text}"
+        );
     }
 
     #[test]

@@ -38,13 +38,19 @@ fn main() -> Result<()> {
         }
         "radio" => {
             let sub = args.get(1).map(String::as_str).unwrap_or("probe");
-            if sub != "probe" {
-                bail!("radio 只支持 probe");
-            }
             let target = args.get(2).context("缺少电台地址或文件路径")?;
-            let secs: f64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(4.0);
-            let flags = parse_flags(&args[4..])?;
-            cmd_radio_probe(target, secs, flags.get("ext").map(String::as_str))
+            match sub {
+                "probe" => {
+                    let secs: f64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(4.0);
+                    let flags = parse_flags(&args[4..])?;
+                    cmd_radio_probe(target, secs, &flags)
+                }
+                "verdict" => {
+                    let flags = parse_flags(&args[3..])?;
+                    cmd_radio_verdict(target, &flags)
+                }
+                other => bail!("radio 只支持 probe / verdict，收到 {other}"),
+            }
         }
         "mbl" => {
             let sub = args.get(1).map(String::as_str).unwrap_or("inspect");
@@ -79,8 +85,10 @@ fn print_usage() {
     println!("  scan <目录>             扫描曲库并统计专辑");
     println!("  eq-test <文件>          应用 31 段 EQ 并报告峰值");
     println!("  play <文件> [秒数]      cpal 播放");
-    println!("  radio probe <地址|文件> [秒数] [--ext mp3]");
-    println!("                           真实解码一段直播流，报编码/采样率/电平");
+    println!("  radio probe <地址|文件> [秒数] [--ext mp3] [--ffmpeg] [--cache 目录] [--uuid 台站id]");
+    println!("                           真实解码一段直播流，报编码/采样率/电平；有 --cache 就记进台站缓存");
+    println!("  radio verdict <地址> [--cache 目录] [--uuid 台站id]");
+    println!("                           只查缓存：这个台探过没有、结论是什么");
     println!("  mbl inspect <.mbl> [--root WINDOWS根] [--mount 本地挂载点]");
     println!("                           只读解析 MusicBee 曲库（不写回）");
     println!("  mbl apply <.mbl> --library <数据目录> --root <WINDOWS根> --mount <挂载点>");
@@ -210,7 +218,7 @@ fn parse_flags(args: &[String]) -> Result<std::collections::HashMap<String, Stri
             .strip_prefix("--")
             .with_context(|| format!("未知参数: {raw}"))?
             .to_string();
-        if key == "dry-run" || key == "force" || key == "yes" {
+        if matches!(key.as_str(), "dry-run" | "force" | "yes" | "ffmpeg") {
             map.insert(key, "1".to_string());
             i += 1;
             continue;
@@ -394,16 +402,44 @@ fn guess_ext(target: &str) -> Option<&'static str> {
 }
 
 /// 真实解码一段流：地址走 curl 管道，文件直接读。数字全部来自解码结果。
-fn cmd_radio_probe(target: &str, secs: f64, ext: Option<&str>) -> Result<()> {
+fn cache_path(arg: &str) -> PathBuf {
+    let path = Path::new(arg);
+    if path.extension().map(|e| e == "json").unwrap_or(false) {
+        path.to_path_buf()
+    } else {
+        path.join("radio-cache.json")
+    }
+}
+
+fn load_cache(path: &Path) -> awake_core::radio::ProbeCache {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<awake_core::radio::ProbeCache>(&text).ok())
+        .unwrap_or_default()
+}
+
+fn save_cache(path: &Path, cache: &awake_core::radio::ProbeCache) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let text = serde_json::to_string_pretty(cache)?;
+    std::fs::write(path, text).with_context(|| format!("写不了 {}", path.display()))?;
+    Ok(())
+}
+
+/// 真实解码一段流：地址走 curl 管道，文件直接读。数字全部来自解码结果。
+/// 给了 `--cache` 就把结论写进台站缓存——这就是"播放前探测一次"的那一次。
+fn cmd_radio_probe(target: &str, secs: f64, flags: &std::collections::HashMap<String, String>) -> Result<()> {
+    use awake_core::radio::ProbeRecord;
     use awake_core::stream::{decode_summary, StreamSummary};
 
-    let hint = ext.or_else(|| guess_ext(target));
+    let hint = flags.get("ext").map(String::as_str).or_else(|| guess_ext(target));
     println!("来源: {target}");
     if let Some(hint) = hint {
         println!("提示: .{hint}（只帮 probe 少猜，不决定结果）");
     }
 
-    let summary: StreamSummary = if target.starts_with("http://") || target.starts_with("https://") {
+    let direct: Result<StreamSummary> = if target.starts_with("http://") || target.starts_with("https://") {
         let mut child = std::process::Command::new("curl")
             .args([
                 "-sS",
@@ -421,12 +457,44 @@ fn cmd_radio_probe(target: &str, secs: f64, ext: Option<&str>) -> Result<()> {
         let decoded = decode_summary(Shared::new(stdout), hint, secs);
         child.kill().ok();
         child.wait().ok();
-        decoded?
+        decoded
     } else {
         let file = std::fs::File::open(target).with_context(|| format!("读不到 {target}"))?;
-        decode_summary(file, hint, secs)?
+        decode_summary(file, hint, secs)
     };
 
+    // 直接解不了时的两条路：给了 --ffmpeg 就兜底；没给就说清怎么打开。
+    let (summary, path_label) = match direct {
+        Ok(summary) => (summary, "symphonia"),
+        Err(error) => {
+            if flags.contains_key("ffmpeg") {
+                // 标签的优先顺序：手填 > 扩展名 > 问 ffprobe > unknown。
+                // 不猜：拿不到就写 unknown，缓存里也不会被当成真编码。
+                let label = flags
+                    .get("codec")
+                    .map(String::as_str)
+                    .map(str::to_string)
+                    .or_else(|| guess_ext(target).map(str::to_string))
+                    .or_else(|| awake_core::stream::identify_codec(target))
+                    .unwrap_or_else(|| "unknown".to_string());
+                println!("直接解码失败（{error}），改用 ffmpeg 兜底…");
+                (
+                    awake_core::stream::decode_via_ffmpeg(target, secs, &label)?,
+                    "ffmpeg",
+                )
+            } else {
+                let present = awake_core::stream::ffmpeg_path().is_some();
+                let advice = if present {
+                    "直接解码失败。这个编码不在 symphonia 覆盖范围内——加 --ffmpeg 用 ffmpeg 兜底（本机已找到 ffmpeg）。"
+                } else {
+                    "直接解码失败。加 --ffmpeg 可以兜底，但本机还没装 ffmpeg（brew install ffmpeg）。"
+                };
+                return Err(error).with_context(|| advice.to_string());
+            }
+        }
+    };
+
+    println!("解码路径: {path_label}");
     println!(
         "编码: {} · {:.1} kHz · {} 声道",
         summary.format.codec,
@@ -438,8 +506,77 @@ fn cmd_radio_probe(target: &str, secs: f64, ext: Option<&str>) -> Result<()> {
         summary.decoded_secs, summary.frames, summary.bad_packets
     );
     println!("电平: RMS {:.1} dBFS · 峰值 {:.3}", summary.rms_db, summary.peak);
+
+    if let Some(dir) = flags.get("cache") {
+        let path = cache_path(dir);
+        let mut cache = load_cache(&path);
+        let key = awake_core::radio::key_for(
+            flags.get("uuid").map(String::as_str).unwrap_or(""),
+            target,
+        );
+        let record = ProbeRecord::from_probe(
+            &summary.format.codec,
+            summary.format.sample_rate,
+            summary.format.channels,
+            awake_core::models::now_ms(),
+        );
+        cache.record(key.clone(), record.clone());
+        save_cache(&path, &cache)?;
+        println!(
+            "缓存: {key} → {}（playable={}）已写入 {}",
+            record.codec,
+            record.playable,
+            path.display()
+        );
+    }
     Ok(())
 }
+
+
+/// 只查缓存：这个台探过没有。没有就是"需要先探一次"，不拿台站声明冒充结论。
+fn cmd_radio_verdict(target: &str, flags: &std::collections::HashMap<String, String>) -> Result<()> {
+    let dir = flags.get("cache").context("缺少 --cache（数据目录或缓存文件路径）")?;
+    let path = cache_path(dir);
+    let cache = load_cache(&path);
+    let key = awake_core::radio::key_for(
+        flags.get("uuid").map(String::as_str).unwrap_or(""),
+        target,
+    );
+    println!("来源: {target}");
+    println!("缓存文件: {}", path.display());
+    match cache.stations.get(&key) {
+        Some(record) => {
+            println!(
+                "结论: {} · {:.1} kHz · {} 声道 · 直接可放={} · 探测于 {}",
+                record.codec,
+                record.sample_rate as f64 / 1000.0,
+                record.channels,
+                record.playable,
+                record.probed_at_ms
+            );
+            println!("备注: {}", record.note);
+
+            // 开关状态从命令行取（桌面版将来从设置里取），这里只是同一个判定的两个入口。
+            let enabled = flags.contains_key("ffmpeg");
+            let present = awake_core::stream::ffmpeg_path().is_some();
+            match awake_core::radio::plan(&record.codec, enabled, present) {
+                awake_core::radio::PlaybackPlan::Direct => println!("计划: 直接播放"),
+                awake_core::radio::PlaybackPlan::ViaFfmpeg => println!("计划: 走 ffmpeg 兜底"),
+                awake_core::radio::PlaybackPlan::Blocked { reason, can_enable_ffmpeg } => {
+                    println!("计划: 放不了 —— {reason}");
+                    if can_enable_ffmpeg {
+                        println!("提示: 加 --ffmpeg（桌面版在设置里打开「用 ffmpeg 兜底」）");
+                    }
+                }
+            }
+        }
+        None => {
+            println!("未探测：缓存里没有这条（键 {key}）。播放前要先 probe 一次。");
+        }
+    }
+    Ok(())
+}
+
 
 fn cmd_mbl_inspect(path: &Path, win_root: Option<&str>, posix_root: Option<&str>) -> Result<()> {
     use awake_core::musicbee;

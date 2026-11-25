@@ -40,6 +40,8 @@ mod plex;
 mod remote;
 mod self_check;
 mod library_insight;
+mod musicbee_panel;
+mod radio_settings;
 mod song_curves;
 mod speech;
 mod telegram;
@@ -1310,6 +1312,11 @@ pub fn run() {
             library_insight::shelf_overview,
             library_insight::adapt_queue,
             library_insight::artist_profiles,
+            musicbee_panel::musicbee_preview,
+            musicbee_panel::musicbee_apply,
+            musicbee_panel::pick_musicbee_library,
+            radio_settings::get_radio_settings,
+            radio_settings::set_ffmpeg_fallback,
             self_check::self_check
         ])
         .build(tauri::generate_context!())

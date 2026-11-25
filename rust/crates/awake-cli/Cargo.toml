@@ -12,4 +12,5 @@ cpal.workspace = true
 rubato = "0.15"
 anyhow.workspace = true
 env_logger.workspace = true
+serde_json.workspace = true
 log.workspace = true
