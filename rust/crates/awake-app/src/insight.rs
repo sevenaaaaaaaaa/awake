@@ -25,13 +25,6 @@ pub struct Bucket {
     pub heard: usize,
 }
 
-impl Bucket {
-    /// 没碰过的曲目数。饱和相减，避免脏数据下出现负数。
-    pub fn unheard(&self) -> usize {
-        self.total.saturating_sub(self.heard)
-    }
-}
-
 /// 整个曲库的覆盖度。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Coverage {
@@ -360,7 +353,11 @@ mod tests {
         assert_eq!(result.by_artist[0].label, "甲");
         assert_eq!(result.by_artist[0].total, 2);
         assert_eq!(result.by_artist[0].heard, 1);
-        assert_eq!(result.by_artist[0].unheard(), 1);
+        assert_eq!(
+            result.by_artist[0].total - result.by_artist[0].heard,
+            1,
+            "没碰过的数 = 总数 - 听过数"
+        );
         // 空艺人 / 空年代 / 空流派落到「未标注」桶，而不是空字符串。
         assert!(result.by_artist.iter().any(|b| b.label == "未知艺人"));
         assert!(result.by_decade.iter().any(|b| b.label == "未标注年代"));

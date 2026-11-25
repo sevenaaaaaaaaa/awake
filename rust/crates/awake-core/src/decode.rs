@@ -2,7 +2,9 @@
 //!
 //! 覆盖范围（与 README 一致的部分）：
 //! FLAC / ALAC / WAV / AIFF / CAF / MP3 / AAC / OGG-Vorbis —— 由 symphonia 直接解码。
-//! DSD（.dsf/.dff）与 APE 不在 symphonia 范围内，由 `fallback` 模块借 ffmpeg 转码兜底。
+//! DSD（.dsf/.dff）与 APE 不在 symphonia 范围内：Rust 侧只做识别（`TrackFormat::needs_fallback`），
+//! 真正的转码在 Swift 侧 `TranscodeService`（macOS/iOS）里借 ffmpeg 完成。
+//! 直播流另有一条兜底：`stream::decode_via_ffmpeg`（按需开启，见 `radio::plan`）。
 
 use anyhow::{anyhow, Context, Result};
 use std::fs::File;
