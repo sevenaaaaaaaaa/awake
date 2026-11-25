@@ -118,7 +118,7 @@ struct LabView: View {
           }
         }
       }.padding(20)
-    }.appSurface().navigationTitle("聆听实验室").onDisappear { if blind { endBlind() } }
+    }.appSurface().onDisappear { if blind { endBlind() } }
   }
   private func listenA(_ a: Bool) {
     player.bypassed = !(a ? aUsesEQ : !aUsesEQ)

@@ -1,48 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 起点：三种「味道」+ 平直。
-/// 31 段曲线对初级用户是一张空白考卷；先给几个能听懂的说法，从那里开始改比从零开始容易。
-enum SoundPreset: String, CaseIterable, Identifiable {
-  case flat, warm, clear, lean
-  var id: String { rawValue }
-  var title: String {
-    switch self {
-    case .flat: "平直"
-    case .warm: "温暖"
-    case .clear: "清晰"
-    case .lean: "收一点低频"
-    }
-  }
-  var detail: String {
-    switch self {
-    case .flat: "什么都不动"
-    case .warm: "60–200 Hz 抬一点"
-    case .clear: "2–6 kHz 抬一点"
-    case .lean: "低频收一点，人声出来"
-    }
-  }
-  /// 31 段，按 log 频率给一条平滑曲线；不是随手拍的数字，改起来也能看出形状。
-  func gains() -> [Float] {
-    EQMath.frequencies.map { freq in
-      let x = log10(Double(freq) / 1000)  // 1k = 0，100 Hz = -1，10k = +1
-      switch self {
-      case .flat:
-        return 0
-      case .warm:
-        let low = max(0, min(1, (-x - 0.15) / 0.85))
-        return Float(3.5 * low * low)
-      case .clear:
-        let mid = exp(-pow((x - 0.35) / 0.42, 2))
-        return Float(2.6 * mid)
-      case .lean:
-        let low = max(0, min(1, (-x - 0.05) / 0.8))
-        let mid = exp(-pow((x - 0.3) / 0.38, 2))
-        return Float(-2.6 * low * low + 1.1 * mid)
-      }
-    }
-  }
-}
 
 struct SoundView: View {
   @EnvironmentObject var store: MobileStore
@@ -55,11 +13,13 @@ struct SoundView: View {
   @State private var sliderEditing = false
   @State private var needsCommit = false
   @State private var sliderRevision = 0
+  @State private var presetKind: TuningPresets.Kind = .hardware
+  @State private var presetNote = ""
   var chain: ListeningChain? { store.activeChain(route: player.route.uid) }
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 22) {
-        starts
+        presetSection
         NavigationLink {
           MeasurementView(model: chain?.headphone ?? player.route.name)
         } label: {
@@ -115,8 +75,21 @@ struct SoundView: View {
               }
             }.disabled(chain == nil).accessibilityIdentifier("restoreOriginal")
           }
-          EQChart(gains: chain?.gains ?? Array(repeating: 0, count: 31)).frame(height: 130)
-            .tabSwipeExempt()
+          EQChart(
+            gains: chain?.gains ?? Array(repeating: 0, count: 31),
+            onEdit: { band, gain in
+              guard chain != nil else { return }
+              update(save: false) { $0.gains[band] = gain }
+              needsCommit = true
+            },
+            onEditEnd: { commitSlider() }
+          )
+          .frame(height: 130)
+          .tabSwipeExempt()
+          if chain != nil {
+            Text("按住曲线左右拖，可以直接把想要的形状画出来；松手才落盘，随时可撤销。")
+              .font(.caption2).foregroundStyle(.secondary)
+          }
           EnhancementBadge(context: "sound")
           Picker("频段", selection: $band) {
             ForEach(0..<31, id: \.self) { i in Text("\(Int(EQMath.frequencies[i])) Hz").tag(i) }
@@ -159,7 +132,7 @@ struct SoundView: View {
           }
         }.buttonStyle(.plain)
       }.padding(20)
-    }.appSurface().navigationTitle("声音实验室")
+    }.appSurface()
       .task(id: sliderRevision) {
         guard needsCommit else { return }
         do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
@@ -181,45 +154,83 @@ struct SoundView: View {
       }
   }
   /// 起点卡片：2×2，每张一张小曲线 + 一句人话。
-  private var starts: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Text("从一种感觉开始").font(.headline)
-      LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-        ForEach(SoundPreset.allCases) { preset in
-          Button {
-            applyPreset(preset)
-          } label: {
-            VStack(alignment: .leading, spacing: 6) {
-              EQChart(gains: preset.gains(), range: 5).frame(height: 44)
-              Text(preset.title).font(.subheadline.weight(.medium))
-              Text(preset.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-              RoundedRectangle(cornerRadius: 14, style: .continuous).fill(
-                Color(hex: store.state.skin.colors.surface)))
-            .overlay(
-              RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(
-                Color(hex: store.state.skin.colors.border).opacity(0.6), lineWidth: 0.5))
+  /// 风格预设放在这一段最前：31 段曲线对多数人是一张空白考卷，
+  /// 先给一条有名字、有理由、可撤销的曲线，比让他从零开始画容易。
+  private var presetSection: some View {
+    Panel {
+      HStack(alignment: .firstTextBaseline) {
+        Text("风格预设").font(.title3.bold())
+        Spacer()
+        Text("\(TuningPresets.all.count) 条").font(.caption2).foregroundStyle(.secondary)
+      }
+      presetPicker
+    }
+  }
+
+  /// 风格预设：介质与器材 / 曲风 / 二级分类三组。
+  /// 每一条都带 why 与 caveat，点了就把它为什么这么给显示出来——
+  /// 只给一个风格名，等于让人相信一个没有理由的曲线。
+  private var presetPicker: some View {
+    VStack(alignment: .leading, spacing: DS.Space.xs) {
+      HStack(spacing: 4) {
+        ForEach(TuningPresets.Kind.allCases) { kind in
+          Button(kind.title) {
+            presetKind = kind
           }
+          .font(.caption2.weight(presetKind == kind ? .semibold : .regular))
+          .foregroundStyle(
+            presetKind == kind
+              ? Color(hex: store.state.skin.colors.bg)
+              : Color(hex: store.state.skin.colors.text))
+          .padding(.horizontal, 10)
+          .frame(minHeight: 28)
+          .background(
+            Capsule().fill(
+              presetKind == kind ? Color(hex: store.state.skin.colors.text) : .clear))
           .buttonStyle(.plain)
-          .accessibilityLabel("\(preset.title)：\(preset.detail)")
+          .accessibilityIdentifier("presetKind_\(kind.rawValue)")
         }
+        Spacer(minLength: 0)
+      }
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 6) {
+          ForEach(TuningPresets.group(presetKind)) { preset in
+            Button(preset.name) { applyPreset(preset) }
+              .font(.caption)
+              .foregroundStyle(Color(hex: store.state.skin.colors.text))
+              .padding(.horizontal, 10)
+              .frame(minHeight: 32)
+              .background(
+                Capsule().fill(Color(hex: store.state.skin.colors.surface)))
+              .overlay(
+                Capsule().stroke(Color(hex: store.state.skin.colors.border), lineWidth: 0.6))
+              .buttonStyle(.plain)
+              .accessibilityIdentifier("preset_\(preset.id)")
+          }
+        }
+        .padding(.vertical, 2)
+      }
+      .tabSwipeExempt()
+      if !presetNote.isEmpty {
+        Text(presetNote)
+          .font(.caption2)
+          .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+          .fixedSize(horizontal: false, vertical: true)
       }
     }
   }
 
-  private func applyPreset(_ preset: SoundPreset) {
-    var next = chain ?? ListeningChain(
-      routeUID: player.route.uid, name: "起点 · " + preset.title,
-      headphone: player.route.name, connection: player.route.transport)
-    next.gains = preset.gains()
-    next.apo = ""
-    next.measurementSource = ""
-    next.eqOrigin = .manual
-    store.saveChain(next)
-    player.useChain(store.activeChain(route: player.route.uid))
+  private func applyPreset(_ preset: TuningPresets.Preset) {
+    guard chain != nil else {
+      presetNote = "还没有听感链路：先到「配置耳机与连接」建一条，再套预设。"
+      return
+    }
+    update { chain in
+      chain.gains = preset.gains
+      chain.measurementSource = "预设 · \(preset.name)"
+      chain.eqOrigin = .manual
+    }
+    presetNote = "「\(preset.name)」：\(preset.why) 注意：\(preset.caveat)"
   }
 
   func commitSlider(announce: Bool = true) {
@@ -245,7 +256,28 @@ struct EQChart: View {
   let gains: [Float]
   /// 满量程的一半。默认 ±14 dB；起点卡片用 ±5，否则 3.5 dB 的曲线看起来还是一条直线。
   var range: Float = 14
+  /// 传了就可拖：手指落在哪，就改那一段；斜着划过去会把中间几段一起插值改掉，
+  /// 也就是「画」出一条曲线，而不是先选频段再拖滑块。
+  /// 拖动过程只改内存（由调用方决定不落盘），松手时由 onEditEnd 统一提交一次。
+  var onEdit: ((Int, Float) -> Void)? = nil
+  var onEditEnd: (() -> Void)? = nil
+
+  @State private var lastBand: Int?
+  @State private var lastGain: Float?
+
   var body: some View {
+    GeometryReader { geo in
+      if let onEdit {
+        canvas.gesture(paint(in: geo.size, edit: onEdit))
+      } else {
+        canvas
+      }
+    }
+    .accessibilityLabel("31 段图形 EQ 曲线")
+    .accessibilityValue(onEdit == nil ? "" : "可按住左右拖动直接改频段")
+  }
+
+  private var canvas: some View {
     Canvas { ctx, size in
       var grid = Path()
       for y in [0.0, 0.5, 1.0] {
@@ -263,7 +295,38 @@ struct EQChart: View {
       ctx.stroke(
         line, with: .color(.accentColor),
         style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-    }.accessibilityLabel("31 段图形 EQ 曲线")
+    }
+  }
+
+  private func paint(in size: CGSize, edit: @escaping (Int, Float) -> Void) -> some Gesture {
+    DragGesture(minimumDistance: 0)
+      .onChanged { value in
+        guard size.width > 0, size.height > 0 else { return }
+        let x = min(1, max(0, value.location.x / size.width))
+        let band = Int((x * 30).rounded())
+        let limit = Double(max(range, 1))
+        let ratio = 0.5 - value.location.y / size.height
+        let gain = Float(min(limit, max(-limit, ratio * 2 * limit)))
+        // 跨段时把中间几段线性补齐：一次横划就是一条连续曲线，不用逐段调。
+        if let lastBand, let lastGain, abs(band - lastBand) > 1 {
+          let count = band - lastBand
+          let step = count > 0 ? 1 : -1
+          var b = lastBand + step
+          while b != band {
+            let t = Float(b - lastBand) / Float(count)
+            edit(b, lastGain + (gain - lastGain) * t)
+            b += step
+          }
+        }
+        edit(band, gain)
+        lastBand = band
+        lastGain = gain
+      }
+      .onEnded { _ in
+        lastBand = nil
+        lastGain = nil
+        onEditEnd?()
+      }
   }
 }
 struct ChainEditor: View {

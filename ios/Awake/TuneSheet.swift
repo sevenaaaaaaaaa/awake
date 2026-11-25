@@ -1,6 +1,12 @@
 import SwiftUI
 
 /// V3 + R3：说一句话，拿到 2–3 条候选曲线，挑一条应用；每次应用都进审计记录，可回滚。
+///
+/// 两种外壳共用同一份表单：
+/// - 弹窗：播放页里的「一句话调音」；
+/// - 常驻：`embedded = true`，作为「调音」页的第一段。合并「声音」与「评测」之后，
+///   agent 对话是这一页的主体，参数曲线与听感记录是它的两个证据面，
+///   不再是三个平级的工具页。
 struct TuneSheet: View {
   @EnvironmentObject var store: MobileStore
   @EnvironmentObject var player: MobilePlayer
@@ -16,6 +22,9 @@ struct TuneSheet: View {
   @State private var historyOpen = false
   @State private var modeID = TuningModes.balance.id
 
+  /// 作为「调音」页的一段常驻时置 true：不自己包 NavigationStack、不给「完成」按钮。
+  var embedded = false
+
   private var aiReady: Bool {
     !store.state.curatorModel.isEmpty && store.state.curatorURL == store.state.curatorCredentialEndpoint
   }
@@ -24,102 +33,132 @@ struct TuneSheet: View {
   }
 
   var body: some View {
-    NavigationStack {
-      Form {
-        Section("工作模式") {
-          ForEach(TuningModes.all) { mode in
-            Button {
-              modeID = mode.id
-            } label: {
-              HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                  Text(mode.name)
-                    .font(.subheadline.weight(mode.id == modeID ? .semibold : .regular))
-                    .foregroundStyle(Color(hex: store.state.skin.colors.text))
-                  Text(mode.intent)
-                    .font(.caption)
-                    .foregroundStyle(Color(hex: store.state.skin.colors.muted))
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 8)
-                if mode.id == modeID {
-                  Image(systemName: "checkmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(hex: store.state.skin.colors.text))
-                    .padding(.top, 2)
-                }
-              }
-              .frame(minHeight: 44)
-              .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("tuningMode_" + mode.id)
-            .accessibilityAddTraits(mode.id == modeID ? .isSelected : [])
+    if embedded {
+      form
+    } else {
+      NavigationStack {
+        form
+          .appSurface()
+          .navigationTitle("一句话调音")
+          .navigationBarTitleDisplayMode(.inline)
+          .toolbar {
+            Button("历史") { historyOpen = true }
+            Button("完成") { dismiss() }
           }
-          Text("模式决定 agent 的取舍和本地规则的默认动作；同一句话在五个模式下结果不同。")
-            .font(.caption2).foregroundStyle(.secondary)
-        }
-        Section("说一句话") {
-          ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-              ForEach(SoundTuning.phrases, id: \.self) { phrase in
-                Button(phrase) { text = phrase }
-                  .buttonStyle(.bordered)
-                  .controlSize(.small)
-              }
-            }.padding(.vertical, 2)
-          }
-          TextField("例如：人声再靠前一点，低频别那么糊", text: $text, axis: .vertical)
-            .lineLimit(1...3)
-          Button(aiReady ? "让 agent 给候选" : "用本地规则调") {
-            Task { await tune() }
-          }
-          .accessibilityIdentifier("runTuning")
-            .disabled(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-          if busy { ProgressView() }
-          if !note.isEmpty { Text(note).font(.caption).foregroundStyle(.secondary) }
-        }
-        if !proposals.isEmpty {
-          Section("候选（\(proposals.count) 条）") {
-            Picker("选一条", selection: $selected) {
-              ForEach(proposals.indices, id: \.self) { index in
-                Text(proposals.count == 1 ? "结果" : "候选 \(index + 1)").tag(index)
-              }
-            }
-            .pickerStyle(.segmented)
-            if let proposal = current {
-              ForEach(proposal.lines, id: \.self) { line in
-                Text(line).font(.system(size: 13, design: .monospaced))
-              }
-              if !proposal.why.isEmpty {
-                Text(proposal.why).font(.caption).foregroundStyle(.secondary)
-              }
-              Text("来源：\(proposal.source)").font(.caption2).foregroundStyle(.tertiary)
-              Button("应用这条") { apply(proposal) }
-            }
-            if previous != nil {
-              Button("撤销这次改动", role: .destructive) { undo() }
-            }
-          }
-        }
-        Section {
-          Text(aiReady
-            ? "候选之间是取舍，不是对错；每段不超过 6 dB、最多 6 段，随时可撤销，改过的都进历史。"
-            : "还没配置 AI 模型：这里按模式的本地规则调，结果会标明「本地规则 · 模式名」，不冒充 agent。配置后会一次给 2–3 条候选。")
-            .font(.caption).foregroundStyle(.secondary)
-        }
-      }
-      .appSurface()
-      .navigationTitle("一句话调音")
-      .toolbar {
-        Button("历史") { historyOpen = true }
-        Button("完成") { dismiss() }
-      }
-      .sheet(isPresented: $historyOpen) {
-        TuningHistoryView(songID: player.song?.id)
-          .environmentObject(store).environmentObject(player)
       }
     }
+  }
+
+  private var historySheet: some View {
+    TuningHistoryView(songID: player.song?.id)
+      .environmentObject(store).environmentObject(player)
+  }
+
+  /// 表单主体：两种外壳共用一份，避免常驻版与弹窗版各写一遍逻辑。
+  private var form: some View {
+    Form {
+      // 第一段就是「说一句话」：合并入口的定位是 agent 对话，
+      // 五个工作模式不该占掉整屏把输入框挤到托盘下面。
+      Section("说一句话") {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 8) {
+            ForEach(SoundTuning.phrases, id: \.self) { phrase in
+              Button(phrase) { text = phrase }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+          }.padding(.vertical, 2)
+        }
+        TextField("例如：人声再靠前一点，低频别那么糊", text: $text, axis: .vertical)
+          .lineLimit(1...3)
+        // 这一段的主操作。之前是 Form 默认的文字按钮，在深色皮肤里看着像一行说明文字。
+        Button {
+          Task { await tune() }
+        } label: {
+          Text(aiReady ? "让 agent 给候选" : "用本地规则调")
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .foregroundStyle(Color(hex: store.state.skin.colors.bg))
+            .background(Capsule().fill(Color(hex: store.state.skin.colors.text)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("runTuning")
+          .disabled(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        if busy { ProgressView() }
+        if !note.isEmpty { Text(note).font(.caption).foregroundStyle(.secondary) }
+      }
+      if !proposals.isEmpty {
+        Section("候选（\(proposals.count) 条）") {
+          Picker("选一条", selection: $selected) {
+            ForEach(proposals.indices, id: \.self) { index in
+              Text(proposals.count == 1 ? "结果" : "候选 \(index + 1)").tag(index)
+            }
+          }
+          .pickerStyle(.segmented)
+          if let proposal = current {
+            ForEach(proposal.lines, id: \.self) { line in
+              Text(line).font(.system(size: 13, design: .monospaced))
+            }
+            if !proposal.why.isEmpty {
+              Text(proposal.why).font(.caption).foregroundStyle(.secondary)
+            }
+            Text("来源：\(proposal.source)").font(.caption2).foregroundStyle(.tertiary)
+            Button("应用这条") { apply(proposal) }
+          }
+          if previous != nil {
+            Button("撤销这次改动", role: .destructive) { undo() }
+          }
+        }
+      }
+      Section("工作模式") {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 8) {
+            ForEach(TuningModes.all) { mode in
+              Button {
+                modeID = mode.id
+              } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(mode.name)
+                    .font(.footnote.weight(mode.id == modeID ? .semibold : .regular))
+                  Text(mode.intent)
+                    .font(.caption2)
+                    .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+                    .lineLimit(1)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minHeight: 44, alignment: .leading)
+                .background(
+                  Capsule().fill(
+                    mode.id == modeID
+                      ? Color(hex: store.state.skin.colors.text).opacity(0.14)
+                      : Color.clear))
+                .overlay(
+                  Capsule().stroke(
+                    Color(hex: store.state.skin.colors.border), lineWidth: 0.6))
+              }
+              .buttonStyle(.plain)
+              .accessibilityIdentifier("tuningMode_" + mode.id)
+              .accessibilityAddTraits(mode.id == modeID ? .isSelected : [])
+            }
+          }
+          .padding(.vertical, 2)
+        }
+        Text("模式决定 agent 的取舍与本地规则的默认动作；同一句话在五个模式下结果不同。")
+          .font(.caption2).foregroundStyle(.secondary)
+      }
+      Section {
+        Text(aiReady
+          ? "候选之间是取舍，不是对错；每段不超过 6 dB、最多 6 段，随时可撤销，改过的都进历史。"
+          : "还没配置 AI 模型：这里按模式的本地规则调，结果会标明「本地规则 · 模式名」，不冒充 agent。配置后会一次给 2–3 条候选。")
+          .font(.caption).foregroundStyle(.secondary)
+        Button("调过的都记在这里") { historyOpen = true }
+          .accessibilityIdentifier("openTuningHistory")
+      }
+    }
+    // 表单默认自带不透明底，会和皮肤底色打架（合并入口后这是常驻页，必须透出皮肤）。
+    .scrollContentBackground(.hidden)
+    .sheet(isPresented: $historyOpen) { historySheet }
   }
 
   @MainActor

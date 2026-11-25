@@ -536,6 +536,9 @@ struct SourceEditor: View {
   @State private var busy = false
   @State private var error = ""
   @State private var configurationImport = false
+  #if DEBUG
+    @State private var didRunE2E = false
+  #endif
   @State private var catalog: TelegramCatalog?
   @State private var selected = Set<String>()
   @State private var limit = 1000
@@ -670,6 +673,11 @@ struct SourceEditor: View {
     }
       .navigationTitle("添加音乐来源").toolbar { Button("完成") { dismiss() }.disabled(busy) }
       .onAppear { applyPrefill() }
+      .task {
+        #if DEBUG
+          await runE2EHooksIfRequested()
+        #endif
+      }
       .onChange(of: kind) { _, _ in plexNote = ""; catalog = nil; selected = [] }
       .onChange(of: url) { _, _ in catalog = nil; selected = [] }
       .onChange(of: secret) { _, _ in catalog = nil; selected = [] }
@@ -813,8 +821,32 @@ struct SourceEditor: View {
       store.message = "「\(source.name)」已加入 \(added) 首，正在为你显示这个来源。"
       store.pendingLibrarySource = source.id
       dismiss()
-    } catch { self.error = error.localizedDescription }
+    } catch {
+      // 失败必须显性：表单底部的红字会被滚出视野，用户容易把「选择完成」当成「添加成功」。
+      // 同一个原因写两处：error 留在弹窗里，store.message 留到弹窗之外。
+      let reason = error.localizedDescription
+      self.error = AddSourceCopy.failureInSheet(reason: reason)
+      store.message = AddSourceCopy.failureOutside(name: name, reason: reason)
+    }
   }
+
+  #if DEBUG
+    /// 验证脚本用：把连接失败这条真实路径跑一遍（地址指向必然拒绝的端口），
+    /// 把两处文案写进诊断日志。编辑器停在原地，添加页在它下面承接「最近一次操作」。
+    private func runE2EHooksIfRequested() async {
+      guard ProcessInfo.processInfo.environment["AWAKE_E2E_ADD_FAIL"] == "1", !didRunE2E else {
+        return
+      }
+      didRunE2E = true
+      kind = "plex"
+      name = "失败样例"
+      url = "http://127.0.0.1:1"
+      secret = "not-a-token"
+      await connect()
+      Diagnostics.log("E2E 失败 inSheet=\(error) outside=\(store.message)")
+      // 失败后停在表单：真实用户也是改参数再试。弹窗之外由添加页与全局提示承接。
+    }
+  #endif
 }
 
 struct BackupCandidate: Identifiable {

@@ -15,30 +15,106 @@ struct AddMusicView: View {
 
   private var remoteSources: [MusicSource] { store.state.sources }
 
+  /// 一行状态：「Plex · 3 首」；0 首要说清楚下一步，否则看起来就是「加了但没东西」。
+  /// 文案本身在 AddSourceCopy 里，验证脚本读同一份，不复制字符串。
+  private func statusLine(_ source: MusicSource) -> String {
+    AddSourceCopy.statusLine(kindName: kindName(source.kind), count: count(in: source))
+  }
+
+  private func count(in source: MusicSource) -> Int {
+    store.state.songs.filter { $0.sourceID == source.id }.count
+  }
+
+  /// 点一行 = 使用这个来源：关掉添加页，曲库切到并筛到这个来源。
+  /// 按钮与端到端自检调同一个函数，验证走的就是用户点的那条路。
+  private func select(_ source: MusicSource) {
+    store.pendingLibrarySource = source.id
+    #if DEBUG
+      Diagnostics.log(
+        "E2E 选择来源 name=\(source.name) id=\(source.id) count=\(count(in: source))")
+    #endif
+    dismiss()
+  }
+
+  #if DEBUG
+    /// 验证脚本用（Tools/verify_ios_add_source_entry.sh）：
+    /// 等 E2E 扫描把来源写进库，再把每一行的真实文案写进 diagnostics.log；
+    /// AWAKE_E2E_PICK_SOURCE=1 时执行与手指点击完全相同的那条路（select）。
+    private func runE2EHooksIfRequested() async {
+      let env = ProcessInfo.processInfo.environment
+      let pick = env["AWAKE_E2E_PICK_SOURCE"] == "1"
+      let fail = env["AWAKE_E2E_ADD_FAIL"] == "1"
+      let logRows = env["AWAKE_E2E_LOG_ROWS"] == "1"
+      let seed = env["AWAKE_E2E_SEED_MESSAGE"]
+      guard pick || fail || logRows || seed != nil else { return }
+      if let seed, !seed.isEmpty {
+        // 模拟「用户刚关掉编辑器」：文案与 catch 写出的同一条（AddSourceCopy.failureOutside）。
+        store.message = seed
+        Diagnostics.log("E2E 最近一次操作=\(store.message)")
+      }
+      if fail {
+        sourceKind = "plex"
+        sourceSheet = true
+        Diagnostics.log("E2E 添加页打开失败样例")
+        // 失败由编辑器写进 store.message；这里只等它写完再记录。
+        // 编辑器停在原地（真实用户改参数再试），添加页在它下面留着 —— 关掉编辑器就能看见。
+        for _ in 0..<40 where store.message.isEmpty {
+          try? await Task.sleep(for: .milliseconds(500))
+        }
+        Diagnostics.log("E2E 失败后添加页 message=\(store.message)")
+        return
+      }
+      // 扫描是异步的：最多等 30 秒，等来源真的入库再谈「行」与「点」。
+      for _ in 0..<60 where remoteSources.isEmpty {
+        try? await Task.sleep(for: .milliseconds(500))
+      }
+      for source in remoteSources {
+        Diagnostics.log(
+          "E2E 添加页行 source=\(source.name) count=\(count(in: source)) text=\(statusLine(source))"
+        )
+      }
+      if pick, let last = remoteSources.last {
+        select(last)
+      }
+    }
+  #endif
+
   var body: some View {
     NavigationStack {
       Form {
+        if !store.message.isEmpty {
+          Section("最近一次操作") {
+            Text(store.message).font(.caption).foregroundStyle(.secondary)
+          }
+        }
         if !remoteSources.isEmpty {
           Section("已连接") {
             ForEach(remoteSources) { source in
-              HStack(spacing: 12) {
-                Image(systemName: icon(for: source.kind))
-                  .font(.subheadline.weight(.regular))
-                  .foregroundStyle(Color(hex: store.state.skin.colors.text).opacity(0.75))
-                  .frame(width: 28, height: 28)
-                  .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                      .fill(Color(hex: store.state.skin.colors.surface)))
-                VStack(alignment: .leading, spacing: 2) {
-                  Text(source.name).font(.subheadline.weight(.medium))
-                  Text(
-                    "\(kindName(source.kind)) · \(store.state.songs.filter { $0.sourceID == source.id }.count) 首"
-                  )
-                  .font(.caption).foregroundStyle(.secondary)
+              Button {
+                // 列表里的每一行就是「使用」入口：点进去就筛到这个来源。
+                select(source)
+              } label: {
+                HStack(spacing: 12) {
+                  Image(systemName: icon(for: source.kind))
+                    .font(.subheadline.weight(.regular))
+                    .foregroundStyle(Color(hex: store.state.skin.colors.text).opacity(0.75))
+                    .frame(width: 28, height: 28)
+                    .background(
+                      RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color(hex: store.state.skin.colors.surface)))
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text(source.name).font(.subheadline.weight(.medium))
+                    Text(statusLine(source)).font(.caption).foregroundStyle(.secondary)
+                  }
+                  Spacer(minLength: 0)
+                  Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
                 }
-                Spacer(minLength: 0)
+                .contentShape(Rectangle())
+                .accessibilityIdentifier("connectedSource_\(source.id)")
               }
-              .accessibilityIdentifier("connectedSource_\(source.id)")
+              .buttonStyle(.plain)
             }
             Text("刷新与移除在「设置 → 音乐来源」里。")
               .font(.caption2).foregroundStyle(.secondary)
@@ -111,17 +187,19 @@ struct AddMusicView: View {
         if !note.isEmpty {
           Section { Text(note).font(.caption).foregroundStyle(.secondary) }
         }
-        if !store.message.isEmpty {
-          Section("最近一次导入") {
-            Text(store.message).font(.caption).foregroundStyle(.secondary)
-          }
-        }
       }
       .appSurface()
+      .onAppear { store.suppressGlobalAlert = true }
+      .onDisappear { store.suppressGlobalAlert = false }
       .navigationTitle("添加音乐")
       .toolbar { Button("完成") { dismiss() } }
       .sheet(isPresented: $sourceSheet) {
         SourceEditor(initialKind: sourceKind).environmentObject(store)
+      }
+      .task {
+        #if DEBUG
+          await runE2EHooksIfRequested()
+        #endif
       }
       .importPicker($picking) { urls, target in
         switch target {

@@ -6,9 +6,35 @@ struct RootView: View {
   @EnvironmentObject var store: MobileStore
   @EnvironmentObject var player: MobilePlayer
   @Environment(\.scenePhase) private var scenePhase
-  @State private var tab = 0
+  @State private var tab = Self.e2eInitialTab
+  /// 验收/截图通道：AWAKE_E2E_TAB 启动就落在指定页（library / tuning / settings / nowplaying）。
+  private static var e2eInitialTab: Int {
+    #if DEBUG
+      switch ProcessInfo.processInfo.environment["AWAKE_E2E_TAB"] {
+      case "library": return 1
+      case "tuning": return 2
+      case "settings": return 3
+      default: return 0
+      }
+    #else
+      return 0
+    #endif
+  }
   /// 横滑翻页的豁免区：横向控件自己处理横滑。
   @State private var swipeExempt: [CGRect] = []
+  /// 验收/截图通道：AWAKE_E2E_OPEN=addmusic 启动后直接打开「添加音乐」。
+  /// Xcode 27 的模拟器测试 runner 在这台机器起不来（见 Diagnostics 里的说明），
+  /// 「添加页看得见已连接来源」只能靠这条通道截给机器看。
+  @State private var e2eAddMusic = false
+  /// 横屏布局的渲染预览（仅 DEBUG + AWAKE_E2E_TAB=landscape）。
+  @State private var landscapePreview = false
+  private static var e2eOpenAddMusic: Bool {
+    #if DEBUG
+      return ProcessInfo.processInfo.environment["AWAKE_E2E_OPEN"] == "addmusic"
+    #else
+      return false
+    #endif
+  }
   var body: some View {
     TabView(selection: $tab) {
       NavigationStack { HomeView() }.tabItem { Label("为你", systemImage: "waveform") }
@@ -16,15 +42,13 @@ struct RootView: View {
       NavigationStack { LibraryView() }.tabItem {
         Label("曲库", systemImage: "square.stack")
       }.tag(1)
-      NavigationStack { SoundView() }.tabItem {
-        Label("声音", systemImage: "slider.horizontal.3")
+      // 「声音」与「评测」合并成「调音」：agent 对话是主体，曲线与听感记录是它的两段。
+      NavigationStack { TuningHubView() }.tabItem {
+        Label("调音", systemImage: "dial.medium")
       }.tag(2)
-      NavigationStack { LabView() }.tabItem {
-        Label("评测", systemImage: "waveform.path.ecg")
-      }.tag(3)
       NavigationStack { SettingsView() }.tabItem {
         Label("设置", systemImage: "gearshape")
-      }.tag(4)
+      }.tag(3)
     }
     // mini player 用 iOS 26 的 tabViewBottomAccessory：它由系统排在 tab 托盘之上，
     // 不再是「压在托盘上的浮层」。safeAreaInset 那条路会让两者互相遮盖。
@@ -35,7 +59,7 @@ struct RootView: View {
         .onEnded { value in
           guard
             let next = TabPaging.nextTab(
-              current: tab, count: 5, translation: value.translation,
+              current: tab, count: 4, translation: value.translation,
               start: value.startLocation, width: UIScreen.main.bounds.width,
               exempt: swipeExempt)
           else { return }
@@ -56,6 +80,39 @@ struct RootView: View {
         .environmentObject(store)
         .environmentObject(player)
     }
+    .sheet(isPresented: $e2eAddMusic) {
+      AddMusicView().environmentObject(store)
+    }
+    .fullScreenCover(isPresented: $landscapePreview) {
+      LandscapePlayerView()
+        .environmentObject(store)
+        .environmentObject(player)
+        .frame(width: 852, height: 393)
+        .scaleEffect(0.46)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+    }
+    .task {
+      if Self.e2eOpenAddMusic { e2eAddMusic = true }
+      #if DEBUG
+        let scene = ProcessInfo.processInfo.environment["AWAKE_E2E_TAB"] ?? "home"
+        Diagnostics.log("E2E 启动 tab=\(tab) scene=\(scene) tabs=4 songs=\(store.state.songs.count)")
+        if scene == "nowplaying", let song = store.state.songs.first,
+          let url = store.localURL(song)
+        {
+          player.play([(song, url)], at: 0)
+          store.playerSheetOpen = true
+        }
+        // 横屏布局在竖屏模拟器里没法自动旋转，所以按横屏尺寸渲染一份缩小版给机器看：
+        // 真机横屏用的是同一个 LandscapePlayerView，只有尺寸不同。
+        if scene == "landscape", let song = store.state.songs.first,
+          let url = store.localURL(song)
+        {
+          player.play([(song, url)], at: 0)
+          landscapePreview = true
+        }
+      #endif
+    }
     // V4：切歌自动套用这首歌的曲线。放在 RootView，因为换歌也可能来自迷你条或队列。
     .onChange(of: player.song?.id) { _, id in
       store.applySongCurve(id, player: player)
@@ -63,7 +120,7 @@ struct RootView: View {
     .alert(
       "Awake",
       isPresented: Binding(
-        get: { !store.message.isEmpty || !player.error.isEmpty },
+        get: { !store.suppressGlobalAlert && (!store.message.isEmpty || !player.error.isEmpty) },
         set: {
           if !$0 {
             store.message = ""
@@ -280,9 +337,15 @@ struct NowPlayingView: View {
   @State private var gains = Array(repeating: Float(0), count: 31)
   @State private var tuningOpen = false
   @State private var showInstruments = false
+  @Environment(\.verticalSizeClass) private var verticalSize
   var body: some View {
     if swiping {
       SwipePlayerView(onClose: { swiping = false })
+        .environmentObject(store)
+        .environmentObject(player)
+    } else if verticalSize == .compact {
+      // 横屏换一套布局：横过来之后纵向信息流不成立，想看的是「我在听这张碟」。
+      LandscapePlayerView()
         .environmentObject(store)
         .environmentObject(player)
     } else {
@@ -688,7 +751,7 @@ struct NowPlayingView: View {
   private func statusLine(_ song: Song) -> some View {
     Button {
       if activeChain == nil {
-        // 没有听感链路时，这一行最有用的动作是去「声音」把链路建起来。
+        // 没有听感链路时，这一行最有用的动作是去「调音 → 曲线」把链路建起来。
         store.playerSheetOpen = false
         store.requestedTab = 2
       } else {
@@ -929,16 +992,23 @@ struct HomeView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: DS.Space.l) {
-        hero
+        // 有歌可排时首屏交给「今日精选」：hero 的「开始我的电台」和精选回答的是同一句话，
+        // 两块并排等于把同一个问题问两遍，还把专题挤到了 tab 托盘下面。
+        // 正在播放时 hero 仍然在最上面——那时候它说的是「接着听」，是另一件事。
+        if player.song != nil || store.state.songs.isEmpty {
+          hero
+        }
         if store.state.songs.isEmpty {
           AwakeEmptyState(
             icon: "music.note", title: "还没有音乐",
             message: "先在曲库里加歌，或在设置里连接自己的服务器。",
             actionTitle: "去添加音乐",
-            action: { store.requestedTab = 4 })
+            action: { store.requestedTab = 3 })
         } else {
+          // 编排在前：今日精选 / 专题 / 歌单；原来的平铺列表留在后面当「更多」。
+          EditorialHome()
           AwakeSectionTitle(
-            title: "为你挑选", status: "\(store.state.songs.count) 首可选")
+            title: "接下来可以听", status: "\(store.state.songs.count) 首可选")
           VStack(spacing: 0) {
             ForEach(Array(picks.enumerated()), id: \.element.id) { index, song in
               SongRow(song: song)
@@ -969,10 +1039,30 @@ struct HomeView: View {
       .padding(.horizontal, DS.Space.page)
       .padding(.vertical, DS.Space.m)
     }
+    // 底部要给 tab 托盘 + mini player 让位：首页现在是横滑卡片，
+    // 不留余量时最后一组卡的副标题会被压在托盘下面（上一张截图里就被挡住了）。
+    .contentMargins(.bottom, 120, for: .scrollContent)
     .appSurface()
     // 与曲库、设置同一套页面标题：大标题 + 内容从标题下开始。
     .navigationTitle("为你")
     .toolbar { if store.busy { ProgressView() } }
+    .onAppear { logEditorialScene() }
+  }
+
+  /// 验证脚本据此断言「编排真的排出来了」，不靠人看截图数卡片。
+  private func logEditorialScene() {
+    #if DEBUG
+      let tracks = EditorialFeed.tracks(state: store.state)
+      let pick = Editorial.pick(tracks)
+      let collections = Editorial.collections(tracks)
+      let pickID = pick.map { String($0.trackID.prefix(8)) } ?? "none"
+      Diagnostics.log(
+        "E2E 首页编排 songs=\(store.state.songs.count) pick=\(pickID)"
+          + " reason=\(pick?.reason ?? "none")"
+          + " collections=\(collections.count)"
+          + " ids=\(collections.map(\.id).joined(separator: ","))"
+          + " playlists=\((store.state.playlists ?? []).count)")
+    #endif
   }
 
   /// 首屏只回答一个问题：现在按一下会发生什么。
@@ -1141,12 +1231,25 @@ struct LibraryView: View {
   @State private var query = ""
   /// 只看某一个来源；nil 表示全部来源。
   @State private var sourceFilter: String?
+  /// 生效的来源范围；有搜索词时跨全部来源（规则在 LibraryFilter，视图不另写一套）。
+  private var scopeSourceID: String? {
+    LibraryFilter.scope(sourceID: sourceFilter, query: query)
+  }
   var filtered: [Song] {
-    store.state.songs.filter { song in
-      guard sourceFilter == nil || song.sourceID == sourceFilter else { return false }
-      return query.isEmpty
-        || (song.title + song.artist + song.album).localizedCaseInsensitiveContains(query)
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    return store.state.songs.filter { song in
+      guard scopeSourceID == nil || song.sourceID == scopeSourceID else { return false }
+      return trimmed.isEmpty
+        || (song.title + song.artist + song.album).localizedCaseInsensitiveContains(trimmed)
     }
+  }
+  /// 顶部横幅与空态文案的唯一来源。
+  private var filterDecision: LibraryFilter.Decision {
+    let sourceCount =
+      sourceFilter.map { id in store.state.songs.filter { $0.sourceID == id }.count } ?? 0
+    return LibraryFilter.decide(
+      sourceID: sourceFilter, sourceName: filteredSourceName, sourceCount: sourceCount,
+      query: query, totalCount: store.state.songs.count, matchCount: filtered.count)
   }
   /// 当前筛选来源的曲目数，用来在筛选条上直接回答「我加的那个来源进来了几首」。
   private func count(in source: MusicSource) -> Int {
@@ -1172,6 +1275,25 @@ struct LibraryView: View {
         }
         .accessibilityIdentifier("librarySourceFilter")
         .tabSwipeExempt()
+        // 筛选是隐藏状态时，用户会在列表中部以为「库空了、搜索坏了」。所以它必须常显一行字。
+        if let banner = filterDecision.bannerText {
+          HStack(spacing: 6) {
+            Image(systemName: "line.3.horizontal.decrease.circle").font(.footnote)
+            Text(banner).font(.footnote).lineLimit(2)
+            Spacer(minLength: 0)
+            if let action = filterDecision.bannerActionTitle {
+              Button(action) {
+                sourceFilter = nil
+              }
+              .font(.footnote.weight(.semibold))
+              .buttonStyle(.plain)
+              .accessibilityIdentifier("libraryFilterBannerAction")
+            }
+          }
+          .foregroundStyle(Color(hex: store.state.skin.colors.muted))
+          .padding(.top, 2)
+          .accessibilityIdentifier("libraryFilterBanner")
+        }
       }
       .listRowBackground(Color.clear)
       if filtered.isEmpty {
@@ -1255,8 +1377,14 @@ struct LibraryView: View {
       PlaylistImportView().environmentObject(store).environmentObject(player)
     }.onAppear {
       adoptPendingSource()
+      applyE2ELibraryScene()
+      logE2EFilter()
     }.onChange(of: store.pendingLibrarySource) { _, _ in
       adoptPendingSource()
+    }.onChange(of: query) { _, _ in
+      logE2EFilter()
+    }.onChange(of: sourceFilter) { _, _ in
+      logE2EFilter()
     }
   }
 
@@ -1264,18 +1392,18 @@ struct LibraryView: View {
   /// iOS 26 把工具栏多出来的按钮收进了「…」：空库时用户第一眼看不见任何入口，
   /// 所以入口必须出现在空状态里，而且顺序就是他想做事的两条路——先能听，再连来源。
   private var emptyLibrary: some View {
-    AwakeEmptyState(
-      icon: sourceFilter == nil ? "music.note.list" : "line.3.horizontal.decrease",
-      title: sourceFilter == nil ? "把音乐带进来" : "这个来源里还没有曲目",
-      message: sourceFilter == nil
-        ? "文件 App 里的本地、iCloud Drive 与网盘文件都能导入；也可以连接自己的 NAS、WebDAV 或 Plex。"
-        : "到「设置 → 音乐来源」刷新这个来源，或者把筛选切回全部。",
-      actionTitle: sourceFilter == nil ? "导入文件" : "切回全部",
+    let decision = filterDecision
+    return AwakeEmptyState(
+      icon: decision.emptyKind == .sourceEmpty ? "line.3.horizontal.decrease" : "music.note.list",
+      title: decision.emptyTitle,
+      message: decision.emptyMessage,
+      actionTitle: decision.emptyActionTitle,
       action: {
-        if sourceFilter == nil {
-          picking = .audioFiles
-        } else {
-          sourceFilter = nil
+        switch decision.emptyAction {
+        case .importFiles: picking = .audioFiles
+        case .clearFilter: sourceFilter = nil
+        case .clearSearch: query = ""
+        case .none: break
         }
       }
     )
@@ -1312,11 +1440,53 @@ struct LibraryView: View {
   }
 
 
-  /// 刚连上来源时，把列表筛到这个来源 —— 与桌面端 connect → focusSource 的行为对齐。
+  /// 验收/截图通道：把曲库直接摆在「只看某来源 / 带着搜索词」的状态上。
+  /// 只在 DEBUG 且显式设了环境变量时生效，正常启动一行都不跑。
+  private func applyE2ELibraryScene() {
+    #if DEBUG
+      let env = ProcessInfo.processInfo.environment
+      if env["AWAKE_E2E_LIBRARY_SOURCE"] == "first", sourceFilter == nil {
+        store.pendingLibrarySource = nil
+        sourceFilter = store.state.sources.first?.id
+      }
+      if let value = env["AWAKE_E2E_LIBRARY_QUERY"], !value.isEmpty, query.isEmpty {
+        query = value
+      }
+    #endif
+  }
+
+  /// 把「这一屏实际在按什么过滤」写进诊断日志，验证脚本据此断言，不靠截图猜。
+  private func logE2EFilter() {
+    #if DEBUG
+      let env = ProcessInfo.processInfo.environment
+      guard env["AWAKE_E2E_LIBRARY_SOURCE"] != nil || env["AWAKE_E2E_LIBRARY_QUERY"] != nil
+      else { return }
+      let decision = filterDecision
+      let scope = decision.scopeSourceID == nil ? "all" : "source"
+      Diagnostics.log(
+        "E2E 曲库过滤器 scope=\(scope) banner=\(decision.bannerText ?? "none")"
+          + " empty=\(decision.emptyKind) total=\(store.state.songs.count)"
+          + " shown=\(filtered.count) action=\(decision.emptyActionTitle)")
+    #endif
+  }
+
+  /// 当前筛选来源的名字；没筛或来源已删除时给一句能读的兜底。
+  private var filteredSourceName: String {
+    guard let sourceFilter else { return "这个来源" }
+    return store.state.sources.first { $0.id == sourceFilter }?.name ?? "这个来源"
+  }
+
+  /// 刚连上来源（或在添加页点了某一行）时，把列表筛到这个来源。
   private func adoptPendingSource() {
     guard let id = store.pendingLibrarySource else { return }
     sourceFilter = id
     store.pendingLibrarySource = nil
+    #if DEBUG
+      let name = filteredSourceName
+      let count = store.state.songs.filter { $0.sourceID == id }.count
+      let empty = count == 0 ? " empty=" + AddSourceCopy.emptyLibraryMessage(sourceName: name) : ""
+      Diagnostics.log("E2E 曲库筛选 source=\(name) id=\(id) count=\(count)\(empty)")
+    #endif
   }
   private func playPlaylist(_ list: Playlist) async {
     let byID = Dictionary(uniqueKeysWithValues: store.state.songs.map { ($0.id, $0) })

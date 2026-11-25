@@ -476,6 +476,9 @@ enum Secrets {
   @Published var playerSheetOpen = false
   /// 请求切到某个底部标签（播放页的「去设置」用）。读完即清空。
   @Published var requestedTab: Int?
+  /// 呈现页正在自己说明结果（例如「添加音乐」刚失败）时，全局提示先让位。
+  /// 否则 iOS 会先撤掉整张 sheet 再弹 alert：用户既看不到添加页，也看不清原因。
+  @Published var suppressGlobalAlert = false
   var generationTask: Task<Void, Never>?
   var jobs: [CreationJob] {
     get { state.creations ?? [] }

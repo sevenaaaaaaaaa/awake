@@ -235,7 +235,10 @@ enum Network {
     case 404:
       return "路径不存在（404）。WebDAV 通常需要带完整路径（例如 /dav），请核对。地址：\(address)"
     case 405, 501:
-      return "这个地址不支持 WebDAV（HTTP \(response.statusCode)）。请先在 NAS 设置里开启 WebDAV 服务，并填写 WebDAV 的完整地址。地址：\(address)"
+      // 把产品边界写在报错里：用户会拿 Jellyfin / Emby / 普通 HTTP 目录的地址来试，
+      // 也会把 MusicBee 当成一个服务器地址——那是曲库文件，不是地址，两件事必须分开说。
+      // 只说「去 NAS 开 WebDAV」等于让他去一个不存在的开关里找答案。
+      return "这个地址不支持 WebDAV（HTTP \(response.statusCode)）。Awake 的地址类来源只有三种：WebDAV、Plex、Telegram；Jellyfin、Emby 与普通网页目录不在其中——把它们的音乐文件夹用 WebDAV 共享出来再用。MusicBee 不是地址：它的曲库是本地文件（MusicBeeLibrary.mbl），不需要在这里填地址，导入入口随桌面版更新提供。地址：\(address)"
     case 407:
       return "代理需要认证（407）。地址：\(address)"
     case 503:

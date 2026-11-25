@@ -27,6 +27,66 @@ final class AwakeUITests: XCTestCase {
     app.buttons["song-qa-audio"].tap()
     XCTAssertTrue(app.buttons["打开正在播放"].waitForExistence(timeout: 3))
   }
+  /// 用户报告的「Plex 连上了，添加页与曲库都看不到」。
+  /// 前置：本地假 Plex 服务器 python3 Tools/fake_plex_server.py --port 32400
+  /// 断言三件事：连上后「添加音乐」的已连接列表有这一行、曲库能看见曲目、退出再进列表还在。
+  func testPlexSourceStaysVisibleAfterConnecting() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--uitesting"]
+    app.launch()
+
+    app.tabBars.buttons["设置"].tap()
+    let addMusic = app.buttons["addMusic"]
+    XCTAssertTrue(addMusic.waitForExistence(timeout: 6), app.debugDescription)
+    addMusic.tap()
+
+    let plexEntry = app.buttons["addSource_plex"]
+    XCTAssertTrue(plexEntry.waitForExistence(timeout: 6), app.debugDescription)
+    plexEntry.tap()
+
+    let name = app.textFields["sourceName"]
+    XCTAssertTrue(name.waitForExistence(timeout: 6), app.debugDescription)
+    name.tap()
+    name.typeText("PlexE2E")
+    let url = app.textFields["sourceURL"]
+    url.tap()
+    url.typeText("http://127.0.0.1:32400")
+    let secret = app.secureTextFields["sourceSecret"]
+    secret.tap()
+    secret.typeText("e2e-token")
+
+    let connect = app.buttons["connectSource"]
+    for _ in 0..<8 {
+      if connect.isHittable { break }
+      app.swipeUp()
+    }
+    XCTAssertTrue(connect.waitForExistence(timeout: 5))
+    XCTAssertTrue(connect.isEnabled, "名称与地址填好后连接按钮应当可用")
+    connect.tap()
+
+    let addTitle = app.navigationBars["添加音乐"]
+    XCTAssertTrue(addTitle.waitForExistence(timeout: 90), app.debugDescription)
+
+    let connected = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "identifier BEGINSWITH %@", "connectedSource_")).firstMatch
+    XCTAssertTrue(
+      connected.waitForExistence(timeout: 10),
+      "已连接列表里应当出现刚添加的 Plex 来源\n" + app.debugDescription)
+
+    addTitle.buttons["完成"].tap()
+    XCTAssertTrue(
+      app.staticTexts["夜航·测试曲一"].waitForExistence(timeout: 15),
+      "连上之后曲库应当能看见这个来源的曲目\n" + app.debugDescription)
+    XCTAssertTrue(app.staticTexts["PlexE2E"].exists, "曲库的来源筛选条应当带上这个来源")
+
+    app.tabBars.buttons["设置"].tap()
+    addMusic.tap()
+    let again = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "identifier BEGINSWITH %@", "connectedSource_")).firstMatch
+    XCTAssertTrue(
+      again.waitForExistence(timeout: 10),
+      "重新打开添加页，已连接列表仍应存在\n" + app.debugDescription)
+  }
   func testImportPickersPresentAndCancel() {
     let app = XCUIApplication()
     app.launchArguments = ["--uitesting"]
@@ -174,7 +234,8 @@ final class AwakeUITests: XCTestCase {
     let app = XCUIApplication()
     app.launchArguments = ["--uitesting", "--reduce-motion-ui"]
     app.launch()
-    app.tabBars.buttons["声音"].tap()
+    app.tabBars.buttons["调音"].tap()
+    app.buttons["tuningSegment-1"].tap()
     app.buttons["configureChain"].tap()
     app.buttons["saveChain"].tap()
     let slider = revealEQSlider(app)
@@ -189,7 +250,8 @@ final class AwakeUITests: XCTestCase {
     app.launch()
     app.tabBars.buttons["曲库"].tap()
     app.buttons["song-qa-audio"].tap()
-    app.tabBars.buttons["声音"].tap()
+    app.tabBars.buttons["调音"].tap()
+    app.buttons["tuningSegment-1"].tap()
     app.buttons["configureChain"].tap()
     app.buttons["saveChain"].tap()
     let slider = revealEQSlider(app)
@@ -237,7 +299,8 @@ final class AwakeUITests: XCTestCase {
     let app = XCUIApplication()
     app.launchArguments = ["--uitesting"]
     app.launch()
-    app.tabBars.buttons["声音"].tap()
+    app.tabBars.buttons["调音"].tap()
+    app.buttons["tuningSegment-1"].tap()
     app.buttons["configureChain"].tap()
     let entry = app.buttons["equipmentEditor"]
     for _ in 0..<3 { if !entry.isHittable { app.swipeUp() } }
@@ -280,7 +343,8 @@ final class AwakeUITests: XCTestCase {
     let app = XCUIApplication()
     app.launchArguments = ["--uitesting"]
     app.launch()
-    app.tabBars.buttons["声音"].tap()
+    app.tabBars.buttons["调音"].tap()
+    app.buttons["tuningSegment-1"].tap()
     app.buttons["configureChain"].tap()
     let entry = app.buttons["equipmentEditor"]
     for _ in 0..<3 { if !entry.isHittable { app.swipeUp() } }
@@ -312,7 +376,8 @@ final class AwakeUITests: XCTestCase {
     XCTAssertTrue(track.waitForExistence(timeout: 5))
     track.tap()
     XCTAssertTrue(app.buttons["miniPlay"].waitForExistence(timeout: 5))
-    app.tabBars.buttons["评测"].tap()
+    app.tabBars.buttons["调音"].tap()
+    app.buttons["tuningSegment-2"].tap()
     let save = app.buttons["saveRating"]
     XCTAssertTrue(save.waitForExistence(timeout: 5))
     save.tap()
@@ -331,7 +396,8 @@ final class AwakeUITests: XCTestCase {
     let app = XCUIApplication()
     app.launchArguments = ["--uitesting"]
     app.launch()
-    app.tabBars.buttons["声音"].tap()
+    app.tabBars.buttons["调音"].tap()
+    app.buttons["tuningSegment-1"].tap()
     app.buttons["configureChain"].tap()
     let name = app.textFields["chainName"]
     XCTAssertTrue(name.waitForExistence(timeout: 5))

@@ -45,8 +45,10 @@ enum ArtworkPalette {
     context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
     let r = CGFloat(pixel[0]) / 255, g = CGFloat(pixel[1]) / 255, b = CGFloat(pixel[2]) / 255
     // 压一点亮度范围：太黑的环境层看不出呼吸，太亮会盖住文字。
+    // 环境层只做「有一点来自封面」的暗示，所以亮度上限收得比原来低：
+    // 太亮的染色会让播放页看起来像另一套主题。
     let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    let lift = max(0.22, min(0.66, luminance))
+    let lift = max(0.16, min(0.40, luminance))
     let scale = lift / max(0.08, luminance)
     return UIColor(
       red: min(1, r * scale), green: min(1, g * scale), blue: min(1, b * scale), alpha: 1)
@@ -73,14 +75,16 @@ struct PlaybackAmbience: View {
     let tint = ArtworkPalette.color(for: artwork, store: store)
     ZStack {
       Color(hex: store.state.skin.colors.bg)
+      // 强度压到主界面同一套色阶能接受的量：以前的 0.62 让播放页像另一套配色，
+      // 现在只留一层能看出「来自封面」的余地，底色仍是皮肤底色。
       RadialGradient(
-        colors: [tint.opacity(0.62), tint.opacity(0.16), .clear],
+        colors: [tint.opacity(0.30), tint.opacity(0.08), .clear],
         center: UnitPoint(x: 0.22, y: 0.12), startRadius: 0, endRadius: 460
       )
       .scaleEffect(breathing ? 1.12 : 1.0)
       .opacity(breathing ? 1.0 : 0.78)
       RadialGradient(
-        colors: [tint.opacity(0.30), .clear],
+        colors: [tint.opacity(0.14), .clear],
         center: UnitPoint(x: 0.86, y: 0.62), startRadius: 0, endRadius: 380
       )
       .scaleEffect(breathing ? 1.0 : 1.08)
@@ -107,6 +111,7 @@ struct PlaybackAmbience: View {
 /// 首屏封面：圆角 + 一层很浅的投影，播放时随环境层一起「呼吸」。
 struct HeroArtwork: View {
   @EnvironmentObject var store: MobileStore
+  @EnvironmentObject var player: MobilePlayer
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @Environment(\.awakeReducedMotion) private var forcedReduceMotion
 
@@ -123,6 +128,21 @@ struct HeroArtwork: View {
     .overlay(
       RoundedRectangle(cornerRadius: 14, style: .continuous)
         .stroke(Color.white.opacity(0.08), lineWidth: 0.5))
+    // 进度直接长在封面上：这一页最常被看的是「放到哪了」，
+    // 但进度条在屏底，手指在封面上时不方便确认。一条 3pt 的线就够，不抢封面。
+    .overlay(alignment: .bottomLeading) {
+      let fraction = player.duration > 0 ? player.position / player.duration : 0
+      ZStack(alignment: .leading) {
+        Capsule().fill(Color.white.opacity(0.18))
+        Capsule()
+          .fill(Color(hex: store.state.skin.colors.accent))
+          .frame(width: max(0, min(1, fraction)) * (size - 28))
+      }
+      .frame(width: size - 28, height: 3)
+      .padding(.leading, 14)
+      .padding(.bottom, 12)
+      .allowsHitTesting(false)
+    }
     .shadow(color: .black.opacity(0.45), radius: 26, x: 0, y: 18)
     .scaleEffect(expanded ? 1.015 : 1.0)
     .animation(
