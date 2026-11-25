@@ -12,8 +12,11 @@ const props = defineProps<{
   pendingAdapt: number;
   today: string | null;
   shelves: { classical: number; light: number; live: number };
-  stationCount: number;
+  /** 没有电台来源时不要传：传 0 会让"电台"这块永远算得出来但不出现。 */
+  stationCount?: number;
   hasCalibration: boolean;
+  /** 各 tile 连续多少天没被点过（来自 homeIdle），用来做自动降权。 */
+  idleDays?: Partial<Record<TileKind, number>>;
 }>();
 
 const emit = defineEmits<{ go: [kind: TileKind] }>();
@@ -25,8 +28,9 @@ const tiles = computed(() =>
     pendingAdapt: props.pendingAdapt,
     today: props.today,
     shelves: props.shelves,
-    stationCount: props.stationCount,
+    stationCount: props.stationCount ?? 0,
     hasCalibration: props.hasCalibration,
+    idleDays: props.idleDays ?? {},
   }),
 );
 </script>

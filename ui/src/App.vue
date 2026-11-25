@@ -28,6 +28,9 @@ import HomeCanvas from "./HomeCanvas.vue";
 import ShelvesView from "./ShelvesView.vue";
 import AdaptReport from "./AdaptReport.vue";
 import ArtistView from "./ArtistView.vue";
+import MusicBeeImport from "./MusicBeeImport.vue";
+import RadioSettingsCard from "./RadioSettingsCard.vue";
+import { idleDays as computeIdleDays, recordTileClick } from "./homeIdle";
 import type { TileKind } from "./homeLayout";
 import {
   // 与已有的 loadInsight()（曲库覆盖度/成就）重名，这里起个别名。
@@ -125,12 +128,25 @@ async function loadInsightData() {
   artistProfiles.value = data.artists;
 }
 
+/** 画布 tile 的降权依据：连续几天没点过。存 localStorage，读不到就当没点过。 */
+const idleState = ref<Partial<Record<TileKind, number>>>({});
+function refreshIdle() {
+  if (typeof localStorage === "undefined") return;
+  idleState.value = computeIdleDays(localStorage, Date.now());
+}
+function noteTileClick(kind: TileKind) {
+  if (typeof localStorage !== "undefined") {
+    recordTileClick(localStorage, kind, Date.now());
+  }
+  refreshIdle();
+}
+
 /** 画布上的「继续听」：刚开播不到 3 秒不算继续。 */
 const continuePoint = computed(() => {
   const now = s.now as Track | null;
   if (!now) return null;
-  const playback = (s as unknown as { playback?: { position?: number } }).playback;
-  const position = typeof playback?.position === "number" ? playback.position : 0;
+  // useAwake 已经把 playback 暴露出来了（含 position / duration），不需要探测式转换。
+  const position = s.playback.position ?? 0;
   if (position <= 3) return null;
   return {
     title: now.title,
@@ -1330,6 +1346,7 @@ function go(v: View) {
 
 /** 画布 tile 的去处：每个 tile 只有一个动作，这里就是那张路由表。 */
 function handleTile(kind: TileKind) {
+  noteTileClick(kind);
   switch (kind) {
     case "adapt":
       go("adapt");
@@ -1358,6 +1375,13 @@ function handleTile(kind: TileKind) {
       go("library");
     }
   }
+}
+
+/** 导入 MusicBee 注解之后：曲库变了，三张洞察页的数字也要跟着变。 */
+async function afterMusicBeeImport() {
+  await s.refresh();
+  await loadInsightData();
+  s.toast("已导入 MusicBee 的播放记录");
 }
 
 function playTrackById(id: string) {
@@ -1796,6 +1820,7 @@ async function rescanForImport(): Promise<boolean> {
 onMounted(() => {
   void refreshBuiltinStatus();
   void loadInsightData();
+  refreshIdle();
   window.addEventListener("keydown", keydown);
   window.addEventListener("keyup", keyup);
   // 切走应用时 keyup 收不到：不补这一条，旁路会一直挂在开着的状态上。
@@ -2006,8 +2031,8 @@ onUnmounted(() => {
               light: shelfGroups.find((g) => g.key === 'light')?.count ?? 0,
               live: shelfGroups.find((g) => g.key === 'live')?.count ?? 0,
             }"
-            :station-count="0"
             :has-calibration="adaptQueue ? !adaptQueue.blocked_by_reference : false"
+            :idle-days="idleState"
             @go="handleTile"
           />
           <div class="page-intro">
@@ -2683,6 +2708,8 @@ onUnmounted(() => {
               <Icon name="plus" />添加音乐来源
             </button>
           </div>
+          <RadioSettingsCard />
+          <MusicBeeImport @imported="afterMusicBeeImport" />
           <article class="source-card">
             <span class="source-icon"><Icon name="folder" :size="28" /></span>
             <div>
