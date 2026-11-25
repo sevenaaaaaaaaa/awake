@@ -543,7 +543,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn unknown_label_does_not_read_like_a_codec_name() {
         match plan("unknown", false, true) {
             PlaybackPlan::Blocked { reason, .. } => {
