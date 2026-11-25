@@ -24,6 +24,18 @@ import PlaylistImport from "./PlaylistImport.vue";
 import DataTransfer from "./DataTransfer.vue";
 import BooksView from "./BooksView.vue";
 import WeeklySummary from "./WeeklySummary.vue";
+import HomeCanvas from "./HomeCanvas.vue";
+import ShelvesView from "./ShelvesView.vue";
+import AdaptReport from "./AdaptReport.vue";
+import ArtistView from "./ArtistView.vue";
+import type { TileKind } from "./homeLayout";
+import {
+  // 与已有的 loadInsight()（曲库覆盖度/成就）重名，这里起个别名。
+  loadInsight as fetchInsight,
+  type AdaptQueue,
+  type ArtistProfile,
+  type ShelfGroup,
+} from "./insight";
 import PluginSearch from "./PluginSearch.vue";
 import CurveBasisCard from "./CurveBasisCard.vue";
 import SelfCheckCard from "./SelfCheckCard.vue";
@@ -92,12 +104,39 @@ type View =
   | "stage"
   | "books"
   | "summary"
+  | "shelves"
+  | "artists"
+  | "adapt"
   | "playlist";
 const view = ref<View>("home"),
   libraryMode = ref("albums"),
   /** 曲库页按来源收窄：空串表示全部来源。 */
   librarySource = ref(""),
   query = ref("");
+
+// 曲库洞察：三个只读命令的缓存。进相关页面或启动时刷新一次。
+const shelfGroups = ref<ShelfGroup[]>([]);
+const adaptQueue = ref<AdaptQueue | null>(null);
+const artistProfiles = ref<ArtistProfile[]>([]);
+async function loadInsightData() {
+  const data = await fetchInsight(call);
+  shelfGroups.value = data.shelves;
+  adaptQueue.value = data.queue;
+  artistProfiles.value = data.artists;
+}
+
+/** 画布上的「继续听」：刚开播不到 3 秒不算继续。 */
+const continuePoint = computed(() => {
+  const now = s.now as Track | null;
+  if (!now) return null;
+  const playback = (s as unknown as { playback?: { position?: number } }).playback;
+  const position = typeof playback?.position === "number" ? playback.position : 0;
+  if (position <= 3) return null;
+  return {
+    title: now.title,
+    remainingSec: Math.max(1, (now.duration || 0) - position),
+  };
+});
 const album = ref<Album | null>(null),
   playlistId = ref(""),
   queueOpen = ref(false),
@@ -1027,6 +1066,9 @@ const title = computed(
       studio: "灵感工作室",
       stage: "此刻，沉浸",
       books: "听书与播报",
+      shelves: "专架",
+      artists: "艺人画像",
+      adapt: "适配报告",
       summary: "本周总结",
       playlist: activePlaylist.value?.name || "我的歌单",
     }[view.value],
@@ -1264,6 +1306,9 @@ const nav = [
   { id: "books", icon: "book", name: "听书与播报" },
   { id: "agent", icon: "spark", name: "听歌搭子" },
   { id: "summary", icon: "chart", name: "本周总结" },
+  { id: "shelves", icon: "database", name: "专架" },
+  { id: "artists", icon: "headphones", name: "艺人画像" },
+  { id: "adapt", icon: "sliders", name: "适配报告" },
 ] as const;
 function resetScroll() {
   requestAnimationFrame(() =>
@@ -1277,6 +1322,52 @@ function go(v: View) {
   // 进曲库默认看全部来源；要看某一个来源请用 openSourceLibrary()。
   librarySource.value = "";
   resetScroll();
+  // 三个洞察页的数字要新鲜：每次进去都重算，它们都是只读命令。
+  if (v === "shelves" || v === "artists" || v === "adapt") {
+    void loadInsightData();
+  }
+}
+
+/** 画布 tile 的去处：每个 tile 只有一个动作，这里就是那张路由表。 */
+function handleTile(kind: TileKind) {
+  switch (kind) {
+    case "adapt":
+      go("adapt");
+      return;
+    case "shelf":
+      go("shelves");
+      return;
+    case "radio":
+    case "connectRadio":
+      go("sources");
+      return;
+    case "ears":
+      go("sound");
+      return;
+    case "addMusic":
+      addMusic();
+      return;
+    case "today":
+    case "continue": {
+      const list = suggested.value;
+      const first = list[0];
+      if (first) {
+        void s.start(first, list);
+        return;
+      }
+      go("library");
+    }
+  }
+}
+
+function playTrackById(id: string) {
+  const track = s.tracks.find((item) => item.id === id);
+  if (track) void s.start(track, s.tracks);
+}
+
+function playArtist(name: string) {
+  const list = s.tracks.filter((item) => item.artist === name);
+  if (list[0]) void s.start(list[0], list);
 }
 /** 打开曲库并只看这个来源（空串 = 全部来源）。 */
 function openSourceLibrary(sourceId: string) {
@@ -1704,6 +1795,7 @@ async function rescanForImport(): Promise<boolean> {
 
 onMounted(() => {
   void refreshBuiltinStatus();
+  void loadInsightData();
   window.addEventListener("keydown", keydown);
   window.addEventListener("keyup", keyup);
   // 切走应用时 keyup 收不到：不补这一条，旁路会一直挂在开着的状态上。
@@ -1904,6 +1996,20 @@ onUnmounted(() => {
       <TelegramSponsored v-if="activeTelegramSource && view !== 'sources'" :source-id="activeTelegramSource.id" />
         <Appearance v-if="view === 'appearance'" :services="s.services" />
         <template v-else-if="view === 'home'">
+          <HomeCanvas
+            :track-count="s.tracks.length"
+            :continue-at="continuePoint"
+            :pending-adapt="adaptQueue?.queued ?? 0"
+            :today="suggested[0]?.title ?? null"
+            :shelves="{
+              classical: shelfGroups.find((g) => g.key === 'classical')?.count ?? 0,
+              light: shelfGroups.find((g) => g.key === 'light')?.count ?? 0,
+              live: shelfGroups.find((g) => g.key === 'live')?.count ?? 0,
+            }"
+            :station-count="0"
+            :has-calibration="adaptQueue ? !adaptQueue.blocked_by_reference : false"
+            @go="handleTile"
+          />
           <div class="page-intro">
             <div>
               <p class="eyebrow">YOUR DAILY RESONANCE</p>
@@ -3326,6 +3432,23 @@ onUnmounted(() => {
           @refresh="s.refresh()"
           @open-playlist="openPlaylistById"
           @import-files="pickFiles"
+        />
+        <ShelvesView
+          v-else-if="view === 'shelves'"
+          :groups="shelfGroups"
+          :tracks="s.tracks"
+          @play="playTrackById"
+        />
+        <AdaptReport
+          v-else-if="view === 'adapt'"
+          :queue="adaptQueue"
+          @play="playTrackById"
+          @calibrate="go('sound')"
+        />
+        <ArtistView
+          v-else-if="view === 'artists'"
+          :profiles="artistProfiles"
+          @play="playArtist"
         />
         <template v-else-if="view === 'summary'">
           <div class="page-intro">
