@@ -7,6 +7,7 @@
  * 面板**不写回 .mbl**；重复点"应用"是安全的（播放次数只增不减）。
  */
 import { computed, ref } from "vue";
+import Icon from "./Icon.vue";
 import { call, desktop } from "./bridge";
 
 interface LocalSourceView {

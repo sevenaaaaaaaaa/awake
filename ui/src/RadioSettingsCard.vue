@@ -6,6 +6,7 @@
  * 判定逻辑在 Rust（awake_core::radio::plan），这里只显示与写入开关。
  */
 import { onMounted, ref } from "vue";
+import Icon from "./Icon.vue";
 import { call, desktop } from "./bridge";
 
 interface RadioSettingsView {

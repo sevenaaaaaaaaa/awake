@@ -313,6 +313,75 @@ export async function call<T = unknown>(
       result = brief;
       break;
     }
+    // 台站目录：浏览器预览用一份标注清楚的假数据，让布局能看、能滚动。
+    // 这里**不假装能联网判定**——真实判定只在桌面版由 Rust 做。
+    case "list_radio_stations":
+      result = {
+        server: "https://de1.api.radio-browser.info（浏览器预览，示例数据）",
+        fetched: 3,
+        shown: 3,
+        hidden: 1,
+        note: "浏览器预览：这些是示例台站，不是真实目录",
+        stations: [
+          {
+            uuid: "demo-1",
+            name: "Radio Swiss Jazz",
+            url: "https://example.invalid/jazz.mp3",
+            homepage: "",
+            favicon: "",
+            tags: ["jazz"],
+            country: "Switzerland",
+            codec: "MP3",
+            bitrate: 128,
+            votes: 4210,
+            clicks: 98000,
+            support: "yes",
+            verdict: "未探测（声明 MP3，解码器支持）",
+            can_play: true,
+            needs_ffmpeg: false,
+            probed_at_ms: 0,
+          },
+          {
+            uuid: "demo-2",
+            name: "France Musique Classique",
+            url: "https://example.invalid/classique.aac",
+            homepage: "",
+            favicon: "",
+            tags: ["classical"],
+            country: "France",
+            codec: "AAC",
+            bitrate: 192,
+            votes: 3100,
+            clicks: 61000,
+            support: "yes",
+            verdict: "可播（探测为 aac）",
+            can_play: true,
+            needs_ffmpeg: false,
+            probed_at_ms: Date.now() - 3600_000,
+          },
+          {
+            uuid: "demo-3",
+            name: "Opus Test Stream",
+            url: "https://example.invalid/test.opus",
+            homepage: "",
+            favicon: "",
+            tags: ["talk"],
+            country: "Germany",
+            codec: "OPUS",
+            bitrate: 96,
+            votes: 55,
+            clicks: 900,
+            support: "no",
+            verdict: "opus 需要打开「用 ffmpeg 兜底」才能播放",
+            can_play: false,
+            needs_ffmpeg: true,
+            probed_at_ms: 0,
+          },
+        ],
+      };
+      break;
+    case "probe_radio_station":
+      throw new Error("探测要真的连流，浏览器预览里不做；请在桌面版试。");
     default:
       throw new Error(`浏览器模式暂不支持 ${command}`);
   }

@@ -42,6 +42,7 @@ mod self_check;
 mod library_insight;
 mod musicbee_panel;
 mod radio_settings;
+mod radio_stations;
 mod song_curves;
 mod speech;
 mod telegram;
@@ -1317,6 +1318,8 @@ pub fn run() {
             musicbee_panel::pick_musicbee_library,
             radio_settings::get_radio_settings,
             radio_settings::set_ffmpeg_fallback,
+            radio_stations::list_radio_stations,
+            radio_stations::probe_radio_station,
             self_check::self_check
         ])
         .build(tauri::generate_context!())

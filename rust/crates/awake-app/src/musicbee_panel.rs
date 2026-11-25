@@ -49,23 +49,11 @@ pub struct MblApplied {
 }
 
 /// 从 `.mbl` 的第一条路径猜一个"Windows 根"（只作预填，用户可以改）。
+///
+/// 逻辑只有一份，在 `awake_core::musicbee::guess_root`——CLI 的 `mbl tags`
+/// 和这里的预填必须给同一个答案，否则用户会看到两个不同的建议。
 fn suggest_win_root(path: &str) -> String {
-    if path.starts_with(r"\\") {
-        let parts: Vec<&str> = path.trim_start_matches('\\').split('\\').collect();
-        if parts.len() >= 2 && !parts[1].is_empty() {
-            return format!("\\\\{}\\{}", parts[0], parts[1]);
-        }
-        return path.to_string();
-    }
-    let parts: Vec<&str> = path.split('\\').collect();
-    // 三段以上才有"目录"可猜：F:\Music\01.flac → F:\Music；F:\01.flac → F:（那是盘根）
-    if parts.len() >= 3 && !parts[0].is_empty() && !parts[1].is_empty() {
-        format!("{}\\{}", parts[0], parts[1])
-    } else if !parts.is_empty() && !parts[0].is_empty() {
-        parts[0].to_string()
-    } else {
-        String::new()
-    }
+    awake_core::musicbee::guess_root(path)
 }
 
 fn local_sources(state: &AppState) -> (Vec<LocalSourceView>, Vec<(String, String)>) {

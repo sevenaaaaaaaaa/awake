@@ -30,6 +30,7 @@ import AdaptReport from "./AdaptReport.vue";
 import ArtistView from "./ArtistView.vue";
 import MusicBeeImport from "./MusicBeeImport.vue";
 import RadioSettingsCard from "./RadioSettingsCard.vue";
+import RadioStations from "./RadioStations.vue";
 import { idleDays as computeIdleDays, recordTileClick } from "./homeIdle";
 import type { TileKind } from "./homeLayout";
 import {
@@ -111,7 +112,38 @@ type View =
   | "artists"
   | "adapt"
   | "playlist";
-const view = ref<View>("home"),
+
+/** 所有合法的 view。深链校验用它，免得 URL 里写错一个词就白屏。 */
+const VIEW_IDS: readonly View[] = [
+  "appearance",
+  "home",
+  "library",
+  "favorites",
+  "agent",
+  "sources",
+  "sound",
+  "studio",
+  "stage",
+  "books",
+  "summary",
+  "shelves",
+  "artists",
+  "adapt",
+  "playlist",
+];
+
+/**
+ * `?view=sources` 直接落到那一页。
+ *
+ * 两个用处：截图验收要一条不用点鼠标的入口；用户想"把这一页发给别人看看"时也靠它。
+ * 不认识的 view 一律回首页——URL 里写错一个词不该白屏。
+ */
+function initialView(): View {
+  const wanted = new URLSearchParams(window.location.search).get("view") as View | null;
+  return wanted && VIEW_IDS.includes(wanted) ? wanted : "home";
+}
+
+const view = ref<View>(initialView()),
   libraryMode = ref("albums"),
   /** 曲库页按来源收窄：空串表示全部来源。 */
   librarySource = ref(""),
@@ -2709,6 +2741,7 @@ onUnmounted(() => {
             </button>
           </div>
           <RadioSettingsCard />
+          <RadioStations />
           <MusicBeeImport @imported="afterMusicBeeImport" />
           <article class="source-card">
             <span class="source-icon"><Icon name="folder" :size="28" /></span>
