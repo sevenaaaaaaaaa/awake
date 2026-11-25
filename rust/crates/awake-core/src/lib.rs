@@ -23,6 +23,7 @@ pub mod metadata;
 pub mod models;
 pub mod musicbee;
 pub mod musicbee_import;
+pub mod musicbee_tags;
 pub mod parametric;
 pub mod pipeline;
 pub mod radio;

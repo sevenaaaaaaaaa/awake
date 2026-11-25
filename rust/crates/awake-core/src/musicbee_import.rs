@@ -9,7 +9,7 @@
 //! 匹配靠"来源根 + locator"拼出的绝对路径与 `.mbl` 里的路径对齐；
 //! 大小写不一致时退一步再匹配一次，并在报告里计数（macOS 常见，不能悄悄吞掉）。
 
-use crate::musicbee::{map_windows_path, MblLibrary};
+use crate::musicbee::{map_windows_path, MblLibrary, Mount};
 use crate::models::Track;
 use serde::Serialize;
 
@@ -130,8 +130,27 @@ fn merge_annotation(track: &Track, annotations: &Annotations) -> Annotations {
     Annotations { play_count, skip_count: annotations.skip_count, last_played_ms, added_ms }
 }
 
-/// 只算不改：先把"会发生什么"摆出来给人看。
+/// 单盘入口：一个 Windows 根 × 曲库里每个本地来源的根。
+///
+/// 这就是面板一直用的那种情形（`.mbl` 全部在 `F:\Music` 下）。
+/// 跨盘时用 [`plan_multi`]。
 pub fn plan(lib: &MblLibrary, tracks: &[Track], roots: &[SourceRoot<'_>], win_root: &str) -> ImportPlan {
+    let mounts: Vec<Mount<'_>> =
+        roots.iter().map(|r| Mount::new(win_root, r.root)).collect();
+    plan_multi(lib, tracks, roots, &mounts)
+}
+
+/// 跨多个 Windows 盘根落库：每个 `Mount` 是「一个盘根 → 一个本机挂载点」。
+///
+/// 真实曲库常跨盘（`F:\Music` 与 `G:\Archive`），一个 `win_root` 装不下。
+/// 同一条记录可能被多个 `Mount` 命中——那很正常（同一个盘挂了两处），
+/// 只要**任意一个**候选路径在库里存在就算匹配，与原实现的"逐个试"一致。
+pub fn plan_multi(
+    lib: &MblLibrary,
+    tracks: &[Track],
+    roots: &[SourceRoot<'_>],
+    mounts: &[Mount<'_>],
+) -> ImportPlan {
     let mut result = ImportPlan { library_only: tracks.len(), ..ImportPlan::default() };
 
     // 每条曲目在磁盘上的绝对路径：来源根 + locator（绝对 locator 原样用）。
@@ -144,11 +163,10 @@ pub fn plan(lib: &MblLibrary, tracks: &[Track], roots: &[SourceRoot<'_>], win_ro
     }
 
     for record in &lib.records {
-        // 一个 Windows 根可能挂了多个本机挂载点：逐个试，任何一个对上就算匹配。
-        // 多盘（F: 与 G: 各一套挂载）还不支持——见文件头「已知边界」。
-        let candidates: Vec<String> = roots
+        // 每个 Mount 独立试，任何一个对上就算匹配。跨盘就是多个 Mount。
+        let candidates: Vec<String> = mounts
             .iter()
-            .filter_map(|r| map_windows_path(&record.path, win_root, r.root))
+            .filter_map(|m| map_windows_path(&record.path, m.win_root, m.posix_root))
             .collect();
         if candidates.is_empty() {
             result.unmatched.push(record.path.clone());
@@ -381,6 +399,44 @@ mod tests {
         let mut applied = tracks.clone();
         let report = apply(&mut applied, &plan);
         assert_eq!(report.updated, 0, "报告说会变、实际没变，就是数字不自洽");
+    }
+
+    #[test]
+    fn two_windows_drives_import_with_two_mounts() {
+        let lib = library(vec![
+            record("F:\\Music\\A\\01.flac", 5, None, None),
+            record("G:\\Archive\\B\\02.flac", 3, None, None),
+        ]);
+        let tracks = vec![
+            track("t1", "s1", "A/01.flac", 0, None, 0),
+            track("t2", "s2", "B/02.flac", 0, None, 0),
+        ];
+        let roots = [
+            SourceRoot { source_id: "s1", root: "/Volumes/F" },
+            SourceRoot { source_id: "s2", root: "/Volumes/G" },
+        ];
+        let mounts = [
+            Mount::new("F:\\Music", "/Volumes/F"),
+            Mount::new("G:\\Archive", "/Volumes/G"),
+        ];
+        let plan = plan_multi(&lib, &tracks, &roots, &mounts);
+        assert_eq!(plan.matched.len(), 2, "两个盘都要对上，不能被单根挡住");
+        assert_eq!(plan.changed, 2);
+        assert!(plan.unmatched.is_empty());
+    }
+
+    #[test]
+    fn a_drive_without_a_mount_is_reported_unmatched_not_silently_dropped() {
+        let lib = library(vec![
+            record("F:\\Music\\A\\01.flac", 5, None, None),
+            record("Z:\\Backup\\C\\03.flac", 2, None, None),
+        ]);
+        let tracks = vec![track("t1", "s1", "A/01.flac", 0, None, 0)];
+        let roots = [SourceRoot { source_id: "s1", root: "/Volumes/F" }];
+        let mounts = [Mount::new("F:\\Music", "/Volumes/F")];
+        let plan = plan_multi(&lib, &tracks, &roots, &mounts);
+        assert_eq!(plan.matched.len(), 1);
+        assert_eq!(plan.unmatched, vec!["Z:\\Backup\\C\\03.flac".to_string()]);
     }
 
     #[test]

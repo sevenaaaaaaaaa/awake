@@ -6,8 +6,9 @@
 //!
 //! 已知边界，写在这里避免以后当成 bug：
 //! 1. **不写回**。MusicBee 运行时持有这个文件，任何写都是数据风险。
-//! 2. **tag_code → 字段名 的映射全网没有公开表**，所以本模块不猜：
-//!    只产出 `(code, value)` 原样对，字段名靠外部注入的 `TagMap`。
+//! 2. **tag_code → 字段名 不在这个模块里定**。解析只产出 `(code, value)` 原样对；
+//!    码表在 `musicbee_tags`（来自官方 SDK 的 `MetaDataType` 枚举，验证状态与反证条件写在那里），
+//!    调用方用 `TagMap::musicbee()` 取，或用 `TagMap::with(...)` 注入自己的表。
 //! 3. .NET Ticks 的第 8 字节在真实文件里恒为 `0x08`，解析时按此修正；
 //!    全零表示"没有这个时间"，返回 None 而不是 1970。
 //! 4. 声明的条数与实际解析条数都露出来（`declared` / `records.len()`），
@@ -88,21 +89,50 @@ pub struct MblLibrary {
     pub trailing_bytes: usize,
 }
 
-/// 标签码 → 字段名。默认空表：没查到的映射不编。
+/// 标签码 → 字段名。三种来源语义不同，不要混：
+///
+/// - `EMPTY`：没有映射表，一律 None（"不猜"的老行为，有测试钉着）；
+/// - `musicbee()`：官方 SDK 的 `MetaDataType` 枚举名（`TrackTitle` / `Album` …），
+///   来源与**未验证状态**见 `musicbee_tags`；
+/// - `with(...)`：调用方自己注入（CLI `--tag`、测试、覆盖个别码）。
 #[derive(Debug, Clone, Default)]
 pub struct TagMap {
     pairs: Vec<(u8, &'static str)>,
+    builtin: bool,
 }
 
 impl TagMap {
-    pub const EMPTY: TagMap = TagMap { pairs: Vec::new() };
+    pub const EMPTY: TagMap = TagMap { pairs: Vec::new(), builtin: false };
 
     pub fn with(pairs: &[(u8, &'static str)]) -> Self {
-        Self { pairs: pairs.to_vec() }
+        Self { pairs: pairs.to_vec(), builtin: false }
+    }
+
+    /// MusicBee 官方枚举名。**推断，未用真实 `.mbl` 验证**；反证方法见 `musicbee_tags`。
+    pub fn musicbee() -> Self {
+        Self { pairs: Vec::new(), builtin: true }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !self.builtin && self.pairs.is_empty()
     }
 
     pub fn label(&self, code: u8) -> Option<&'static str> {
-        self.pairs.iter().find(|(c, _)| *c == code).map(|(_, l)| *l)
+        // 显式覆盖优先于内置表：CLI 要能改一个码而不重编。
+        if let Some((_, label)) = self.pairs.iter().find(|(c, _)| *c == code) {
+            return Some(*label);
+        }
+        if self.builtin {
+            return crate::musicbee_tags::enumerate(code);
+        }
+        None
+    }
+
+    /// 在这张表之上替换/新增个别码。
+    pub fn with_overrides(&self, pairs: &[(u8, &'static str)]) -> Self {
+        let mut merged = self.pairs.clone();
+        merged.extend_from_slice(pairs);
+        Self { pairs: merged, builtin: self.builtin }
     }
 }
 
@@ -338,11 +368,38 @@ pub fn map_windows_path(path: &str, win_root: &str, posix_root: &str) -> Option<
     Some(format!("{base}/{tail}"))
 }
 
-/// 把一份库落到挂载点上：匹配的给补丁，不匹配的原样留着。
-pub fn plan(records: &[MblRecord], win_root: &str, posix_root: &str) -> PathPlan {
+/// 一个「Windows 根 → 本机挂载点」的对。
+///
+/// 一个根不够用：真实曲库常跨盘（`F:\Music` 与 `G:\Archive`），
+/// 也常一个盘挂两处（外置盘换过名字）。跨盘就传多个 `Mount`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Mount<'a> {
+    pub win_root: &'a str,
+    pub posix_root: &'a str,
+}
+
+impl<'a> Mount<'a> {
+    pub fn new(win_root: &'a str, posix_root: &'a str) -> Self {
+        Self { win_root, posix_root }
+    }
+}
+
+/// 把一份库落到一组挂载点上。
+///
+/// 同一条记录被多个 `Mount` 命中时取 **`win_root` 最长**的那个：
+/// `F:\Music` 比 `F:\` 更具体，用户加它就是为了让映射落到对的目录。
+/// 长度相同就保持传入顺序，先传的先命中——结果因此是可预期的，不靠 HashMap 顺序。
+pub fn plan_multi(records: &[MblRecord], mounts: &[Mount<'_>]) -> PathPlan {
+    // 最长根优先：更具体的映射必须赢过更宽的映射。
+    let mut ordered: Vec<Mount<'_>> = mounts.to_vec();
+    ordered.sort_by_key(|m| std::cmp::Reverse(m.win_root.len()));
+
     let mut plan = PathPlan::default();
     for record in records {
-        match map_windows_path(&record.path, win_root, posix_root) {
+        let hit = ordered
+            .iter()
+            .find_map(|m| map_windows_path(&record.path, m.win_root, m.posix_root));
+        match hit {
             Some(posix) => plan.matched.push(TrackPatch {
                 posix_path: posix,
                 play_count: record.play_count,
@@ -354,6 +411,52 @@ pub fn plan(records: &[MblRecord], win_root: &str, posix_root: &str) -> PathPlan
         }
     }
     plan
+}
+
+/// 单盘便捷入口，等价于 `plan_multi(records, &[Mount::new(win_root, posix_root)])`。
+pub fn plan(records: &[MblRecord], win_root: &str, posix_root: &str) -> PathPlan {
+    plan_multi(records, &[Mount::new(win_root, posix_root)])
+}
+
+/// 从一条 Windows 路径猜它所属的根（只作预填，用户可改）：
+/// `F:\Music\Artist\01.flac` → `F:\Music`；`F:\01.flac` → `F:`；
+/// `\\NAS\music\x.flac` → `\\NAS\music`。
+pub fn guess_root(path: &str) -> String {
+    if path.starts_with(r"\\") {
+        let parts: Vec<&str> = path.trim_start_matches('\\').split('\\').collect();
+        if parts.len() >= 2 && !parts[1].is_empty() {
+            return format!("\\\\{}\\{}", parts[0], parts[1]);
+        }
+        return path.to_string();
+    }
+    let parts: Vec<&str> = path.split('\\').collect();
+    if parts.len() >= 3 && !parts[0].is_empty() && !parts[1].is_empty() {
+        format!("{}\\{}", parts[0], parts[1])
+    } else if !parts.is_empty() && !parts[0].is_empty() {
+        parts[0].to_string()
+    } else {
+        String::new()
+    }
+}
+
+/// 这份库跨了几个 Windows 根，各自多少条，按条数降序。
+///
+/// 界面靠它决定"要几个挂载点输入"：一个盘一个，而不是让用户在一个框里猜。
+/// 大小写不敏感地合并（`F:` 与 `f:` 是同一个盘）。
+pub fn windows_roots(records: &[MblRecord]) -> Vec<(String, usize)> {
+    let mut out: Vec<(String, usize)> = Vec::new();
+    for record in records {
+        let root = guess_root(&record.path);
+        if root.is_empty() {
+            continue;
+        }
+        match out.iter_mut().find(|(seen, _)| seen.eq_ignore_ascii_case(&root)) {
+            Some((_, count)) => *count += 1,
+            None => out.push((root, 1)),
+        }
+    }
+    out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    out
 }
 
 /// 播放次数只允许"取较大值"：不把用户刚在 Awake 里听的记录冲回旧数字。
@@ -524,6 +627,66 @@ mod tests {
         assert_eq!(tag_value(r, &map, "album"), None);
     }
 
+    /// 与 `record` 同形，但标签码由调用方给——用来测真实码（65/88 这些）。
+    fn record_with(path: &str, tags: &[(u8, &str)]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.push(2);
+        out.push(0);
+        out.push(0);
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&[0u8; 8]);
+        out.extend_from_slice(&0u16.to_le_bytes());
+        put_str(&mut out, path);
+        out.extend_from_slice(&0i32.to_le_bytes());
+        out.extend_from_slice(&44100i32.to_le_bytes());
+        out.push(1);
+        out.push(0);
+        out.extend_from_slice(&320i16.to_le_bytes());
+        out.extend_from_slice(&200i32.to_le_bytes());
+        out.extend_from_slice(&[0u8; 8]);
+        out.extend_from_slice(&[0u8; 8]);
+        out.push(254); // 封面段结束
+        out.push(0); // tags_type
+        for (code, value) in tags {
+            out.push(*code);
+            put_str(&mut out, value);
+        }
+        out.push(0);
+        out
+    }
+
+    #[test]
+    fn builtin_musicbee_map_labels_come_from_the_official_enum() {
+        let map = TagMap::musicbee();
+        assert_eq!(map.label(65), Some("TrackTitle"));
+        assert_eq!(map.label(30), Some("Album"));
+        assert_eq!(map.label(32), Some("Artist"));
+        assert_eq!(map.label(88), Some("Year"));
+        assert_eq!(map.label(200), None, "表外的码仍然不猜");
+        assert!(!map.is_empty());
+        assert!(TagMap::EMPTY.is_empty(), "空表就是空表，不许悄悄变成内置表");
+        assert_eq!(TagMap::EMPTY.label(65), None, "没注入就不许有映射");
+    }
+
+    #[test]
+    fn builtin_map_reads_a_real_code_65_title() {
+        let bytes = library(&[record_with("F:\\Music\\a.flac", &[(65, "夜航"), (88, "1998")])], 1, 8);
+        let lib = parse(&bytes).unwrap();
+        let record = &lib.records[0];
+        let map = TagMap::musicbee();
+        assert_eq!(tag_value(record, &map, "TrackTitle"), Some("夜航"));
+        assert_eq!(tag_value(record, &map, "Year"), Some("1998"));
+        assert_eq!(tag_value(record, &map, "Album"), None);
+    }
+
+    #[test]
+    fn overrides_win_over_the_builtin_table() {
+        let map = TagMap::musicbee().with_overrides(&[(65, "本地改名")]);
+        assert_eq!(map.label(65), Some("本地改名"), "覆盖优先");
+        assert_eq!(map.label(88), Some("Year"), "没覆盖的仍走内置表");
+        assert!(map.with_overrides(&[]).label(65).is_some());
+    }
+
     #[test]
     fn windows_paths_map_onto_a_mounted_root_case_insensitively() {
         assert_eq!(
@@ -563,6 +726,66 @@ mod tests {
         assert_eq!(plan.matched[0].posix_path, "/mnt/music/A/01.flac");
         assert_eq!(plan.matched[0].play_count, 12);
         assert_eq!(plan.unmatched, vec!["G:\\Other\\02.flac".to_string()]);
+    }
+
+    #[test]
+    fn a_library_across_two_windows_drives_maps_with_two_mounts() {
+        let bytes = library(
+            &[
+                record_with("F:\\Music\\A\\01.flac", &[]),
+                record_with("G:\\Archive\\B\\02.flac", &[]),
+                record_with("H:\\Nowhere\\03.flac", &[]),
+            ],
+            3,
+            8,
+        );
+        let lib = parse(&bytes).unwrap();
+        let mounts = [
+            Mount::new("F:\\Music", "/Volumes/F-Music"),
+            Mount::new("G:\\Archive", "/Volumes/G-Archive"),
+        ];
+        let plan = plan_multi(&lib.records, &mounts);
+        assert_eq!(plan.matched.len(), 2, "两个盘各命中一条");
+        assert_eq!(plan.matched[0].posix_path, "/Volumes/F-Music/A/01.flac");
+        assert_eq!(plan.matched[1].posix_path, "/Volumes/G-Archive/B/02.flac");
+        assert_eq!(plan.unmatched, vec!["H:\\Nowhere\\03.flac".to_string()], "第三个盘没给挂载点，如实报未匹配");
+    }
+
+    #[test]
+    fn the_more_specific_root_wins_regardless_of_input_order() {
+        let bytes = library(&[record_with("F:\\Music\\A\\01.flac", &[])], 1, 8);
+        let lib = parse(&bytes).unwrap();
+        // 故意把更宽的根放前面：结果必须是更具体的那个赢。
+        let mounts = [Mount::new("F:\\", "/Volumes/F"), Mount::new("F:\\Music", "/Volumes/Music")];
+        let plan = plan_multi(&lib.records, &mounts);
+        assert_eq!(plan.matched[0].posix_path, "/Volumes/Music/A/01.flac");
+    }
+
+    #[test]
+    fn windows_roots_counts_each_drive_and_sorts_by_count() {
+        let bytes = library(
+            &[
+                record_with("G:\\Archive\\x.flac", &[]),
+                record_with("F:\\Music\\A\\01.flac", &[]),
+                record_with("f:\\Music\\A\\02.flac", &[]),
+                record_with("\\\\NAS\\music\\n.flac", &[]),
+            ],
+            4,
+            8,
+        );
+        let lib = parse(&bytes).unwrap();
+        let roots = windows_roots(&lib.records);
+        assert_eq!(roots[0], (r"F:\Music".to_string(), 2), "大小写不同算同一个根，且条数最多排第一");
+        assert!(roots.iter().any(|(r, c)| r == r"G:\Archive" && *c == 1));
+        assert!(roots.iter().any(|(r, c)| r == r"\\NAS\music" && *c == 1));
+    }
+
+    #[test]
+    fn guess_root_handles_drive_roots_and_unc() {
+        assert_eq!(guess_root(r"F:\Music\Artist\01.flac"), r"F:\Music");
+        assert_eq!(guess_root(r"F:\01.flac"), r"F:");
+        assert_eq!(guess_root(r"\\NAS\music\track.flac"), r"\\NAS\music");
+        assert_eq!(guess_root(""), "");
     }
 
     #[test]
