@@ -57,14 +57,15 @@ fn main() -> Result<()> {
             let target = args.get(2).context("缺少 .mbl 路径")?;
             let flags = parse_flags(&args[3..])?;
             match sub {
-                "inspect" => cmd_mbl_inspect(
-                    Path::new(target),
-                    flags.get("root").map(String::as_str),
-                    flags.get("mount").map(String::as_str),
-                ),
+                "inspect" => cmd_mbl_inspect(Path::new(target), &flags),
                 "apply" => cmd_mbl_apply(Path::new(target), &flags),
-                other => bail!("mbl 只支持 inspect / apply，收到 {other}"),
+                "tags" => cmd_mbl_tags(Path::new(target), &flags),
+                other => bail!("mbl 只支持 inspect / apply / tags，收到 {other}"),
             }
+        }
+        "classical-check" => {
+            let target = args.get(1).context("缺少 library.json 路径（或数据目录）")?;
+            cmd_classical_check(Path::new(target))
         }
         "play" => {
             let target = args.get(1).context("缺少文件路径")?;
@@ -89,9 +90,13 @@ fn print_usage() {
     println!("                           真实解码一段直播流，报编码/采样率/电平；有 --cache 就记进台站缓存");
     println!("  radio verdict <地址> [--cache 目录] [--uuid 台站id]");
     println!("                           只查缓存：这个台探过没有、结论是什么");
-    println!("  mbl inspect <.mbl> [--root WINDOWS根] [--mount 本地挂载点]");
-    println!("                           只读解析 MusicBee 曲库（不写回）");
-    println!("  mbl apply <.mbl> --library <数据目录> --root <WINDOWS根> --mount <挂载点>");
+    println!("  mbl inspect <.mbl> [--root WINDOWS根] [--mount 本地挂载点] [--map \"F:\\Music=/Volumes/F\" ...]");
+    println!("                           只读解析 MusicBee 曲库（不写回）；跨盘就多给几个 --map");
+    println!("  mbl tags <.mbl> [--tag 65=TrackTitle ...]");
+    println!("                           列出这份库真实出现过的 tag 码 + 样例值，用来验证/纠正码表");
+    println!("  classical-check <library.json|数据目录>");
+    println!("                           在真实曲库上量古典解析命中率，并列出解析不到的样例");
+    println!("  mbl apply <.mbl> --library <数据目录> --map \"F:\\Music=/Volumes/F\" [--map ...]");
     println!("                           [--source 来源ID] [--dry-run] [--force]");
     println!("                           把播放次数/上次播放/入库时间导入 Awake 曲库（只增不减）");
 }
@@ -224,7 +229,18 @@ fn parse_flags(args: &[String]) -> Result<std::collections::HashMap<String, Stri
             continue;
         }
         let value = args.get(i + 1).with_context(|| format!("--{key} 需要值"))?.clone();
-        map.insert(key, value);
+        // --map / --tag 可以重复给：跨盘要多个挂载点，覆盖码表要多个码。
+        // 用换行拼起来，读取时按行拆——这样不会与路径里的空格、逗号打架。
+        if matches!(key.as_str(), "map" | "tag") {
+            map.entry(key)
+                .and_modify(|slot: &mut String| {
+                    slot.push('\n');
+                    slot.push_str(&value);
+                })
+                .or_insert(value);
+        } else {
+            map.insert(key, value);
+        }
         i += 2;
     }
     Ok(map)
@@ -243,7 +259,7 @@ fn state_value(text: &str, key: &str) -> Option<String> {
 /// 先算（headline 里全是数字）、再确认（--dry-run）、最后落库（写前备份 + 状态文件）。
 fn cmd_mbl_apply(mbl: &Path, flags: &std::collections::HashMap<String, String>) -> Result<()> {
     use awake_core::musicbee;
-    use awake_core::musicbee_import::{apply, plan, Snapshot, SourceRoot};
+    use awake_core::musicbee_import::{apply, plan_multi, Snapshot, SourceRoot};
     use awake_core::Library;
 
     let library_arg = flags
@@ -261,14 +277,22 @@ fn cmd_mbl_apply(mbl: &Path, flags: &std::collections::HashMap<String, String>) 
         .parent()
         .context("--library 路径没有父目录")?
         .to_path_buf();
-    let win_root = flags
-        .get("root")
-        .context("缺少 --root（.mbl 里路径的 Windows 根，例如 F:\\\\Music）")?
-        .as_str();
-    let mount = flags
-        .get("mount")
-        .context("缺少 --mount（本机挂载点，例如 /Volumes/Music）")?
-        .as_str();
+    // 跨盘：--map 可以给多次；旧的 --root/--mount 仍认，等价于一对。
+    let mut pairs = parse_mappings(flags)?;
+    if pairs.is_empty() {
+        match (flags.get("root"), flags.get("mount")) {
+            (Some(win), Some(posix)) => pairs.push((win.clone(), posix.clone())),
+            _ => bail!(
+                "缺少映射。用 --map \"F:\\\\Music=/Volumes/Music\"（跨盘就重复给多个）；\
+                 旧的 --root + --mount 也认。"
+            ),
+        }
+    }
+    let maps_line = pairs
+        .iter()
+        .map(|(win, posix)| format!("{win}={posix}"))
+        .collect::<Vec<_>>()
+        .join("|");
     let dry_run = flags.contains_key("dry-run");
 
     let bytes = std::fs::read(mbl).with_context(|| format!("读不到 {}", mbl.display()))?;
@@ -286,8 +310,7 @@ fn cmd_mbl_apply(mbl: &Path, flags: &std::collections::HashMap<String, String>) 
         let prev = std::fs::read_to_string(&sidecar).unwrap_or_default();
         let same = state_value(&prev, "len") == Some(snapshot.len.to_string())
             && state_value(&prev, "modified_ms") == Some(snapshot.modified_ms.to_string())
-            && state_value(&prev, "win_root") == Some(win_root.to_string())
-            && state_value(&prev, "mount") == Some(mount.to_string());
+            && state_value(&prev, "maps") == Some(maps_line.clone());
         if same {
             println!(
                 "未变化：{} 字节 / 修改时间 {} 与上次导入一致，跳过（--force 可强制重跑）。",
@@ -318,7 +341,9 @@ fn cmd_mbl_apply(mbl: &Path, flags: &std::collections::HashMap<String, String>) 
         .map(|(id, root)| SourceRoot { source_id: id.as_str(), root: root.as_str() })
         .collect();
 
-    let plan = plan(&lib, &store.snapshot.tracks, &refs, win_root);
+    let mounts: Vec<awake_core::musicbee::Mount<'_>> =
+        pairs.iter().map(|(win, posix)| awake_core::musicbee::Mount::new(win, posix)).collect();
+    let plan = plan_multi(&lib, &store.snapshot.tracks, &refs, &mounts);
     println!("{}", plan.headline());
     if plan.case_insensitive > 0 {
         println!("（其中 {} 条靠忽略大小写匹配上）", plan.case_insensitive);
@@ -352,12 +377,15 @@ fn cmd_mbl_apply(mbl: &Path, flags: &std::collections::HashMap<String, String>) 
         println!("没有需要改的曲目（曲库未写入）。");
     }
 
+    // 旧字段（win_root/mount）保留成第一个映射：老版本读这份 state 也不会当成"变了"。
+    let (first_win, first_mount) = pairs.first().cloned().unwrap_or_default();
     let state = format!(
-        "len={}\nmodified_ms={}\nwin_root={}\nmount={}\nimported_at={}\nupdated={}\n",
+        "len={}\nmodified_ms={}\nwin_root={}\nmount={}\nmaps={}\nimported_at={}\nupdated={}\n",
         snapshot.len,
         snapshot.modified_ms,
-        win_root,
-        mount,
+        first_win,
+        first_mount,
+        maps_line,
         awake_core::models::now_ms(),
         report.updated
     );
@@ -578,7 +606,229 @@ fn cmd_radio_verdict(target: &str, flags: &std::collections::HashMap<String, Str
 }
 
 
-fn cmd_mbl_inspect(path: &Path, win_root: Option<&str>, posix_root: Option<&str>) -> Result<()> {
+/// 把重复给出的 `--map "Windows根=本机挂载点"` 拆成对。
+///
+/// Windows 路径里不会出现 `=`，所以按第一个 `=` 切是安全的；
+/// 用 `=` 而不是 `:`，因为 `F:\Music` 自己就带冒号。
+fn parse_mappings(flags: &std::collections::HashMap<String, String>) -> Result<Vec<(String, String)>> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    if let Some(list) = flags.get("map") {
+        for line in list.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let (win, posix) = line.split_once('=').with_context(|| {
+                format!("--map 要写成 \"Windows根=本机挂载点\"，收到 {line}")
+            })?;
+            if win.trim().is_empty() || posix.trim().is_empty() {
+                bail!("--map 两边都不能空，收到 {line}");
+            }
+            out.push((win.trim().to_string(), posix.trim().to_string()));
+        }
+    }
+    Ok(out)
+}
+
+/// 把重复给出的 `--tag 65=TrackTitle` 拆成覆盖对。码必须是 0..=255 的整数。
+fn parse_tag_overrides(
+    flags: &std::collections::HashMap<String, String>,
+) -> Result<Vec<(u8, String)>> {
+    let mut out: Vec<(u8, String)> = Vec::new();
+    if let Some(list) = flags.get("tag") {
+        for line in list.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let (code, name) = line
+                .split_once('=')
+                .with_context(|| format!("--tag 要写成 \"码=名字\"，收到 {line}"))?;
+            let code: u8 = code
+                .trim()
+                .parse()
+                .with_context(|| format!("tag 码必须是 0..=255，收到 {}", code.trim()))?;
+            if name.trim().is_empty() {
+                bail!("--tag {code}= 少了名字");
+            }
+            out.push((code, name.trim().to_string()));
+        }
+    }
+    Ok(out)
+}
+
+/// 这份库真实用了哪些 tag 码：一行一个，带样例值。
+///
+/// 这是码表唯一的验证手段——不推断语义，只把 `码 / 名字 / 条数 / 样例` 摆出来，
+/// 让人一眼判断"样例值说得通名字吗"。对不上就改 `musicbee_tags::TAG_CODES`。
+/// 在**自己的** library.json 上量古典解析命中率。
+///
+/// 这是唯一能给出"真实命中率"的命令：语料测试用的是重建的写法，
+/// 只有跑在你自己的曲库上，数字才是你的库的数字。
+fn cmd_classical_check(path: &Path) -> Result<()> {
+    use awake_core::shelf;
+
+    let library_path = if path.extension().map(|ext| ext == "json").unwrap_or(false) {
+        path.to_path_buf()
+    } else {
+        path.join("library.json")
+    };
+    let library = awake_core::Library::open(&library_path);
+    let tracks = &library.snapshot.tracks;
+    println!("曲库: {} 首（{}）", tracks.len(), library_path.display());
+    if tracks.is_empty() {
+        println!("曲库是空的，或者这个路径不是 Awake 的 library.json。");
+        return Ok(());
+    }
+
+    let groups = shelf::overview(tracks);
+    let Some(group) = groups.iter().find(|g| g.key == "classical") else {
+        println!("这份曲库没有古典专架。");
+        println!("分类层要求至少两个信号同时成立（流派 / 作品号 / 专辑结构），一条都没凑够。");
+        println!("这不是解析失败——解析根本没被叫到。先确认流派标签写的是 Classical。");
+        return Ok(());
+    };
+
+    let total = group.count;
+    let in_works: usize = group.works.iter().map(|work| work.movement_count).sum();
+    let with_catalogue: usize = group
+        .works
+        .iter()
+        .filter(|work| !work.catalogue.is_empty())
+        .map(|work| work.movement_count)
+        .sum();
+
+    println!("古典曲目: {total} 首");
+    println!(
+        "归入作品: {in_works} 首（{:.1}%）· 作品 {} 个",
+        percent(in_works, total),
+        group.works.len()
+    );
+    println!(
+        "其中带作品号: {with_catalogue} 首（{:.1}%）",
+        percent(with_catalogue, total)
+    );
+
+    let mut covered = std::collections::HashSet::new();
+    for work in &group.works {
+        for id in &work.track_ids {
+            covered.insert(id.clone());
+        }
+    }
+    let missing: Vec<&awake_core::Track> = group
+        .track_ids
+        .iter()
+        .filter(|id| !covered.contains(*id))
+        .filter_map(|id| tracks.iter().find(|track| &track.id == id))
+        .take(10)
+        .collect();
+    if missing.is_empty() {
+        println!("每一首古典曲目都归进了作品。");
+    } else {
+        println!();
+        println!("没归入作品的样例（前 {} 条）:", missing.len());
+        for track in missing {
+            println!(
+                "  {:<38} | {:<42} | {}",
+                clip(&track.album, 38),
+                clip(&track.title, 42),
+                clip(&track.artist, 24)
+            );
+        }
+        println!();
+        println!("这些就是真实库里解析不到的部分：按上面的写法补正则或词典，不要改调用方。");
+    }
+    Ok(())
+}
+
+fn percent(part: usize, total: usize) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        100.0 * part as f64 / total as f64
+    }
+}
+
+/// 按字符截断（不是字节）：中文按字节截会切出半个字。
+fn clip(text: &str, width: usize) -> String {
+    if text.chars().count() <= width {
+        return text.to_string();
+    }
+    let mut out: String = text.chars().take(width.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
+fn cmd_mbl_tags(path: &Path, flags: &std::collections::HashMap<String, String>) -> Result<()> {
+    use awake_core::musicbee;
+    use awake_core::musicbee_tags;
+
+    let bytes = std::fs::read(path).with_context(|| format!("读不到 {}", path.display()))?;
+    let lib = musicbee::parse(&bytes).context("解析 .mbl 失败")?;
+    let overrides = parse_tag_overrides(flags)?;
+    let lookup: std::collections::HashMap<u8, &str> =
+        overrides.iter().map(|(code, name)| (*code, name.as_str())).collect();
+
+    println!("文件: {}", path.display());
+    println!("解析: {} 条（声明 {} 条）", lib.records.len(), lib.declared);
+
+    let roots = musicbee::windows_roots(&lib.records);
+    println!();
+    println!("跨 {} 个 Windows 根:", roots.len());
+    for (root, count) in &roots {
+        println!("  {:<40} {:>6} 条", root, count);
+    }
+    if roots.len() > 1 {
+        println!("  → 跨盘库。导入时每个根要一个 --map，例如：");
+        for (root, _) in &roots {
+            println!("      --map \"{root}=/Volumes/填这里\"");
+        }
+    }
+
+    let stats = musicbee_tags::census(&lib.records);
+    if stats.is_empty() {
+        println!();
+        println!("这份库一条标签都没有（只有路径与播放次数）。");
+        return Ok(());
+    }
+    println!();
+    println!("出现 {} 种 tag 码（码  名字  条数  样例）:", stats.len());
+    for stat in &stats {
+        println!("{}", stat.line_with(lookup.get(&stat.code).copied()));
+    }
+
+    let unknown: Vec<u8> = stats
+        .iter()
+        .filter(|s| s.name.is_none() && !lookup.contains_key(&s.code))
+        .map(|s| s.code)
+        .collect();
+    let used: usize = stats
+        .iter()
+        .filter(|s| s.name.is_some() || lookup.contains_key(&s.code))
+        .count();
+    println!();
+    println!(
+        "表内 {} 个码；这份库用到 {} 个；剩下 {} 个没出现（不代表表错，只代表这份库没这个标签）。",
+        musicbee_tags::TAG_CODES.len(),
+        used,
+        musicbee_tags::TAG_CODES.len().saturating_sub(used)
+    );
+    if unknown.is_empty() {
+        println!("没有表外的码。");
+    } else {
+        println!(
+            "{} 个表外的码: {unknown:?} —— 真实文件里有、码表还没有的标签。",
+            unknown.len()
+        );
+        println!("确认语义后用 --tag 码=名字 看覆盖效果，再决定要不要加进 TAG_CODES。");
+    }
+    println!();
+    println!("注意：码表来自官方插件 SDK 的 MetaDataType 枚举，未用真实 .mbl 验证过——");
+    println!("     上面每一行的样例值就是判据：语义对不上，就是表错了。");
+    Ok(())
+}
+
+fn cmd_mbl_inspect(path: &Path, flags: &std::collections::HashMap<String, String>) -> Result<()> {
     use awake_core::musicbee;
 
     let bytes = std::fs::read(path).with_context(|| format!("读不到 {}", path.display()))?;
@@ -599,10 +849,29 @@ fn cmd_mbl_inspect(path: &Path, win_root: Option<&str>, posix_root: Option<&str>
     let plays: u32 = lib.records.iter().map(|r| r.play_count).sum();
     println!("播放次数合计: {plays}");
     let tagged = lib.records.iter().filter(|r| !r.tags.is_empty()).count();
-    println!("带标签: {tagged} 条（tag_code 映射未验证，只报数量）");
+    println!("带标签: {tagged} 条（码表见 mbl tags，未用真实文件验证）");
 
-    if let (Some(root), Some(mount)) = (win_root, posix_root) {
-        let plan = musicbee::plan(&lib.records, root, mount);
+    // 跨了几个盘根：一个根就只能给一个挂载点，这是用户最常卡住的地方。
+    let roots = musicbee::windows_roots(&lib.records);
+    println!("Windows 根: {} 个", roots.len());
+    for (root, count) in roots.iter().take(8) {
+        println!("  {:<40} {:>6} 条", root, count);
+    }
+    if roots.len() > 1 {
+        println!("  → 跨盘：每个根一个 --map，只给一个会有一半路径落不上。");
+    }
+
+    let mut pairs = parse_mappings(flags)?;
+    if pairs.is_empty() {
+        if let (Some(root), Some(mount)) = (flags.get("root"), flags.get("mount")) {
+            pairs.push((root.clone(), mount.clone()));
+        }
+    }
+    if !pairs.is_empty() {
+        let mounts: Vec<musicbee::Mount<'_>> =
+            pairs.iter().map(|(win, posix)| musicbee::Mount::new(win, posix)).collect();
+        let plan = musicbee::plan_multi(&lib.records, &mounts);
+        println!("映射: {} 对", mounts.len());
         println!("匹配: {} 条", plan.matched.len());
         println!("未匹配: {} 条", plan.unmatched.len());
         if let Some(first) = plan.matched.first() {
