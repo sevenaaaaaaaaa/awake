@@ -1,0 +1,291 @@
+[
+  {
+    "album": "Bach: Goldberg Variations, BWV 988",
+    "title": "Aria",
+    "artist": "Glenn Gould",
+    "album_artist": "Glenn Gould",
+    "want_composer": "Bach",
+    "want_catalogue": "BWV 988",
+    "note": "冒号 + 作品号，最标准的一种"
+  },
+  {
+    "album": "Bach: Goldberg Variations, BWV 988",
+    "title": "Variatio 1. a 1 Clav.",
+    "artist": "Glenn Gould",
+    "album_artist": "Glenn Gould",
+    "want_composer": "Bach",
+    "want_catalogue": "BWV 988",
+    "note": "变奏曲的曲名"
+  },
+  {
+    "album": "Beethoven: Symphony No. 5",
+    "title": "I. Allegro con brio",
+    "artist": "Wiener Philharmoniker",
+    "album_artist": "Wiener Philharmoniker",
+    "want_composer": "Beethoven",
+    "want_catalogue": null,
+    "note": "冒号但专辑里没有作品号"
+  },
+  {
+    "album": "Beethoven: Symphony No. 5 in C minor, Op. 67",
+    "title": "II. Andante con moto",
+    "artist": "Wiener Philharmoniker",
+    "album_artist": "Wiener Philharmoniker",
+    "want_composer": "Beethoven",
+    "want_catalogue": "Op. 67",
+    "note": "作品号在专辑名里"
+  },
+  {
+    "album": "Symphony No. 5",
+    "title": "I. Allegro",
+    "artist": "Ludwig van Beethoven",
+    "album_artist": "Ludwig van Beethoven",
+    "want_composer": "Beethoven",
+    "want_catalogue": null,
+    "note": "无冒号，album_artist 就是作曲家（词典归一到规范名）"
+  },
+  {
+    "album": "Symphony No. 5",
+    "title": "I. Allegro",
+    "artist": "Beethoven; Wiener Philharmoniker; Karajan",
+    "album_artist": "Wiener Philharmoniker",
+    "want_composer": "beethoven",
+    "want_catalogue": null,
+    "note": "作曲家只在 artist 多值串里（新修的路径）"
+  },
+  {
+    "album": "Kind of Blue",
+    "title": "So What",
+    "artist": "Miles Davis",
+    "album_artist": "Miles Davis",
+    "want_composer": null,
+    "want_catalogue": null,
+    "note": "爵士，不该被当成古典"
+  },
+  {
+    "album": "Now That's What I Call Music: 60",
+    "title": "Track 1",
+    "artist": "Various Artists",
+    "album_artist": "Various Artists",
+    "want_composer": null,
+    "want_catalogue": null,
+    "note": "冒号前后都不是作曲家，不能被误判"
+  },
+  {
+    "album": "Various Artists: Best of 2020",
+    "title": "Song",
+    "artist": "Various Artists",
+    "album_artist": "Various Artists",
+    "want_composer": null,
+    "want_catalogue": null,
+    "note": "冒号前有数字，直接排除"
+  },
+  {
+    "album": "贝多芬：第五交响曲",
+    "title": "第一乐章",
+    "artist": "维也纳爱乐乐团",
+    "album_artist": "维也纳爱乐乐团",
+    "want_composer": "贝多芬",
+    "want_catalogue": null,
+    "note": "中文全角冒号（新修的路径）"
+  },
+  {
+    "album": "巴赫：哥德堡变奏曲 BWV 988",
+    "title": "咏叹调",
+    "artist": "格伦·古尔德",
+    "album_artist": "格伦·古尔德",
+    "want_composer": "巴赫",
+    "want_catalogue": "BWV 988",
+    "note": "中文 + 作品号"
+  },
+  {
+    "album": "Schubert: Impromptus",
+    "title": "D 899 No. 3",
+    "artist": "Alfred Brendel",
+    "album_artist": "Alfred Brendel",
+    "want_composer": "Schubert",
+    "want_catalogue": "D. 899",
+    "note": "D 后面没有点，真实标签里最常见的一种"
+  },
+  {
+    "album": "Schubert: Impromptus, D. 899",
+    "title": "No. 3 in G-flat major",
+    "artist": "Alfred Brendel",
+    "album_artist": "Alfred Brendel",
+    "want_composer": "Schubert",
+    "want_catalogue": "D. 899",
+    "note": "带点的写法也要认"
+  },
+  {
+    "album": "Mozart: Piano Sonatas",
+    "title": "K 331 - I. Andante grazioso",
+    "artist": "Glenn Gould",
+    "album_artist": "Glenn Gould",
+    "want_composer": "Mozart",
+    "want_catalogue": "K. 331",
+    "note": "K 不带点"
+  },
+  {
+    "album": "Mozart: Piano Sonatas",
+    "title": "KV. 331",
+    "artist": "Glenn Gould",
+    "album_artist": "Glenn Gould",
+    "want_composer": "Mozart",
+    "want_catalogue": "K. 331",
+    "note": "KV 写法归一成 K."
+  },
+  {
+    "album": "Handel: Messiah",
+    "title": "HWV 56 - Part I: Sinfonia",
+    "artist": "Trevor Pinnock",
+    "album_artist": "Trevor Pinnock",
+    "want_composer": "Handel",
+    "want_catalogue": "HWV 56",
+    "note": "HWV（本次新增）"
+  },
+  {
+    "album": "Beethoven: Bagatelles",
+    "title": "WoO 59 - Für Elise",
+    "artist": "Alfred Brendel",
+    "album_artist": "Alfred Brendel",
+    "want_composer": "Beethoven",
+    "want_catalogue": "WoO 59",
+    "note": "WoO（本次新增）"
+  },
+  {
+    "album": "Liszt: Piano Works",
+    "title": "S. 541 No. 3 - La campanella",
+    "artist": "Krystian Zimerman",
+    "album_artist": "Krystian Zimerman",
+    "want_composer": "Liszt",
+    "want_catalogue": "S. 541",
+    "note": "S. 号（本次新增）"
+  },
+  {
+    "album": "Haydn: Piano Sonatas",
+    "title": "Hob. XVI:52 - Allegro",
+    "artist": "Alfred Brendel",
+    "album_artist": "Alfred Brendel",
+    "want_composer": "Haydn",
+    "want_catalogue": "Hob. XVI:52",
+    "note": "Hoboken 带冒号"
+  },
+  {
+    "album": "Vivaldi: The Four Seasons",
+    "title": "RV 269 - Spring",
+    "artist": "Nigel Kennedy",
+    "album_artist": "Nigel Kennedy",
+    "want_composer": "Vivaldi",
+    "want_catalogue": "RV 269",
+    "note": "RV"
+  },
+  {
+    "album": "Bach: Brandenburg Concertos",
+    "title": "BWV 1048 - I. Allegro",
+    "artist": "Trevor Pinnock",
+    "album_artist": "The English Concert",
+    "want_composer": "Bach",
+    "want_catalogue": "BWV 1048",
+    "note": "冒号 + 乐团作 album_artist"
+  },
+  {
+    "album": "Beethoven Symphonies",
+    "title": "Symphony No. 7 - II. Allegretto",
+    "artist": "Wiener Philharmoniker",
+    "album_artist": "Carlos Kleiber",
+    "want_composer": "beethoven",
+    "want_catalogue": null,
+    "note": "作曲家在专辑名里（词典兜底，新修的路径）"
+  },
+  {
+    "album": "Chopin: Nocturnes",
+    "title": "Op. 9 No. 2",
+    "artist": "Arthur Rubinstein",
+    "album_artist": "Arthur Rubinstein",
+    "want_composer": "Chopin",
+    "want_catalogue": "Op. 9 No. 2",
+    "note": "复合作品号 Op. 9 No. 2"
+  },
+  {
+    "album": "Debussy: Préludes",
+    "title": "L. 117 - Danseuses de Delphes",
+    "artist": "Krystian Zimerman",
+    "album_artist": "Krystian Zimerman",
+    "want_composer": "Debussy",
+    "want_catalogue": null,
+    "note": "L. 号不在白名单：不该被误捕成作品号；作曲家靠冒号仍然拿到"
+  },
+  {
+    "album": "The Dark Side of the Moon",
+    "title": "Money",
+    "artist": "Pink Floyd",
+    "album_artist": "Pink Floyd",
+    "want_composer": null,
+    "want_catalogue": null,
+    "note": "非古典，必须返回 None"
+  },
+  {
+    "album": "Symphony No. 9",
+    "title": "Ode to Joy",
+    "artist": "Berliner Philharmoniker",
+    "album_artist": "Herbert von Karajan",
+    "want_composer": null,
+    "want_catalogue": null,
+    "note": "已知缺口：album_artist 是指挥时会被当成作曲家——旧行为，没有指挥家词典兜底",
+    "known_gap": true
+  },
+  {
+    "album": "Rachmaninoff: Piano Concerto No. 2",
+    "title": "I. Moderato",
+    "artist": "Vladimir Ashkenazy",
+    "album_artist": "Bernard Haitink",
+    "want_composer": "Rachmaninoff",
+    "want_catalogue": null,
+    "note": "冒号优先于 album_artist"
+  },
+  {
+    "album": "Grieg: Peer Gynt",
+    "title": "1. Morgenstimmung",
+    "artist": "Berliner Philharmoniker",
+    "album_artist": "Herbert von Karajan",
+    "want_composer": "Grieg",
+    "want_catalogue": null,
+    "note": "阿拉伯数字开头的乐章"
+  },
+  {
+    "album": "Mahler: Symphony No. 5",
+    "title": "IV. Adagietto",
+    "artist": "Wiener Philharmoniker",
+    "album_artist": "Leonard Bernstein",
+    "want_composer": "Mahler",
+    "want_catalogue": null,
+    "note": "罗马数字乐章"
+  },
+  {
+    "album": "Sibelius: Finlandia",
+    "title": "Op. 26",
+    "artist": "Osmo Vänskä",
+    "album_artist": "Osmo Vänskä",
+    "want_composer": "Sibelius",
+    "want_catalogue": "Op. 26",
+    "note": "曲名里只有作品号"
+  },
+  {
+    "album": "贝多芬第五交响曲",
+    "title": "第一乐章 活泼的快板",
+    "artist": "贝多芬; 维也纳爱乐乐团; 卡拉扬",
+    "album_artist": "维也纳爱乐乐团",
+    "want_composer": "贝多芬",
+    "want_catalogue": null,
+    "note": "中文多值 artist（词典兜底）"
+  },
+  {
+    "album": "Ravel: Boléro (Orchestral Works)",
+    "title": "Boléro",
+    "artist": "Orchestre de Paris",
+    "album_artist": "Daniel Barenboim",
+    "want_composer": "Ravel",
+    "want_catalogue": null,
+    "note": "专辑名带括号说明，冒号前仍是作曲家"
+  }
+]

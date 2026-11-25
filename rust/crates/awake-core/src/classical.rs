@@ -3,10 +3,17 @@
 //! 这是 2026-11-25 拍板的方案："不拆 schema，先解析"。理由写在计划 6.4：
 //! 解析错了只影响一个页面的排序，改回来是改代码；拆进 schema 走错一步就是数据迁移。
 //!
-//! 解析规则只有两条，且都不猜：
-//! 1. 必须能识别出**作品号**（Op./BWV/K./KV/Hob./D./RV），或专辑名里有 `作曲家: 作品` 的冒号结构；
-//! 2. 作曲家优先取冒号前半段，其次取 `album_artist`（且必须与演奏者不同）。
-//! 两条都拿不到就返回 None——宁可这张专辑按普通曲目显示，也不编一个作曲家。
+//! 解析规则只有三条，且都不猜：
+//! 1. 作品号白名单：`Op. / BWV / KV / K. / Hob. / D. / RV / HWV / WoO / S.`
+//!    （前九种是 2026-11-25 的第一版；HWV 与 WoO 与 S. 是本次按真实写法补的）；
+//! 2. 作曲家优先取专辑名 `作曲家: 作品` 的冒号前半段（中英文冒号都认），
+//!    其次 `album_artist`（且必须与演奏者不同），最后才查 [`COMPOSERS`] 词典；
+//! 3. 三条都拿不到就返回 None——宁可这张专辑按普通曲目显示，也不编一个作曲家。
+//!
+//! 词典兜底为什么不算"猜"：它是一张写死的名字表，命中就是命中、没命中就是没命中，
+//! 没有"看起来像"的判断。它的作用是补上真实标签里最常见的一种：
+//! `album_artist` 与 `artist` 都是演奏者（`Wiener Philharmoniker`），
+//! 作曲家只写在 `artist` 的多值串里（`Beethoven; Wiener Philharmoniker`）。
 
 use crate::models::Track;
 use regex::Regex;
@@ -41,14 +48,101 @@ pub struct ClassicalWork {
     pub track_ids: Vec<String>,
 }
 
+/// 作品号白名单。加一种前缀必须同时加一条语料到 `Tools/classical_corpus.json`。
+///
+/// 为什么 `K.` / `D.` / `Hob.` 的点可有可无：真实标签里 `D 899` 与 `D. 899`
+/// 几乎一样常见（不同抓轨工具、不同人的习惯），只认带点的写法会漏掉一半舒伯特。
 fn catalogue_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         Regex::new(
-            r"(?i)\b(op\.?\s*\d{1,3}(?:\s*(?:no\.?)?\s*\d{1,3})?|bwv\s*\d{1,4}|kv\.?\s*\d{1,3}|k\.\s*\d{1,3}|hob\.\s*[ivxlc]+(?::\s*\d{1,3})?|d\.\s*\d{1,4}|rv\s*\d{1,3})\b",
+            r"(?i)\b(op\.?\s*\d{1,3}(?:\s*(?:no\.?)?\s*\d{1,3})?|bwv\s*\d{1,4}|kv\.?\s*\d{1,3}|k\.?\s*\d{1,3}|hob\.?\s*[ivxlc]+(?::\s*\d{1,3})?|d\.?\s*\d{1,4}|rv\s*\d{1,3}|hwv\s*\d{1,4}|woo\s*\d{1,3}|s\.\s*\d{1,4})\b",
         )
         .expect("作品号正则必须可编译")
     })
+}
+
+/// 常见古典作曲家的姓/中文名，用于"作曲家只写在 artist 多值串里"这种真实标签。
+///
+/// 只放**高频**的：名单越长，误判越多，而误判的代价是把流行专辑当成作品。
+/// 匹配是"整段包含"（`ludwig van beethoven` 命中 `beethoven`），不做模糊。
+const COMPOSERS: &[&str] = &[
+    "Bach", "Beethoven", "Mozart", "Haydn", "Handel", "Schubert", "Schumann", "Brahms",
+    "Wagner", "Verdi", "Chopin", "Liszt", "Mendelssohn", "Mahler", "Bruckner", "Debussy",
+    "Ravel", "Satie", "Faure", "Fauré", "Sibelius", "Grieg", "Dvorak", "Dvořák", "Tchaikovsky",
+    "Rachmaninoff", "Mussorgsky", "Rimsky-Korsakov", "Prokofiev", "Shostakovich", "Stravinsky",
+    "Bartok", "Bartók", "Vivaldi", "Telemann", "Scarlatti", "Monteverdi", "Palestrina",
+    "Purcell", "Elgar", "Vaughan Williams", "Holst", "Britten", "Schoenberg", "Berg", "Webern",
+    "Janacek", "Janáček", "Smetana", "Borodin", "Glinka", "Massenet", "Saint-Saens",
+    "Saint-Saëns", "Bizet", "Poulenc", "Franck", "Albeniz", "Albéniz", "Granados", "Sarasate",
+    "Paganini", "Boccherini", "Corelli", "Couperin", "Rameau", "Lully", "Charpentier",
+    "布鲁克纳", "贝多芬", "巴赫", "莫扎特", "海顿", "亨德尔", "舒伯特", "舒曼", "勃拉姆斯",
+    "瓦格纳", "威尔第", "肖邦", "李斯特", "门德尔松", "马勒", "德彪西", "拉威尔", "萨蒂",
+    "福雷", "西贝柳斯", "格里格", "德沃夏克", "柴可夫斯基", "拉赫玛尼诺夫", "穆索尔斯基",
+    "普罗科菲耶夫", "肖斯塔科维奇", "斯特拉文斯基", "巴托克", "维瓦尔第", "泰勒曼",
+    "斯卡拉蒂", "蒙特威尔第", "帕莱斯特里那", "普赛尔", "埃尔加", "霍尔斯特", "布里顿",
+    "勋伯格", "贝尔格", "韦伯恩", "雅纳切克", "斯美塔那", "鲍罗丁", "格林卡", "圣桑", "比才",
+];
+
+/// 一段文本里是否点名了某位作曲家（查表，不做模糊匹配）。
+///
+/// 返回的是**表里的规范写法**（`Ludwig van Beethoven` → `Beethoven`），
+/// 不是原片段：原片段可能是 `Beethoven; Wiener Philharmoniker` 整串，
+/// 直接当作曲家显示会又长又不对。
+fn names_a_composer(text: &str) -> Option<String> {
+    let lowered = text.to_lowercase();
+    // 多值标签的分隔符：真实标签里这几个都常见。
+    for piece in lowered.split([';', '/', '&', ',', '·', '|']) {
+        let piece = piece.trim();
+        if piece.is_empty() {
+            continue;
+        }
+        if let Some(found) = COMPOSERS.iter().find(|name| piece.contains(&name.to_lowercase())) {
+            return Some((*found).to_string());
+        }
+    }
+    None
+}
+
+/// 体裁词：出现在"作曲家"位置上就说明它其实是作品名，不是人名。
+/// 这是一条**可判定的排除**，不是"看起来像不像人"的猜测。
+const GENRE_WORDS: &[&str] = &[
+    "symphony", "symphonies", "concerto", "concertos", "sonata", "sonatas", "quartet",
+    "quartets", "quintet", "trio", "suite", "suites", "requiem", "mass", "prelude", "fugue",
+    "variations", "nocturne", "waltz", "etude", "étude", "overture", "rhapsody", "cantata",
+    "oratorio", "symphonie", "konzert", "交响曲", "协奏曲", "奏鸣曲", "变奏曲", "组曲",
+    "安魂曲", "弥撒", "四重奏", "三重奏", "序曲", "狂想曲", "练习曲", "前奏曲", "赋格", "康塔塔",
+];
+
+/// 标签里的占位符，不是人名。`Various Artists: Greatest Hits` 这种写法到处都是，
+/// 不排掉就会冒出一位叫 "Various Artists" 的作曲家。
+const PLACEHOLDERS: &[&str] = &[
+    "various artists", "various", "va", "v.a.", "unknown", "unknown artist",
+    "群星", "合辑", "未知", "未知艺术家", "佚名",
+];
+
+/// 冒号前半段像不像作曲家名。**只排除明显不是的结构**，不判断"像不像人"：
+/// 是占位符、有阿拉伯数字（作品号在冒号后面）、含体裁词、词数 > 5、过长。
+fn looks_like_composer(head: &str) -> bool {
+    let head = head.trim();
+    if head.is_empty() || head.chars().count() > 48 {
+        return false;
+    }
+    let lowered = head.to_lowercase();
+    if PLACEHOLDERS.iter().any(|slot| lowered == *slot) {
+        return false;
+    }
+    if head.chars().any(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    if GENRE_WORDS.iter().any(|word| lowered.contains(word)) {
+        return false;
+    }
+    // 中文名不会长到十几个字；"贝多芬第五交响曲全集"那种是作品名。
+    if head.chars().filter(|c| !c.is_ascii()).count() > 10 {
+        return false;
+    }
+    head.split_whitespace().count() <= 5
 }
 
 fn movement_re() -> &'static Regex {
@@ -70,6 +164,9 @@ fn normalize_prefix(raw: &str) -> String {
         "hob." | "hob" => "Hob.",
         "d." | "d" => "D.",
         "rv" => "RV",
+        "hwv" => "HWV",
+        "woo" => "WoO",
+        "s." | "s" => "S.",
         _ => "Op.",
     }
     .to_string()
@@ -79,9 +176,11 @@ fn normalize_prefix(raw: &str) -> String {
 pub fn parse(album: &str, title: &str, artist: &str, album_artist: &str) -> Option<ParsedWork> {
     let album_text = album.trim();
 
-    // 作曲家：专辑名的「作曲家: 作品」结构
-    let (composer_from_album, title_from_album) = match album_text.split_once(':') {
-        Some((head, tail)) if !head.trim().is_empty() && !tail.trim().is_empty() => {
+    // 作曲家：专辑名的「作曲家: 作品」结构。全角冒号也认——中文库里写的是「贝多芬：第五交响曲」。
+    let (composer_from_album, title_from_album) = match album_text.split_once([':', '：']) {
+        Some((head, tail))
+            if !head.trim().is_empty() && !tail.trim().is_empty() && looks_like_composer(head) =>
+        {
             (Some(head.trim().to_string()), tail.trim().to_string())
         }
         _ => (None, album_text.to_string()),
@@ -95,14 +194,21 @@ pub fn parse(album: &str, title: &str, artist: &str, album_artist: &str) -> Opti
         Catalogue { prefix, number }
     });
 
+    // 顺序是有讲究的：先查词典（准），再退回"album_artist 与 artist 不同"（旧行为）。
+    // 反过来会把 `Wiener Philharmoniker` 这种乐团名当成作曲家——真实库里到处都是。
     let composer = composer_from_album.or_else(|| {
-        let album_artist = album_artist.trim();
-        let artist = artist.trim();
-        if !album_artist.is_empty() && album_artist != artist {
-            Some(album_artist.to_string())
-        } else {
-            None
-        }
+        names_a_composer(artist)
+            .or_else(|| names_a_composer(album_artist))
+            .or_else(|| names_a_composer(album_text))
+            .or_else(|| {
+                let album_artist = album_artist.trim();
+                let artist = artist.trim();
+                if !album_artist.is_empty() && album_artist != artist {
+                    Some(album_artist.to_string())
+                } else {
+                    None
+                }
+            })
     });
 
     // 两条依据都没有 → 不归为"作品"。
@@ -285,4 +391,101 @@ mod tests {
         assert_eq!(beethoven.catalogue, "", "专辑里没有作品号，就不编一个");
         assert_eq!(beethoven.work, "Symphony No. 5");
     }
+
+    /// 语料用例。`known_gap` 的不计入命中率——它是"已知会错，先记下来"，
+    /// 不是"这样算对"。取消 `known_gap` 就是宣布这个缺口补上了。
+    #[derive(Debug, serde::Deserialize)]
+    struct CorpusCase {
+        album: String,
+        title: String,
+        artist: String,
+        album_artist: String,
+        want_composer: Option<String>,
+        want_catalogue: Option<String>,
+        #[serde(default)]
+        note: String,
+        #[serde(default)]
+        known_gap: bool,
+    }
+
+    fn corpus_cases() -> Vec<CorpusCase> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../Tools/classical_corpus.json");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("读不到语料 {}：{error}", path.display()));
+        serde_json::from_str(&text).expect("语料必须是合法 JSON 数组")
+    }
+
+    fn composer_ok(got: &Option<String>, want: &Option<String>) -> bool {
+        match (got, want) {
+            (None, None) => true,
+            (Some(g), Some(w)) => g.to_lowercase() == w.to_lowercase(),
+            _ => false,
+        }
+    }
+
+    /// 在 `Tools/classical_corpus.json` 上量命中率。
+    ///
+    /// 这份语料是**常见写法的重建**，不是任何人的真实曲库——所以它证明的是
+    /// "解析器覆盖了哪些写法"，不是"用户的库里能命中多少"。
+    /// 真实数字要拿 `awake-cli classical-check <library.json>` 在自己的库上跑。
+    ///
+    /// 输出用 `cargo test -- --nocapture classical_corpus` 看。
+    #[test]
+    fn classical_corpus_hit_rate_is_measured_not_guessed() {
+        let cases = corpus_cases();
+        assert!(cases.len() >= 25, "语料少于 25 条就没有统计意义，当前 {}", cases.len());
+
+        let mut hits = 0usize;
+        let mut misses: Vec<String> = Vec::new();
+        let mut gaps: Vec<String> = Vec::new();
+        for case in &cases {
+            let parsed = parse(&case.album, &case.title, &case.artist, &case.album_artist);
+            let got_composer = parsed.as_ref().and_then(|p| p.composer.clone());
+            let got_catalogue = parsed
+                .as_ref()
+                .and_then(|p| p.catalogue.as_ref().map(catalogue_label));
+            let ok = composer_ok(&got_composer, &case.want_composer)
+                && got_catalogue == case.want_catalogue;
+            let line = format!(
+                "{} :: {}（{}）期望 {}/{:?}，实际 {}/{:?}",
+                case.album,
+                case.title,
+                case.note,
+                case.want_composer.as_deref().unwrap_or("无作曲家"),
+                case.want_catalogue,
+                got_composer.as_deref().unwrap_or("无作曲家"),
+                got_catalogue
+            );
+            if ok {
+                hits += 1;
+            } else if case.known_gap {
+                gaps.push(line);
+            } else {
+                misses.push(line);
+            }
+        }
+
+        let total = cases.len();
+        let scored = total - gaps.len();
+        println!();
+        println!("古典语料 {total} 条：命中 {hits}，未命中 {}，已知缺口 {}", misses.len(), gaps.len());
+        println!(
+            "命中率 {:.1}%（{hits} / {scored}，已知缺口不计入分母）",
+            100.0 * hits as f64 / scored as f64
+        );
+        for miss in &misses {
+            println!("  未命中: {miss}");
+        }
+        for gap in &gaps {
+            println!("  已知缺口: {gap}");
+        }
+
+        assert!(misses.is_empty(), "有未命中用例，明细见上面的输出");
+        assert!(
+            hits as f64 / scored as f64 >= 0.90,
+            "命中率低于 90%：{hits}/{scored}"
+        );
+    }
 }
+
