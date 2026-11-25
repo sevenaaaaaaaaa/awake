@@ -497,3 +497,83 @@ dry-run：没有写任何文件。          ← library.json 的 sha 未变
 
 **没做的**：真机装 IPA、点一遍验收；CI 的 macOS zip 由 tag 触发的工作流产出，成败以 Actions 为准（v0.9.41 那次是红的，所以这一条不当默认绿）。
 
+
+### 10.10 播放前探测一次编码 + 台站缓存（同日第七轮）
+
+**要解决的问题**：台站声明不可信（实测过：声明 OGG 的流里装的是 FLAC）。所以"能不能放"要按**探测到的编码**判，而且不能每次播放都探一遍。
+
+**核心（`radio.rs`，+6 条测试，共 12 条）**
+
+| 类型/函数 | 作用 |
+| --- | --- |
+| `ProbeRecord` | 一次真实探测的结论：codec / 采样率 / 声道 / `playable` / 探测时间 / 备注 |
+| `ProbeCache` | `BTreeMap<key, ProbeRecord>`，key = stationuuid，没有就退化成归一化 URL；JSON 可读写（有往返测试） |
+| `PROBE_TTL_MS` = 7 天 | 过期就重探：台站换编码不常见，但也不能永远信旧结论 |
+| `ensure_probed(cache, station, now, prober)` | 新鲜 → 直接用；否则探一次并写回；**探失败不写缓存**，返回 `NeedsProbe` 让调用方保守处理 |
+
+三条被测试钉住的规则：
+
+1. 缓存新鲜时**不再探测**（测试里 prober 直接 panic，若被调用就失败）；
+2. 过期只探一次，结论写回；
+3. 实测编码**压过**台站声明：声明 opus 实测 mp3 → 允许播放；声明 mp3 实测 opus → 拦下来。
+
+**命令行（`awake-cli radio`）**
+
+```sh
+awake-cli radio probe   <url> [秒数] --cache <目录> [--uuid 台站id]   # 探一次并写缓存
+awake-cli radio verdict <url> --cache <目录> [--uuid 台站id]          # 只查缓存，不探测
+```
+
+**联网实测（真实台站）**
+
+| 步骤 | 结果 |
+| --- | --- |
+| 未探测时 verdict | `未探测：缓存里没有这条…播放前要先 probe 一次` |
+| probe 写入（mp3 台） | 解出 3.00 秒 · RMS -20.9 dBFS · `TESTUUID → mp3（playable=true）` |
+| 同 uuid 再 verdict | `mp3 · 44.1 kHz · 2 声道 · playable=true` |
+| 不带 uuid 再 verdict | 未探测（键按 URL，与 uuid 命名空间分开——行为正确） |
+| opus 台 probe | 报 `unsupported codec`，**缓存文件里没有新增条目** |
+
+最后一行是关键：探测失败不写"猜的结论"，缓存里只有真的探过的台。
+
+**还没接的**：桌面应用里没有电台界面，所以这套缓存目前只有核心 API 与命令行在用；将来的播放器调用 `ensure_probed` 即可，不需要改判定逻辑。
+
+**第二件事（Opus 的 ffmpeg 兜底）没动**：它会引入外部二进制依赖、首播延迟与一条新的失败路径，等你点头再做。
+
+
+### 10.11 Opus 的 ffmpeg 兜底：一个开关 + 一句提醒（同日第八轮）
+
+**默认关**。兜底要付两笔代价：外部二进制依赖，和首播多等一会儿。所以它不是一个"自动更好"的选项，而是用户明确需要时才打开的东西。
+
+| 层 | 内容 |
+| --- | --- |
+| `stream.rs` | `ffmpeg_path()`（PATH + Homebrew 前缀）、`decode_via_ffmpeg(input, secs, label)`：ffmpeg 输出 s16le / 48kHz / 立体声，读 PCM 算帧数、RMS、峰值，与 symphonia 路径同形状；失败时把 ffmpeg 的 stderr 尾巴带回来 |
+| `radio.rs` | `plan(codec, 开关, 二进制在不在) → Direct / ViaFfmpeg / Blocked{reason, can_enable_ffmpeg}`；`ProbeCache::decide` 把"探测结论 + 开关"合成一条结论 |
+| `awake-app` | `radio_settings.rs`：`radio-settings.json`（默认 `ffmpeg_fallback: false`），两个命令读/写，并把本机 ffmpeg 路径照实报给界面 |
+| 界面 | 「音乐来源」页第一块：开关 + "ffmpeg：/opt/homebrew/bin/ffmpeg" 或"没找到，先 brew install ffmpeg" |
+| CLI | `radio probe --ffmpeg [--codec opus]`；不给开关时错误里直接给建议；`radio verdict` 多一行「计划」 |
+
+**真实 Opus 台的实测**（`icecast.walmradio.com:8443/classic_opus`）：
+
+```
+# 不给开关
+Error: 直接解码失败。这个编码不在 symphonia 覆盖范围内——加 --ffmpeg 用 ffmpeg 兜底（本机已找到 ffmpeg）。
+# 给 --ffmpeg
+解码路径: ffmpeg
+编码: opus · 48.0 kHz · 2 声道
+解出: 3.00 秒（144000 帧 · 坏帧 0）
+电平: RMS -20.9 dBFS · 峰值 0.483
+缓存: OPUS1 → opus（playable=false）
+# verdict（开关关）
+计划: 放不了 —— opus 需要打开「用 ffmpeg 兜底」才能播放
+提示: 加 --ffmpeg（桌面版在设置里打开「用 ffmpeg 兜底」）
+# verdict（开关开）
+计划: 走 ffmpeg 兜底
+```
+
+注意缓存里仍然是 `playable=false`：这个字段的含义是"**直接**能不能放"，开关的效果由 `plan()` 叠加，两者不混。这样开关关掉之后，同一个台的结论会自动回到"需要打开兜底"，而不是记着"曾经能放"。
+
+**一次断言错误（值得记）**：ffmpeg 兜底的测试里我先写了"正弦峰值应 > 0.2"，实测 0.09 就红了。用 `ffmpeg -af volumedetect` 与 Python 独立复算同一条 s16 流（peak 0.0902 / rms 0.0625 / 0.800 秒，与 Rust 结果逐位一致），确认是 lavfi 的 sine 默认振幅只有 1/8，不是解码衰减。于是改的是**期望**，并把这句话写进测试注释——否则下次还会有人以为是 bug。
+
+**没验的**：桌面版那个开关我没点过（没有 UI 驱动能力）；iOS 侧不涉及这件事。
+
