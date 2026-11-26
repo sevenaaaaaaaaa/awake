@@ -10,12 +10,13 @@
 不证明"65 就是 TrackTitle"——后者由 SDK 枚举（B 级）与真实文件样例共同判定。
 
 用法:
-    python3 Tools/make_sample_mbl.py /tmp/sample.mbl
-    cargo run -p awake-cli -- mbl tags /tmp/sample.mbl
+    python3 Tools/make_sample_mbl.py                # 写到系统临时目录，路径打印在输出里
+    cargo run -p awake-cli -- mbl tags <上一步打印的路径>
 """
 
+import os
 import struct
-import sys
+import tempfile
 
 EPOCH = 621_355_968_000_000_000  # .NET 0001-01-01 到 Unix 纪元的 ticks
 
@@ -70,7 +71,6 @@ def record(path, play, last, added, tags, designation=2):
 
 
 def main():
-    target = sys.argv[1] if len(sys.argv) > 1 else "/tmp/sample.mbl"
     rows = [
         # F: 盘
         (r"F:\Music\Beethoven\Symphony No. 5\01.flac", 12, 1_760_000_000_000,
@@ -95,9 +95,12 @@ def main():
         body += record(path, play, last, 1_700_000_000_000, tags)
     body += struct.pack("<B", 1)  # 结束
     head = struct.pack("<I", (len(rows) << 8) | 8)
-    with open(target, "wb") as handle:
+    # 输出走系统安全临时文件 API：不可预测文件名、原子创建，杜绝 argv 指定任意路径；
+    # 实际路径打印在输出里，复制给 mbl inspect / mbl tags 即可。
+    fd, out_path = tempfile.mkstemp(prefix="sample_", suffix=".mbl")
+    with os.fdopen(fd, "wb") as handle:
         handle.write(head + body)
-    print(f"wrote {target} ({len(head + body)} bytes, {len(rows)} records)")
+    print(f"wrote {out_path} ({len(head + body)} bytes, {len(rows)} records)")
 
 
 if __name__ == "__main__":
