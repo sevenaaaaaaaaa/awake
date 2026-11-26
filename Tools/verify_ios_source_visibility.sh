@@ -35,7 +35,7 @@ fi
 
 echo "== 假 Plex 服务器 :$PORT"
 if ! curl -s -m 1 -o /dev/null -H "X-Plex-Token: e2e-token" "http://127.0.0.1:$PORT/library/sections"; then
-  python3 Tools/fake_plex_server.py --port "$PORT" --log /tmp/fake_plex.log >/tmp/fake_plex.out 2>&1 &
+  python3 Tools/fake_plex_server.py --port "$PORT" >/tmp/fake_plex.out 2>&1 &
   echo $! > /tmp/fake_plex.pid
   for _ in 1 2 3 4 5 6; do
     curl -s -m 1 -o /dev/null -H "X-Plex-Token: e2e-token" "http://127.0.0.1:$PORT/library/sections" && break

@@ -58,10 +58,14 @@ button:hover:not(:disabled) {
 .subtle-badge,
 .small-tag,
 .agent-answer,
+.agent-input,
 .source-chip,
 .queue-panel,
 .modal,
-.command-modal {
+.command-modal,
+.eq-card,
+.studio-panel,
+.brief-card {
   border-color: var(--line);
 }
 .device-icon,
@@ -100,7 +104,7 @@ button:hover:not(:disabled) {
   padding: 34px;
 }
 .hero-actions .button {
-  border-radius: 100px;
+  border-radius: 999px;
 }
 .vinyl {
   background: repeating-radial-gradient(
@@ -141,14 +145,6 @@ button:hover:not(:disabled) {
     var(--line) 39px,
     var(--line) 40px
   );
-}
-.eq-card,
-.studio-panel,
-.agent-answer,
-.agent-input,
-.source-chip,
-.brief-card {
-  border-color: var(--line);
 }
 .agent-answer {
   background: var(--surface);
@@ -518,7 +514,44 @@ input[type="range"]::-webkit-slider-thumb {
     align-items: start;
   }
 }
-@media(max-width:600px){
-  .page-intro{flex-direction:column;align-items:stretch;gap:16px}.page-intro>.button{align-self:flex-start;order:1}.page-intro h1{font-size:28px;line-height:1.4;letter-spacing:-.6px}.chain-panel .section-heading{flex-direction:column;align-items:stretch;gap:14px}.chain-panel .section-heading>.button{align-self:flex-start}
-  .eq-card{min-width:0;overflow:hidden}.eq-sliders{max-width:100%;contain:inline-size}.measurement-search button{white-space:normal}.skin-controls{min-width:0}.skin-controls>*{min-width:0}
+@media (max-width: 600px) {
+  .page-intro {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .page-intro > .button {
+    align-self: flex-start;
+    order: 1;
+  }
+  .page-intro h1 {
+    font-size: 28px;
+    line-height: 1.4;
+    letter-spacing: -0.6px;
+  }
+  .chain-panel .section-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .chain-panel .section-heading > .button {
+    align-self: flex-start;
+  }
+  .eq-card {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .eq-sliders {
+    max-width: 100%;
+    contain: inline-size;
+  }
+  .measurement-search button {
+    white-space: normal;
+  }
+  .skin-controls {
+    min-width: 0;
+  }
+  .skin-controls > * {
+    min-width: 0;
+  }
 }

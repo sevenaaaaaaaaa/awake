@@ -23,7 +23,8 @@ PORT=32400
 CONFIG=Debug
 DO_BUILD=1
 DD="${DD:-$ROOT/.build/ios-e2e-derived}"
-LOG="/tmp/awake-e2e-plex.log"
+# LOG 在假服务器启动后从其 stdout 的 log=… 解析（服务端用安全临时文件，路径不可预知）。
+LOG=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -47,7 +48,10 @@ xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
 xcrun simctl bootstatus "$DEVICE_ID" -b >/dev/null 2>&1 || true
 
 step "启动假 Plex 服务器 :$PORT"
-python3 "$ROOT/Tools/fake_plex_server.py" --port "$PORT" --log "$LOG" >/tmp/awake-e2e-plex-server.out 2>&1 &
+python3 "$ROOT/Tools/fake_plex_server.py" --port "$PORT" >/tmp/awake-e2e-plex-server.out 2>&1 &
+sleep 1
+LOG="$(sed -n 's/.*log=//p' /tmp/awake-e2e-plex-server.out | head -1)"
+[ -n "$LOG" ] || { echo "没拿到假服务器日志路径"; exit 1; }
 SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 for _ in 1 2 3 4 5 6 7 8 9 10; do

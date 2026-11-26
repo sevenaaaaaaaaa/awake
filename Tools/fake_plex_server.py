@@ -11,17 +11,21 @@
   GET /library/parts/<id>/<ver>/<name>        （返回一段可解码的 WAV）
   GET /library/metadata/<id>/thumb/<ver>      （返回 1x1 PNG，用于封面）
 
-每个请求都追加到 --log 指定的文件，作为「客户端到底问了什么」的证据。
+每个请求都追加到日志文件（系统安全临时文件，路径打印到 stdout 的 log=…），作为「客户端到底问了什么」的证据。
 
 用法:
-  python3 Tools/fake_plex_server.py --port 32400 --log /tmp/fake_plex.log
+  python3 Tools/fake_plex_server.py [--port 32400]
 """
-import argparse
 import io
+import os
 import struct
+import sys
+import tempfile
+import threading
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+from pathlib import Path
 
 TOKEN = "e2e-token"
 
@@ -32,7 +36,9 @@ CATALOG = [
     ("103", "电波·测试曲三", "Signal Test", "电波", 240000, "/library/parts/3/1700000003/three.wav"),
 ]
 
-LOG_PATH = "/tmp/fake_plex.log"
+LOG_PATH = ""
+LOG_LOCK = threading.Lock()
+LOG_FILE = None
 
 
 def wav_bytes(seconds=3.0, rate=44100):
@@ -101,8 +107,11 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _log(self, note):
-        with open(LOG_PATH, "a") as f:
-            f.write(note + "\n")
+        if LOG_FILE is None:
+            return
+        with LOG_LOCK:
+            LOG_FILE.write(note + "\n")
+            LOG_FILE.flush()
 
     def do_GET(self):
         u = urlparse(self.path)
@@ -150,15 +159,18 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    global LOG_PATH
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=32400)
-    parser.add_argument("--log", default="/tmp/fake_plex.log")
-    args = parser.parse_args()
-    LOG_PATH = args.log
-    open(LOG_PATH, "w").close()
-    print(f"fake plex on http://127.0.0.1:{args.port} token={TOKEN} log={LOG_PATH}", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    global LOG_FILE, LOG_PATH
+    port = 32400
+    if "--port" in sys.argv:
+        port = int(sys.argv[sys.argv.index("--port") + 1])
+    # 唯一的文件打开点：系统安全临时文件 API（不可预测、原子打开，防符号链接抢占）；
+    # 实际路径打印到 stdout 供脚本解析，不再接受调用方指定任意路径。
+    LOG_FILE = tempfile.NamedTemporaryFile(
+        prefix="fake_plex_", suffix=".log", delete=False, mode="w", encoding="utf-8"
+    )
+    LOG_PATH = LOG_FILE.name
+    print(f"fake plex on http://127.0.0.1:{port} token={TOKEN} log={LOG_PATH}", flush=True)
+    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
 
 
 if __name__ == "__main__":
