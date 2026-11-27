@@ -1459,6 +1459,18 @@ const earPrior = computed(() => s.curveInfo?.prior_display || "");
 const earTrack = computed(() =>
   s.now ? { title: s.now.title, artist: s.now.artist } : null,
 );
+/** 耳形自己的声音层：预设 / 这首歌的记忆 / 精确微调都在耳朵边上完成，不跳传统页。 */
+const earSheetOpen = ref(false);
+function onEarPreset(kind: "flat" | "warm" | "vocal" | "soft") {
+  void s.preset(kind);
+  s.toast(soundSummary.value.headline || "已切换预设");
+}
+function onEarRemember() {
+  void rememberCurve();
+}
+function onEarForget() {
+  void forgetCurve();
+}
 const eqPoints = computed(() =>
   s.gains.map((g, i) => `${(i * 600) / 30},${80 - g * 4}`).join(" "),
 );
@@ -2067,6 +2079,12 @@ onUnmounted(() => {
     @pick="onEarPick"
     @wake="onEarWake"
     @toggle="void s.toggle()"
+    @go-list="goList"
+    :sheet="earSheetOpen"
+    @update:sheet="earSheetOpen = $event"
+    @preset="onEarPreset"
+    @remember="onEarRemember"
+    @forget="onEarForget"
   />
   <div v-else class="app-shell">
     <input
@@ -4231,12 +4249,12 @@ onUnmounted(() => {
             </p>
             <button
               @click="
-                go('sound');
                 commandOpen = false;
+                view === 'ear' ? (earSheetOpen = true) : go('sound');
               "
             >
               <Icon name="sliders" /><span>调整声音</span
-              ><kbd>声音实验室</kbd></button
+            ><kbd>{{ view === "ear" ? "耳形" : "声音实验室" }}</kbd></button
             ><button
               @click="
                 go('agent');

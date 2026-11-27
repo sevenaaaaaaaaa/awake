@@ -17,6 +17,7 @@ import {
   bandExtremes,
   bandTheta,
   baseRadius,
+  freqLabel,
   freqLong,
   locateBand,
   polar,
@@ -37,6 +38,8 @@ const props = defineProps<{
   prior: string;
   summary: string;
   staleHint: string;
+  /** 声音层滑出面板（⌘K 的「调整声音」在耳形里也打开它，不再跳去传统页）。 */
+  sheet: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -52,6 +55,10 @@ const emit = defineEmits<{
   wake: [];
   /** 播放中在耳朵上轻点（非按住非拖动）：播放/暂停。 */
   toggle: [];
+  preset: [kind: "flat" | "warm" | "vocal" | "soft"];
+  remember: [];
+  forget: [];
+  "update:sheet": [v: boolean];
 }>();
 
 const CX = 840;
@@ -575,6 +582,14 @@ function onKey(e: KeyboardEvent) {
     sayOpen.value = false;
     sayText.value = "";
   }
+  if (e.key === "Escape" && props.sheet) emit("update:sheet", false);
+}
+
+/** 声音层的精确微调：每按一次 ±0.5 dB，立即落耳。 */
+function bandStep(i: number, d: number) {
+  const g = Math.max(-12, Math.min(12, props.gains[i] + d));
+  emit("band", i, Number(g.toFixed(1)));
+  emit("bandEnd");
 }
 
 // 悬停依据
@@ -667,6 +682,7 @@ function hideTip() {
     </g>
     <text ref="readout" x="1644" y="1026" text-anchor="end" class="readout"></text>
   </svg>
+  <button class="sheet-btn" @click="emit('update:sheet', !sheet)">声音</button>
   <!-- 说的输入框必须在 SVG 之外：SVG 命名空间里的 HTML 控件不渲染（0.9.46 就是这么丢的）。 -->
   <input
     ref="sayInput"
@@ -677,6 +693,55 @@ function hideTip() {
     autocomplete="off"
     @keydown.enter.prevent="submitSay(sayText)"
   />
+  <transition name="sheet">
+    <aside v-if="sheet" class="sheet">
+      <header class="sheet-head">
+        <span class="sheet-eyebrow">声音 · 这只耳朵</span>
+        <button class="sheet-x" @click="emit('update:sheet', false)">收起 ✕</button>
+      </header>
+      <section class="sheet-sec">
+        <div class="sheet-label">输出</div>
+        <div class="sheet-line">{{ headphone || "未识别耳机" }}</div>
+        <div class="sheet-line dim">
+          {{ source === "song" ? "这首歌有记忆" : "链路曲线" }}
+          <template v-if="staleHint"> · {{ staleHint }}</template>
+        </div>
+      </section>
+      <section class="sheet-sec">
+        <div class="sheet-label">预设</div>
+        <div class="sheet-presets">
+          <button @click="emit('preset', 'flat')">平直</button>
+          <button @click="emit('preset', 'warm')">温暖</button>
+          <button @click="emit('preset', 'vocal')">人声</button>
+          <button @click="emit('preset', 'soft')">柔和</button>
+        </div>
+      </section>
+      <section class="sheet-sec">
+        <div class="sheet-label">这首歌</div>
+        <div class="sheet-presets">
+          <button @click="emit('remember')">记住这首歌</button>
+          <button @click="emit('forget')">忘掉这条</button>
+        </div>
+        <div class="sheet-line dim">记忆会叠上你的先验；换耳机后要重新记一次。</div>
+      </section>
+      <section class="sheet-sec sheet-precise">
+        <div class="sheet-label">精确 · 每按一次 ±0.5 dB</div>
+        <div class="band-rows">
+          <div v-for="(f, i) in EQ_FREQS" :key="f" class="band-row">
+            <span class="band-f">{{ freqLabel(f) }}</span>
+            <button class="band-b" @click="bandStep(i, -0.5)">−</button>
+            <span class="band-v">{{ (gains[i] ?? 0).toFixed(1) }}</span>
+            <button class="band-b" @click="bandStep(i, 0.5)">+</button>
+          </div>
+        </div>
+      </section>
+      <footer class="sheet-foot">
+        <button class="sheet-link" @click="emit('goList'); emit('update:sheet', false)">
+          传统界面 ⌘L
+        </button>
+      </footer>
+    </aside>
+  </transition>
 </template>
 
 <style scoped>
@@ -813,6 +878,160 @@ function hideTip() {
   font-size: 10px;
   fill: var(--dim);
   font-family: var(--mono);
+}
+.sheet-btn {
+  position: fixed;
+  right: 28px;
+  top: 62px;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 12px;
+  transition: border-color 180ms, color 180ms;
+}
+.sheet-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.sheet {
+  position: fixed;
+  right: 0;
+  top: 0;
+  height: 100vh;
+  width: 400px;
+  background: color-mix(in srgb, var(--raised) 88%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-left: 1px solid var(--line);
+  padding: 20px 22px 16px;
+  overflow: auto;
+  z-index: 40;
+}
+.sheet-enter-active,
+.sheet-leave-active {
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sheet-enter-from,
+.sheet-leave-to {
+  transform: translateX(100%);
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.sheet-eyebrow {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  font-family: var(--mono);
+}
+.sheet-x {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.sheet-x:hover {
+  color: var(--text);
+  background: rgba(247, 248, 250, 0.05);
+}
+.sheet-sec {
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+  display: grid;
+  gap: 10px;
+}
+.sheet-label {
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  color: var(--dim);
+  font-family: var(--mono);
+}
+.sheet-line {
+  font-size: 13px;
+  fill: none;
+  color: var(--text);
+}
+.sheet-line.dim,
+.sheet-sec .dim {
+  font-size: 11.5px;
+  color: var(--dim);
+  line-height: 1.7;
+}
+.sheet-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sheet-presets button {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12.5px;
+  transition: border-color 180ms, background 180ms;
+}
+.sheet-presets button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft, rgba(199, 210, 254, 0.13));
+}
+.sheet-precise .band-rows {
+  display: grid;
+  gap: 2px;
+  max-height: 300px;
+  overflow: auto;
+}
+.band-row {
+  display: grid;
+  grid-template-columns: 46px 26px 46px 26px;
+  gap: 8px;
+  align-items: center;
+  height: 27px;
+}
+.band-f {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.band-v {
+  font-size: 11px;
+  color: var(--text);
+  font-family: var(--mono);
+  text-align: center;
+}
+.band-b {
+  height: 22px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+}
+.band-b:hover {
+  border-color: var(--accent);
+}
+.sheet-foot {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-top: 6px;
+}
+.sheet-link {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.sheet-link:hover {
+  color: var(--text);
+  background: rgba(247, 248, 250, 0.05);
 }
 </style>
 
