@@ -1383,6 +1383,9 @@ function onEarRelease(heldMs: number) {
   const wasReal = bypassed.value;
   endBypass();
   earAsk.value = heldMs > 0 && wasReal;
+  // 确实按住了想比，但曲线是平直的：与其静默，不如把话说开。
+  if (heldMs > 0 && !wasReal)
+    s.toast("这条曲线是平直的——先在「声音」里调一条，或让搭子来。");
 }
 function onEarVote(answer: "adapted" | "raw") {
   earAsk.value = false;
@@ -1409,18 +1412,34 @@ function onEarBandEnd() {
   pushEq([...s.gains]);
 }
 async function onEarSay(text: string) {
+  // 「说」必须每次都有回应。以前在浏览器预览里这里是静默的（suggestTuning 直接 return）：
+  // 菜单收起、曲线不动、也不说话——用户看到的就是「点不动」。
+  // 真机上没配 AI 服务时，后端会返回一句人话（「请先在设置里配置 AI 模型」），原样转达。
+  if (!desktop) {
+    s.toast("「说」要在桌面应用里用：它需要搭子的调音服务。");
+    return;
+  }
+  if (tuneBusy.value) {
+    s.toast("搭子还在调上一句，稍等一下。");
+    return;
+  }
+  tuneNote.value = "";
   tuneText.value = text;
   await suggestTuning();
   if (tuneGains.value) {
     await applyTuning();
     s.toast(tuneLines.value[0] || "已为这首歌调整");
   } else {
-    s.toast(tuneNote.value || "搭子这次没有给出曲线");
+    s.toast(tuneNote.value || "搭子这次没有给出曲线，再说具体一点试试。");
   }
 }
 function onEarPick(pick: EarPick) {
   const t = s.queue.find((x) => x.id === pick.id);
   if (t) void s.start(t);
+}
+/** 睡着时点了一下耳朵 = 找一首来放。 */
+function onEarWake() {
+  commandOpen.value = true;
 }
 const earPicks = computed(() =>
   s.queue
@@ -1771,6 +1790,31 @@ function keydown(e: KeyboardEvent) {
     dataOpen.value = false;
     return;
   }
+  // 耳形的两个出入口：耳朵里按 L 去列表，别处按 E 回耳朵；偏好都记下来。
+  // 放在「焦点在按钮上就不理单字母键」之前——点完一首歌焦点落在播放按钮上，
+  // 那条规则会把 E 挡掉，人就卡在列表里回不了耳朵。文本框里打字仍然不触发。
+  const typing =
+    (target.tagName === "INPUT" &&
+      (target as HTMLInputElement).type !== "range" &&
+      (target as HTMLInputElement).type !== "checkbox") ||
+    target.tagName === "TEXTAREA" ||
+    target.isContentEditable;
+  if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (e.key === "l" || e.key === "L") {
+      if (view.value === "ear") {
+        e.preventDefault();
+        goList();
+      }
+      return;
+    }
+    if (e.key === "e" || e.key === "E") {
+      if (view.value !== "ear") {
+        e.preventDefault();
+        goEar();
+      }
+      return;
+    }
+  }
   if (
     ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName) ||
     target.isContentEditable
@@ -1784,21 +1828,6 @@ function keydown(e: KeyboardEvent) {
   if (e.code === "Space") {
     e.preventDefault();
     void s.toggle();
-  }
-  // 耳形的两个出入口：列表里按 E 回耳朵，耳朵里按 L 去列表；偏好都记下来。
-  if (e.key === "l" || e.key === "L") {
-    if (view.value === "ear") {
-      e.preventDefault();
-      goList();
-    }
-    return;
-  }
-  if (e.key === "e" || e.key === "E") {
-    if (view.value !== "ear") {
-      e.preventDefault();
-      goEar();
-    }
-    return;
   }
   // ⌘1–⌘6 直接切分区：侧栏有顺序，键盘就应该有同样的顺序。
   if ((e.metaKey || e.ctrlKey) && /^[1-6]$/.test(e.key)) {
@@ -2036,6 +2065,8 @@ onUnmounted(() => {
     @band-end="onEarBandEnd"
     @say="onEarSay"
     @pick="onEarPick"
+    @wake="onEarWake"
+    @toggle="void s.toggle()"
   />
   <div v-else class="app-shell">
     <input
@@ -3811,7 +3842,9 @@ onUnmounted(() => {
         }}</span>
       </div>
     </footer>
+  </div>
 
+    <!-- toast 层提到根层级：耳形全屏时「说」的回应也看得见 -->
     <div v-if="s.notice" class="toast" role="status">
       <Icon name="check" />{{ s.notice }}
     </div>
@@ -3822,6 +3855,7 @@ onUnmounted(() => {
       </button>
     </div>
 
+    <!-- 模态层提到根层级：耳形全屏时 ⌘K / 存歌单 / 来源表单仍然可用 -->
     <div
       v-if="sourceOpen || saveOpen || commandOpen"
       class="modal-backdrop"
@@ -4257,6 +4291,5 @@ onUnmounted(() => {
       @like="swipeLike"
       @toggle-favorite="toggleSwipeFavorite"
     />
-  </div>
   <MediaInspector v-if="editingMedia" :key="editingMedia.id" :track="editingMedia" @close="editingMedia = null" @saved="s.refresh()" />
 </template>

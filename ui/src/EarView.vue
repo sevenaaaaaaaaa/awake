@@ -11,6 +11,7 @@ import type { EarPick } from "./types";
 import {
   BANDS,
   EQ_FREQS,
+  R_OUT,
   RING,
   THETA_MAX,
   bandExtremes,
@@ -47,6 +48,10 @@ const emit = defineEmits<{
   say: [text: string];
   pick: [pick: EarPick];
   goList: [];
+  /** 睡着时点了一下：让 App 打开 ⌘K 找一首。 */
+  wake: [];
+  /** 播放中在耳朵上轻点（非按住非拖动）：播放/暂停。 */
+  toggle: [];
 }>();
 
 const CX = 840;
@@ -110,7 +115,7 @@ const PILLS: Array<{ a: number; t: string; phrase: string }> = [
 onMounted(() => {
   const g = svg.value!;
   for (let i = 0; i < BANDS; i++) {
-    const c = el("circle", { fill: "#f7f8fa" });
+    const c = el("circle", { fill: "var(--text)" });
     g.querySelector("#dots")!.appendChild(c);
     dotEls.push(c as SVGCircleElement);
   }
@@ -394,7 +399,7 @@ function render(now: number) {
     hold: ["原样", "松手，回到为你调的那条", ""],
     ask: ["哪一个是你要的？", "点形状作答", ""],
     say: ["", "", props.busy ? "搭子在调…" : "或者挑一个词"],
-    sleep: ["耳朵在睡。", "放一首，唤醒它", ""],
+    sleep: ["耳朵在睡。", "放一首，唤醒它", "点一下，找一首来放"],
   };
   const lines = T[m];
   c1.value!.textContent = lines[0];
@@ -455,6 +460,7 @@ let last = 0;
 
 // ── 指针交互 ──
 let down: { x: number; y: number; t: number } | null = null;
+let downWasPlay = false;
 let dragging = false;
 let lastBandEmit = 0;
 let pendingBand: { i: number; g: number } | null = null;
@@ -481,14 +487,22 @@ function onPointerDown(e: PointerEvent) {
     else if (e.target === baselineHit.value) emit("vote", "raw");
     return;
   }
-  if (mode.value === "sleep") return;
+  if (mode.value === "sleep") {
+    // 睡着时的唯一入口：点一下 = 找一首来放（队列里的节点另可直接点）。
+    emit("wake");
+    return;
+  }
   if (Math.hypot(x - CX, y - CY) < 95) {
     sayOpen.value = true;
     setTimeout(() => sayInput.value?.focus(), 40);
     return;
   }
+  // 按住/拖动只属于耳朵本体：屏幕角落的误触不该让整条曲线旁路。
+  const r = Math.hypot(x - CX, y - CY);
+  if (r < 80 || r > R_OUT + 120) return;
   svg.value!.setPointerCapture(e.pointerId);
   down = { x: e.clientX, y: e.clientY, t: performance.now() };
+  downWasPlay = mode.value === "play";
   dragging = false;
   emit("hold");
 }
@@ -542,6 +556,10 @@ function onPointerUp() {
     pendingBand = null;
   }
   emit("release", wasHold ? heldMs : 0);
+  // 轻点耳朵 = 播放/暂停（按住是听原样，拖动是捏，都不算轻点）。
+  // 注意 props 此刻还没从 hold 翻回来，用按下时的模式判断。
+  if (downWasPlay && !wasHold && !dragging && heldMs <= 300 && !pendingBand)
+    emit("toggle");
 }
 
 function submitSay(text: string) {
@@ -581,6 +599,7 @@ function hideTip() {
 <template>
   <svg
     ref="svg"
+    :class="['ear-svg', 'mode-' + mode]"
     viewBox="0 0 1680 1050"
     preserveAspectRatio="xMidYMid meet"
     class="ear-svg"
@@ -620,15 +639,6 @@ function hideTip() {
 
     <g ref="votesG" class="votes" :opacity="mode === 'ask' ? 1 : 0"></g>
     <g ref="sayG" class="saymenu" :opacity="sayOpen ? 1 : 0"></g>
-    <input
-      ref="sayInput"
-      v-model="sayText"
-      class="say-input"
-      :class="{ on: sayOpen }"
-      placeholder="说一句…"
-      autocomplete="off"
-      @keydown.enter.prevent="submitSay(sayText)"
-    />
 
     <text ref="c1" :x="840" y="516" text-anchor="middle" class="c1"></text>
     <text ref="c2" :x="840" y="536" text-anchor="middle" class="c2"></text>
@@ -652,11 +662,21 @@ function hideTip() {
       {{ (headphone || '未识别耳机') + ' · ' + (source === 'song' ? '这首歌有记忆' : '链路曲线') }}
     </text>
     <g class="legend">
-      <text x="36" y="1006">按住 听原样　　拖动 捏一段　　悬停 看依据</text>
+      <text x="36" y="1006">轻点 播放/暂停　　按住 听原样　　拖动 捏一段　　悬停 看依据</text>
       <text x="36" y="1026">点中心 说　　　 L 列表　　　⌘K 找一首</text>
     </g>
     <text ref="readout" x="1644" y="1026" text-anchor="end" class="readout"></text>
   </svg>
+  <!-- 说的输入框必须在 SVG 之外：SVG 命名空间里的 HTML 控件不渲染（0.9.46 就是这么丢的）。 -->
+  <input
+    ref="sayInput"
+    v-model="sayText"
+    class="say-input"
+    :class="{ on: sayOpen }"
+    placeholder="说一句…"
+    autocomplete="off"
+    @keydown.enter.prevent="submitSay(sayText)"
+  />
 </template>
 
 <style scoped>
@@ -669,6 +689,9 @@ function hideTip() {
   -webkit-user-select: none;
   background: var(--bg);
   cursor: default;
+}
+.ear-svg.mode-sleep {
+  cursor: pointer;
 }
 .bg {
   fill: var(--bg);
@@ -718,76 +741,6 @@ function hideTip() {
 }
 .hit {
   pointer-events: all;
-}
-.node {
-  pointer-events: all;
-  cursor: pointer;
-}
-.node-dot {
-  fill: var(--accent);
-  fill-opacity: 0.85;
-}
-.node-title {
-  font-size: 12px;
-  fill: var(--text);
-}
-.node-sub {
-  font-size: 10px;
-  fill: var(--dim);
-  font-family: var(--mono);
-}
-.tick text,
-.tick {
-  font-size: 9.5px;
-  fill: var(--dim);
-  font-family: var(--mono);
-}
-.peak text {
-  font-size: 10px;
-  font-family: var(--mono);
-}
-.c1 {
-  font-size: 15px;
-  font-weight: 600;
-  fill: var(--text);
-}
-.c2 {
-  font-size: 10.5px;
-  fill: var(--dim);
-  font-family: var(--mono);
-}
-.c3 {
-  font-size: 11.5px;
-  fill: var(--muted);
-}
-.votes,
-.saymenu {
-  transition: opacity 300ms;
-  pointer-events: none;
-}
-.votes[opacity="1"],
-.saymenu[opacity="1"] {
-  pointer-events: all;
-}
-.pill rect,
-.vote rect {
-  fill: var(--raised);
-  stroke: var(--line);
-}
-.pill:hover rect {
-  stroke: var(--accent);
-}
-.vote-a {
-  stroke: var(--accent) !important;
-}
-.pill-t,
-.vote-at,
-.vote-rt {
-  font-size: 12px;
-  fill: var(--text);
-}
-.vote-rt {
-  fill: var(--muted);
 }
 .say-input {
   position: fixed;
@@ -860,5 +813,92 @@ function hideTip() {
   font-size: 10px;
   fill: var(--dim);
   font-family: var(--mono);
+}
+</style>
+
+<!--
+  下面这些元素是用 createElementNS 动态画出来的，身上没有 Vue scoped 的 data-v 属性，
+  scoped 规则一条都套不上（0.9.46 就是这样让投票的文字、轨道节点的标题整块不可见）。
+  所以单独放一个非 scoped 块，并用 .ear-svg 限定作用域，不泄漏到应用的其它地方。
+-->
+<style>
+.ear-svg text {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ear-svg .c1 {
+  font-size: 15px;
+  font-weight: 600;
+  fill: var(--text);
+}
+.ear-svg .c2 {
+  font-size: 10.5px;
+  fill: var(--dim);
+  font-family: var(--mono);
+}
+.ear-svg .c3 {
+  font-size: 11.5px;
+  fill: var(--muted);
+}
+.ear-svg .tick text {
+  font-size: 9.5px;
+  fill: var(--dim);
+  font-family: var(--mono);
+}
+.ear-svg .peak text {
+  font-size: 10px;
+  font-family: var(--mono);
+}
+.ear-svg .node {
+  pointer-events: all;
+  cursor: pointer;
+}
+.ear-svg .node-dot {
+  fill: var(--accent);
+  fill-opacity: 0.85;
+}
+.ear-svg .node-title {
+  font-size: 12px;
+  fill: var(--text);
+}
+.ear-svg .node-sub {
+  font-size: 10px;
+  fill: var(--dim);
+  font-family: var(--mono);
+}
+.ear-svg .votes,
+.ear-svg .saymenu {
+  transition: opacity 300ms;
+  pointer-events: none;
+}
+.ear-svg .votes[opacity="1"],
+.ear-svg .saymenu[opacity="1"] {
+  pointer-events: all;
+}
+.ear-svg .pill,
+.ear-svg .vote {
+  pointer-events: all;
+  cursor: pointer;
+}
+.ear-svg .pill rect,
+.ear-svg .vote rect {
+  fill: var(--raised);
+  stroke: var(--line);
+}
+.ear-svg .pill:hover rect {
+  stroke: var(--accent);
+}
+.ear-svg .vote-a {
+  stroke: var(--accent);
+}
+.ear-svg .pill-t,
+.ear-svg .vote-at,
+.ear-svg .vote-rt {
+  font-size: 12px;
+  fill: var(--text);
+}
+.ear-svg .vote-rt {
+  fill: var(--muted);
 }
 </style>
