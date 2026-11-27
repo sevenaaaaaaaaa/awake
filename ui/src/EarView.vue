@@ -40,6 +40,10 @@ const props = defineProps<{
   staleHint: string;
   /** 声音层滑出面板（⌘K 的「调整声音」在耳形里也打开它，不再跳去传统页）。 */
   sheet: boolean;
+  /** 这首歌的旧纹路：本次会话里被换掉的调法，细线留在螺旋上，点一条即套用。 */
+  ghosts: Array<{ gains: number[]; label: string }>;
+  /** 搭子正在选曲。 */
+  curating: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -59,6 +63,10 @@ const emit = defineEmits<{
   remember: [];
   forget: [];
   "update:sheet": [v: boolean];
+  /** 套用一条旧纹路（按 ghosts 的下标）。 */
+  ghost: [index: number];
+  /** 让搭子就地选曲。 */
+  curate: [];
 }>();
 
 const CX = 840;
@@ -87,6 +95,7 @@ const tickEls: SVGTextElement[] = [];
 const TICK_AT = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
 const peakEls: SVGTextElement[] = [];
 const nodesG = ref<SVGGElement | null>(null);
+const ghostsG = ref<SVGGElement | null>(null);
 const votesG = ref<SVGGElement | null>(null);
 const sayG = ref<SVGGElement | null>(null);
 const sayInput = ref<HTMLInputElement | null>(null);
@@ -161,17 +170,17 @@ onMounted(() => {
   });
   // 投票（点形状作答）
   [
-    ["adapted", "适配"],
-    ["raw", "原样"],
+    ["adapted", "适配更好"],
+    ["raw", "原样更好"],
   ].forEach(([v, label], i) => {
     const grp = el("g", { class: "vote" });
     grp.appendChild(
       el("rect", {
-        x: -25,
-        y: -13,
-        width: 50,
-        height: 26,
-        rx: 13,
+        x: -46,
+        y: -14,
+        width: 92,
+        height: 28,
+        rx: 14,
         class: i === 0 ? "vote-a" : "vote-r",
       }),
     );
@@ -233,6 +242,28 @@ function rebuildNodes() {
   });
 }
 watch(() => props.picks, rebuildNodes, { deep: true });
+
+/** 旧纹路层：每次 ghosts 变化重画细线与可点区域（点一条=套用当时的样子）。 */
+function rebuildGhosts() {
+  const host = ghostsG.value;
+  if (!host) return;
+  while (host.firstChild) host.removeChild(host.firstChild);
+  props.ghosts.forEach((ghost, index) => {
+    const d = spiralPaths(ghost.gains, CX, CY).baseline;
+    const line = el("path", { d, class: "ghost-line" });
+    const hit = el("path", { d, class: "ghost-hit" });
+    const tip = document.createElementNS(NS, "title");
+    tip.textContent = `套用：${ghost.label}`;
+    hit.appendChild(tip);
+    hit.addEventListener("click", (e) => {
+      e.stopPropagation();
+      emit("ghost", index);
+    });
+    host.appendChild(line);
+    host.appendChild(hit);
+  });
+}
+watch(() => props.ghosts, rebuildGhosts, { deep: true });
 
 function arcPath(radius: number, a0: number, a1: number): string {
   const x0 = CX + radius * Math.cos(a0);
@@ -643,6 +674,7 @@ function hideTip() {
     <path ref="progressEl" class="progress" />
     <g ref="nodesG"></g>
 
+    <g ref="ghostsG" class="ghosts"></g>
     <path ref="glowBoost" class="ribbon-boost glow" filter="url(#earGlow)" />
     <path ref="ribbonCut" class="ribbon-cut" />
     <path ref="ribbonBoost" class="ribbon-boost" />
@@ -682,7 +714,10 @@ function hideTip() {
     </g>
     <text ref="readout" x="1644" y="1026" text-anchor="end" class="readout"></text>
   </svg>
-  <button class="sheet-btn" @click="emit('update:sheet', !sheet)">声音</button>
+  <button v-if="!sheet" class="sheet-btn" @click="emit('update:sheet', !sheet)">声音</button>
+  <button v-if="!sheet" class="sheet-btn curate" :disabled="curating" @click="emit('curate')">
+    {{ curating ? "搭子在选…" : "搭子选曲" }}
+  </button>
   <!-- 说的输入框必须在 SVG 之外：SVG 命名空间里的 HTML 控件不渲染（0.9.46 就是这么丢的）。 -->
   <input
     ref="sayInput"
@@ -723,6 +758,14 @@ function hideTip() {
           <button @click="emit('forget')">忘掉这条</button>
         </div>
         <div class="sheet-line dim">记忆会叠上你的先验；换耳机后要重新记一次。</div>
+      </section>
+      <section v-if="ghosts.length" class="sheet-sec">
+        <div class="sheet-label">旧纹路 · 本次会话（点一条套用）</div>
+        <div class="sheet-presets">
+          <button v-for="(g, i) in ghosts" :key="i" @click="emit('ghost', i)">
+            {{ g.label }}
+          </button>
+        </div>
       </section>
       <section class="sheet-sec sheet-precise">
         <div class="sheet-label">精确 · 每按一次 ±0.5 dB</div>
@@ -895,6 +938,12 @@ function hideTip() {
 .sheet-btn:hover {
   border-color: var(--accent);
   color: var(--text);
+}
+.sheet-btn.curate {
+  top: 98px;
+}
+.sheet-btn:disabled {
+  opacity: 0.6;
 }
 .sheet {
   position: fixed;
@@ -1119,5 +1168,18 @@ function hideTip() {
 }
 .ear-svg .vote-rt {
   fill: var(--muted);
+}
+.ear-svg .ghost-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-opacity: 0.32;
+  stroke-width: 1.2;
+}
+.ear-svg .ghost-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: all;
+  cursor: pointer;
 }
 </style>

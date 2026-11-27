@@ -1389,11 +1389,38 @@ function onEarRelease(heldMs: number) {
 }
 function onEarVote(answer: "adapted" | "raw") {
   earAsk.value = false;
-  s.toast(
-    answer === "adapted"
-      ? "记住了：就要这样。"
-      : "收到：这次原样更好。先验写入在下一批接上。",
-  );
+  // 听辨的落点：改「这首歌的适配」本身——
+  // 适配更好 → 连依据落库成这首歌的记忆；原样更好 → 退回链路曲线。
+  // 全局先验（个人听感）没有桌面写入口，这里不动它、也不假装动了。
+  if (answer === "adapted") {
+    void (async () => {
+      try {
+        const basis = await s.rememberSongCurve("");
+        s.toast(
+          basis
+            ? "记住了：这首歌就照这条。" + (basis.headphone ? ` · ${basis.headphone}` : "")
+            : "记住了：这首歌就照这条。（浏览器预览不落库）",
+        );
+        earRecordGhost("拍板前");
+      } catch (error) {
+        s.toast(String(error));
+      }
+    })();
+  } else {
+    void (async () => {
+      const wasSong = s.curveInfo?.source === "song";
+      try {
+        if (wasSong) await s.forgetSongCurve();
+        s.toast(
+          wasSong
+            ? "原样更好——这首歌退回链路曲线。"
+            : "这首本来就没有单独的记忆，原样就是链路。",
+        );
+      } catch (error) {
+        s.toast(String(error));
+      }
+    })();
+  }
 }
 let earBandLast = 0;
 function onEarBand(index: number, gain: number) {
@@ -1411,6 +1438,39 @@ function onEarBandEnd() {
   if (bypassed.value) return;
   pushEq([...s.gains]);
 }
+
+/**
+ * 旧纹路：本次会话里这首歌被换掉的调法（界面层记录，如实标注，不冒充落库）。
+ * 换歌即清空；最多留三条。
+ */
+const earGhostList = ref<Array<{ gains: number[]; label: string }>>([]);
+function earRecordGhost(label: string) {
+  const gains = [...s.gains];
+  const same = earGhostList.value.some(
+    (g) => g.label === label && g.gains.join(",") === gains.join(","),
+  );
+  if (same) return;
+  earGhostList.value = [{ gains, label }, ...earGhostList.value].slice(0, 3);
+}
+watch(
+  () => s.now?.id,
+  () => {
+    earGhostList.value = [];
+  },
+);
+function onEarGhost(index: number) {
+  const ghost = earGhostList.value[index];
+  if (!ghost) return;
+  earRecordGhost("换走前");
+  updateGains([...ghost.gains]);
+  void s.applyEq([...ghost.gains]);
+  s.toast("回到：" + ghost.label);
+}
+function onEarPreset(kind: "flat" | "warm" | "vocal" | "soft") {
+  earRecordGhost("换预设前");
+  void s.preset(kind);
+  s.toast(soundSummary.value.headline || "已切换预设");
+}
 async function onEarSay(text: string) {
   // 「说」必须每次都有回应。以前在浏览器预览里这里是静默的（suggestTuning 直接 return）：
   // 菜单收起、曲线不动、也不说话——用户看到的就是「点不动」。
@@ -1427,6 +1487,7 @@ async function onEarSay(text: string) {
   tuneText.value = text;
   await suggestTuning();
   if (tuneGains.value) {
+    earRecordGhost("调音前");
     await applyTuning();
     s.toast(tuneLines.value[0] || "已为这首歌调整");
   } else {
@@ -1434,23 +1495,40 @@ async function onEarSay(text: string) {
   }
 }
 function onEarPick(pick: EarPick) {
-  const t = s.queue.find((x) => x.id === pick.id);
+  const t =
+    s.tracks.find((x) => x.id === pick.id) ||
+    s.queue.find((x) => x.id === pick.id);
   if (t) void s.start(t);
 }
 /** 睡着时点了一下耳朵 = 找一首来放。 */
 function onEarWake() {
   commandOpen.value = true;
 }
-const earPicks = computed(() =>
-  s.queue
+/** 搭子就地选曲：本地兜底离线也能跑（真云策展需要配置服务）。 */
+const earCurated = ref(false);
+async function onEarCurate() {
+  await s.generateRecommendations(false);
+  earCurated.value = true;
+  const n = s.recommendations.length;
+  s.toast(n ? `搭子给你挑了 ${n} 首，轨道上听。` : "搭子没挑出来，稍后再试。");
+}
+const earPicks = computed<EarPick[]>(() => {
+  if (earCurated.value && s.recommendations.length)
+    return s.recommendations.slice(0, 3).map((r) => ({
+      id: r.track.id,
+      title: r.track.title,
+      sub: r.track.artist,
+      why: r.reason || "搭子刚选的",
+    }));
+  return s.queue
     .slice(s.queueIndex + 1, s.queueIndex + 4)
     .map((t, i) => ({
       id: t.id,
       title: t.title,
       sub: t.artist,
       why: i === 0 ? "接下来" : "在队列里",
-    })),
-);
+    }));
+});
 const earSource = computed(() => s.curveInfo?.source ?? "chain");
 const earHeadphone = computed(
   () => s.curveInfo?.basis?.headphone || s.curveInfo?.headphone_now || "",
@@ -1461,14 +1539,12 @@ const earTrack = computed(() =>
 );
 /** 耳形自己的声音层：预设 / 这首歌的记忆 / 精确微调都在耳朵边上完成，不跳传统页。 */
 const earSheetOpen = ref(false);
-function onEarPreset(kind: "flat" | "warm" | "vocal" | "soft") {
-  void s.preset(kind);
-  s.toast(soundSummary.value.headline || "已切换预设");
-}
 function onEarRemember() {
+  earRecordGhost("记忆前");
   void rememberCurve();
 }
 function onEarForget() {
+  earRecordGhost("忘掉前");
   void forgetCurve();
 }
 const eqPoints = computed(() =>
@@ -2085,6 +2161,10 @@ onUnmounted(() => {
     @preset="onEarPreset"
     @remember="onEarRemember"
     @forget="onEarForget"
+    :ghosts="earGhostList"
+    @ghost="onEarGhost"
+    :curating="s.curating"
+    @curate="onEarCurate"
   />
   <div v-else class="app-shell">
     <input
