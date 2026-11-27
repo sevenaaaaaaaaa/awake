@@ -16,6 +16,8 @@ import TelegramSource from "./TelegramSource.vue";
 import TelegramSponsored from "./TelegramSponsored.vue";
 import StageInstrument from "./StageInstrument.vue";
 import EqCurveEditor from "./EqCurveEditor.vue";
+import EarView from "./EarView.vue";
+import type { EarPick } from "./types";
 import { BYPASS_KEY, flatGains, hasAudibleEq, isBypassKey } from "./bypassKey";
 import Artwork from "./Artwork.vue";
 import TrackList from "./TrackList.vue";
@@ -97,6 +99,7 @@ import {
 const s = reactive(useAwake());
 const editingMedia = ref<Track | null>(null);
 type View =
+  | "ear"
   | "appearance"
   | "home"
   | "library"
@@ -115,6 +118,7 @@ type View =
 
 /** 所有合法的 view。深链校验用它，免得 URL 里写错一个词就白屏。 */
 const VIEW_IDS: readonly View[] = [
+  "ear",
   "appearance",
   "home",
   "library",
@@ -138,9 +142,28 @@ const VIEW_IDS: readonly View[] = [
  * 两个用处：截图验收要一条不用点鼠标的入口；用户想"把这一页发给别人看看"时也靠它。
  * 不认识的 view 一律回首页——URL 里写错一个词不该白屏。
  */
+/** 耳形作为启动首屏：默认开；⌘L 进列表时记下偏好，侧栏「耳形」再切回来。 */
+const earHome = ref(
+  typeof localStorage === "undefined" || localStorage.getItem("awake.earHome") !== "0",
+);
 function initialView(): View {
   const wanted = new URLSearchParams(window.location.search).get("view") as View | null;
-  return wanted && VIEW_IDS.includes(wanted) ? wanted : "home";
+  if (wanted && VIEW_IDS.includes(wanted)) return wanted;
+  return earHome.value ? "ear" : "home";
+}
+function goEar() {
+  earHome.value = true;
+  try {
+    localStorage.setItem("awake.earHome", "1");
+  } catch {}
+  view.value = "ear";
+}
+function goList() {
+  earHome.value = false;
+  try {
+    localStorage.setItem("awake.earHome", "0");
+  } catch {}
+  view.value = "home";
 }
 
 const view = ref<View>(initialView()),
@@ -1104,6 +1127,7 @@ const title = computed(
   () =>
     album.value?.title ||
     {
+      ear: "耳形",
       appearance: "外观与皮肤",
       home: "为你而鸣",
       library: "你的音乐",
@@ -1326,7 +1350,12 @@ function pushEq(next: number[]) {
   return bypassWave;
 }
 function beginBypass() {
-  if (bypassed.value || view.value !== "stage" || !bypassable.value) return;
+  if (
+    bypassed.value ||
+    (view.value !== "stage" && view.value !== "ear") ||
+    !bypassable.value
+  )
+    return;
   bypassSnapshot = [...s.gains];
   bypassed.value = true;
   void pushEq(flatGains(bypassSnapshot.length));
@@ -1339,8 +1368,78 @@ function endBypass() {
   void pushEq(restore);
 }
 watch(view, (next) => {
-  if (next !== "stage") endBypass();
+  if (next !== "stage" && next !== "ear") endBypass();
 });
+
+/**
+ * 耳形的四个动作接在这里：hold/release 走真旁路，band 真写曲线，
+ * say 复用 suggest_curve → 自动应用（回显走 toast），投票这版先回应、不写先验。
+ */
+const earAsk = ref(false);
+function onEarHold() {
+  beginBypass();
+}
+function onEarRelease(heldMs: number) {
+  const wasReal = bypassed.value;
+  endBypass();
+  earAsk.value = heldMs > 0 && wasReal;
+}
+function onEarVote(answer: "adapted" | "raw") {
+  earAsk.value = false;
+  s.toast(
+    answer === "adapted"
+      ? "记住了：就要这样。"
+      : "收到：这次原样更好。先验写入在下一批接上。",
+  );
+}
+let earBandLast = 0;
+function onEarBand(index: number, gain: number) {
+  if (bypassed.value) return;
+  const next = [...s.gains];
+  next[index] = Math.max(-12, Math.min(12, gain));
+  updateGains(next);
+  const now = performance.now();
+  if (now - earBandLast > 80) {
+    earBandLast = now;
+    pushEq(next);
+  }
+}
+function onEarBandEnd() {
+  if (bypassed.value) return;
+  pushEq([...s.gains]);
+}
+async function onEarSay(text: string) {
+  tuneText.value = text;
+  await suggestTuning();
+  if (tuneGains.value) {
+    await applyTuning();
+    s.toast(tuneLines.value[0] || "已为这首歌调整");
+  } else {
+    s.toast(tuneNote.value || "搭子这次没有给出曲线");
+  }
+}
+function onEarPick(pick: EarPick) {
+  const t = s.queue.find((x) => x.id === pick.id);
+  if (t) void s.start(t);
+}
+const earPicks = computed(() =>
+  s.queue
+    .slice(s.queueIndex + 1, s.queueIndex + 4)
+    .map((t, i) => ({
+      id: t.id,
+      title: t.title,
+      sub: t.artist,
+      why: i === 0 ? "接下来" : "在队列里",
+    })),
+);
+const earSource = computed(() => s.curveInfo?.source ?? "chain");
+const earHeadphone = computed(
+  () => s.curveInfo?.basis?.headphone || s.curveInfo?.headphone_now || "",
+);
+const earPrior = computed(() => s.curveInfo?.prior_display || "");
+const earTrack = computed(() =>
+  s.now ? { title: s.now.title, artist: s.now.artist } : null,
+);
 const eqPoints = computed(() =>
   s.gains.map((g, i) => `${(i * 600) / 30},${80 - g * 4}`).join(" "),
 );
@@ -1348,6 +1447,7 @@ const totalMinutes = computed(() =>
   Math.round(s.tracks.reduce((n, t) => n + t.duration, 0) / 60),
 );
 const nav = [
+  { id: "ear", icon: "ear", name: "耳形" },
   { id: "home", icon: "home", name: "为你而鸣" },
   { id: "library", icon: "disc", name: "音乐资料库" },
   { id: "favorites", icon: "heart", name: "喜欢的音乐" },
@@ -1685,6 +1785,21 @@ function keydown(e: KeyboardEvent) {
     e.preventDefault();
     void s.toggle();
   }
+  // 耳形的两个出入口：列表里按 E 回耳朵，耳朵里按 L 去列表；偏好都记下来。
+  if (e.key === "l" || e.key === "L") {
+    if (view.value === "ear") {
+      e.preventDefault();
+      goList();
+    }
+    return;
+  }
+  if (e.key === "e" || e.key === "E") {
+    if (view.value !== "ear") {
+      e.preventDefault();
+      goEar();
+    }
+    return;
+  }
   // ⌘1–⌘6 直接切分区：侧栏有顺序，键盘就应该有同样的顺序。
   if ((e.metaKey || e.ctrlKey) && /^[1-6]$/.test(e.key)) {
     const target = nav[Number(e.key) - 1];
@@ -1899,7 +2014,30 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell">
+  <EarView
+    v-if="view === 'ear'"
+    :gains="s.gains"
+    :bypassed="bypassed"
+    :ask="earAsk"
+    :busy="tuneBusy"
+    :track="earTrack"
+    :position="s.playback.position"
+    :duration="s.playback.duration"
+    :picks="earPicks"
+    :source="earSource"
+    :headphone="earHeadphone"
+    :prior="earPrior"
+    :summary="soundSummary.headline"
+    :stale-hint="s.curveInfo?.stale_hint || ''"
+    @hold="onEarHold"
+    @release="onEarRelease"
+    @vote="onEarVote"
+    @band="onEarBand"
+    @band-end="onEarBandEnd"
+    @say="onEarSay"
+    @pick="onEarPick"
+  />
+  <div v-else class="app-shell">
     <input
       ref="fileInput"
       class="sr-only"

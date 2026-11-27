@@ -7,6 +7,7 @@ withDefaults(defineProps<{ name: string; size?: number; stroke?: number }>(), {
 });
 
 const PATHS: Record<string, string> = {
+  ear: '<path d="M17 13a5 5 0 1 0-10 0c0 2 1.4 3 2.6 4.2 1 1 .9 2.8 2.4 2.8"/><path d="M12 9.5a3.5 3.5 0 0 1 3.5 3.5"/>',
   home: '<path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
   spark:

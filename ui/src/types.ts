@@ -17,6 +17,13 @@ export interface ListeningContext {
   chain: ListeningChain | null;
   sound_key: string;
 }
+/** 耳形外圈轨道上的一个「接下来」节点。 */
+export interface EarPick {
+  id: string;
+  title: string;
+  sub: string;
+  why: string;
+}
 export interface Track {
   comment?: string;
   lyrics?: string;
